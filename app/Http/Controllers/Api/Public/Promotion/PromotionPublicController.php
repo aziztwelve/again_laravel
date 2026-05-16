@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api\Public\Promotion;
 
 use App\Http\Controllers\Controller;
+use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Services\Promotion\PromotionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -42,6 +44,17 @@ class PromotionPublicController extends Controller
             $validated['total']
         );
 
+        // Догружаем связи, нужные для выбора варианта подарка (размер/цвет и т.п.).
+        // ВНИМАНИЕ: PromotionService::findApplicablePromotions возвращает обычную
+        // Illuminate\Support\Collection (см. `collect()` внутри сервиса), у неё нет
+        // loadMissing(); поэтому подгружаем через each() прямо на моделях.
+        $promotions->each(function ($promotion) {
+            $promotion->loadMissing([
+                'giftProducts.activeVariants.optionValues.option',
+                'giftProducts.activeVariants.images',
+            ]);
+        });
+
         return response()->json([
             'success' => true,
             'data' => $promotions->map(function ($promotion) {
@@ -53,13 +66,7 @@ class PromotionPublicController extends Controller
                     'min_purchase_amount' => $promotion->min_purchase_amount,
                     'priority' => $promotion->priority,
                     'gift_products' => $promotion->giftProducts->map(function ($product) {
-                        return [
-                            'id' => $product->id,
-                            'name' => $product->name,
-                            'price' => $product->price,
-                            'quantity' => $product->pivot->quantity,
-                            'image' => $product->images->first()?->url ?? null,
-                        ];
+                        return $this->mapGiftProduct($product);
                     }),
                 ];
             }),
@@ -84,7 +91,12 @@ class PromotionPublicController extends Controller
                 $query->whereNull('max_uses')
                     ->orWhereRaw('times_used < max_uses');
             })
-            ->with(['triggerProducts', 'giftProducts.images'])
+            ->with([
+                'triggerProducts',
+                'giftProducts.images',
+                'giftProducts.activeVariants.optionValues.option',
+                'giftProducts.activeVariants.images',
+            ])
             ->orderBy('priority', 'desc')
             ->get();
 
@@ -106,16 +118,66 @@ class PromotionPublicController extends Controller
                         ];
                     }),
                     'gift_products' => $promotion->giftProducts->map(function ($product) {
-                        return [
-                            'id' => $product->id,
-                            'name' => $product->name,
-                            'price' => $product->price,
-                            'quantity' => $product->pivot->quantity,
-                            'image' => $product->images->first()?->url ?? null,
-                        ];
+                        return $this->mapGiftProduct($product);
                     }),
                 ];
             }),
         ]);
+    }
+
+    /**
+     * Сформировать единое представление подарка с вариантами (если есть).
+     *
+     * Возвращаем только варианты в наличии (stock_quantity > 0).
+     * Если у товара включён флаг has_variants, но активных вариантов в наличии нет —
+     * variants будет пустым массивом; клиент должен это учитывать.
+     */
+    protected function mapGiftProduct(Product $product): array
+    {
+        $hasVariants = (bool) $product->has_variants;
+
+        $variants = [];
+        if ($hasVariants && $product->relationLoaded('activeVariants')) {
+            $variants = $product->activeVariants
+                ->filter(function (ProductVariant $variant) {
+                    $stock = $variant->stock_quantity;
+                    // NULL или пустая строка — считаем доступным (не управляем остатком)
+                    if ($stock === null || $stock === '') return true;
+                    return (float) $stock > 0;
+                })
+                ->values()
+                ->map(function (ProductVariant $variant) {
+                    return [
+                        'id' => $variant->id,
+                        'name' => $variant->name ?? null,
+                        'sku' => $variant->sku ?? null,
+                        'stock_quantity' => (float) $variant->stock_quantity,
+                        'image' => $variant->images->first()?->url ?? null,
+                        'option_values' => $variant->optionValues->map(function ($optionValue) {
+                            return [
+                                'id' => $optionValue->id,
+                                'name' => $optionValue->name,
+                                'value' => $optionValue->value ?? null,
+                                'color_code' => $optionValue->color_code,
+                                'option' => [
+                                    'id' => $optionValue->option?->id,
+                                    'name' => $optionValue->option?->name,
+                                ],
+                            ];
+                        })->values(),
+                    ];
+                })
+                ->all();
+        }
+
+        return [
+            'id' => $product->id,
+            'name' => $product->name,
+            'price' => $product->price,
+            'quantity' => $product->pivot->quantity ?? 1,
+            'image' => $product->images->first()?->url ?? null,
+            'has_variants' => $hasVariants,
+            'variants' => $variants,
+        ];
     }
 }

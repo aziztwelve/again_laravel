@@ -70,12 +70,19 @@ class PromotionService
 
     /**
      * Применить акцию к заказу
+     *
+     * @param  Order  $order
+     * @param  Promotion  $promotion
+     * @param  int  $giftProductId  ID товара-подарка
+     * @param  bool  $useDiscountInstead  Если true — клиент выбрал скидку/промокод вместо подарка
+     * @param  int|null  $giftVariantId  ID конкретного варианта подарка (размер/цвет), если у товара есть варианты
      */
     public function applyPromotionToOrder(
         Order $order,
         Promotion $promotion,
         int $giftProductId,
-        bool $useDiscountInstead = false
+        bool $useDiscountInstead = false,
+        ?int $giftVariantId = null
     ): void {
         DB::beginTransaction();
 
@@ -85,23 +92,38 @@ class PromotionService
                 'promotion_id' => $promotion->id,
             ]);
 
-            if (! $useDiscountInstead) {
-                // Добавляем подарок в заказ
-                $giftProduct = $promotion->giftProducts()
-                    ->where('product_id', $giftProductId)
-                    ->first();
+            // Подарок акции из связки (нужен и для записи в usages — для gift_quantity)
+            $giftProduct = $promotion->giftProducts()
+                ->where('product_id', $giftProductId)
+                ->first();
 
-                if ($giftProduct) {
-                    $quantity = $giftProduct->pivot->quantity ?? 1;
+            $quantity = $giftProduct?->pivot->quantity ?? 1;
 
-                    $order->items()->create([
-                        'product_id' => $giftProductId,
-                        'quantity' => $quantity,
-                        'price' => 0.00, // Подарок бесплатный
-                        'discount' => 0.00,
-                        'is_gift' => true,
-                        'promotion_id' => $promotion->id,
-                    ]);
+            if (! $useDiscountInstead && $giftProduct) {
+                // Если у товара есть варианты — подарок добавляем строго на конкретный variant
+                $variant = null;
+                if ($giftVariantId) {
+                    $variant = \App\Models\ProductVariant::where('id', $giftVariantId)
+                        ->where('product_id', $giftProductId)
+                        ->first();
+                }
+
+                $order->items()->create([
+                    'product_id' => $giftProductId,
+                    'product_variant_id' => $variant?->id,
+                    'quantity' => $quantity,
+                    'price' => 0.00, // Подарок бесплатный
+                    'discount' => 0.00,
+                    'is_gift' => true,
+                    'promotion_id' => $promotion->id,
+                ]);
+
+                // Списываем остаток с того, что отгружаем (variant если есть, иначе сам товар)
+                if ($variant) {
+                    $variant->decrement('stock_quantity', $quantity);
+                } else {
+                    \App\Models\Product::where('id', $giftProductId)
+                        ->decrement('stock_quantity', $quantity);
                 }
             }
 
@@ -110,7 +132,7 @@ class PromotionService
                 'order_id' => $order->id,
                 'client_id' => $order->client_id,
                 'gift_product_id' => $giftProductId,
-                'gift_quantity' => $giftProduct->pivot->quantity ?? 1,
+                'gift_quantity' => $quantity,
                 'used_discount_instead' => $useDiscountInstead,
             ]);
 
@@ -123,6 +145,7 @@ class PromotionService
                 'promotion_id' => $promotion->id,
                 'order_id' => $order->id,
                 'gift_product_id' => $giftProductId,
+                'gift_variant_id' => $giftVariantId,
                 'used_discount_instead' => $useDiscountInstead,
             ]);
 
@@ -175,7 +198,10 @@ class PromotionService
                     ->delete();
             }
 
-            // Удаляем подарочные товары из заказа
+            // Удаляем подарочные товары из заказа.
+            // ВАЖНО: возврат остатка на склад сюда НЕ добавляем — он уже делается
+            // в OrderCreationService::cancelOrder() для всех позиций заказа, включая
+            // подарочные. Дублирование привело бы к двойному инкременту stock_quantity.
             $order->items()
                 ->where('is_gift', true)
                 ->where('promotion_id', $order->promotion_id)

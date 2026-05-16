@@ -221,7 +221,11 @@ class PromotionController extends Controller
             $query->where('name', 'like', '%'.$request->search.'%');
         }
 
-        $products = $query->select('id', 'name', 'price', 'stock_quantity')
+        // sku и has_variants нужны фронту, чтобы показать в списке подарков,
+        // что у товара есть размеры (клиент будет выбирать сам на checkout).
+        // active_variants_count — сколько активных вариантов у товара (для индикатора).
+        $products = $query->select('id', 'name', 'sku', 'price', 'stock_quantity', 'has_variants')
+            ->withCount(['activeVariants as active_variants_count'])
             ->orderBy('name')
             ->paginate($request->per_page ?? 50);
 

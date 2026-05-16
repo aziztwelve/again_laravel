@@ -34,6 +34,7 @@ class OrderViewController extends Controller
         $order->load([
             'items.product.images',
             'items.variant.images',
+            'items.variant.optionValues.option',
             'items.color',
             'client.profile',
             'promoCode',

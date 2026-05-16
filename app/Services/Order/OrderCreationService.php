@@ -306,12 +306,14 @@ class OrderCreationService
      * @param  int  $promotionId  ID акции
      * @param  int  $giftProductId  ID выбранного подарка
      * @param  bool  $useDiscountInstead  Использовать скидку вместо подарка
+     * @param  int|null  $giftVariantId  ID конкретного варианта подарка (размер/цвет)
      */
     public function applyPromotionToOrder(
         Order $order,
         int $promotionId,
         int $giftProductId,
-        bool $useDiscountInstead = false
+        bool $useDiscountInstead = false,
+        ?int $giftVariantId = null
     ): void {
         $promotion = Promotion::find($promotionId);
 
@@ -332,13 +334,15 @@ class OrderCreationService
                 $order,
                 $promotion,
                 $giftProductId,
-                $useDiscountInstead
+                $useDiscountInstead,
+                $giftVariantId
             );
 
             Log::info('Promotion applied to order', [
                 'order_id' => $order->id,
                 'promotion_id' => $promotionId,
                 'gift_product_id' => $giftProductId,
+                'gift_variant_id' => $giftVariantId,
                 'used_discount_instead' => $useDiscountInstead,
             ]);
 

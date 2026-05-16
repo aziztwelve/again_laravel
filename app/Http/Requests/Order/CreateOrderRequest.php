@@ -100,6 +100,58 @@ class CreateOrderRequest extends FormRequest
             if ($this->filled('promotion_id') && ! $this->boolean('use_discount_instead')) {
                 if (! $this->filled('gift_product_id')) {
                     $validator->errors()->add('gift_product_id', 'Выберите подарок для акции.');
+
+                    return;
+                }
+
+                // Проверяем, что выбранный подарок относится к этой акции
+                $promotion = \App\Models\Promotion::with('giftProducts')->find($this->input('promotion_id'));
+                $giftProductId = (int) $this->input('gift_product_id');
+                $giftProduct = $promotion?->giftProducts->firstWhere('id', $giftProductId);
+
+                if (! $giftProduct) {
+                    $validator->errors()->add('gift_product_id', 'Выбранный подарок недоступен в этой акции.');
+
+                    return;
+                }
+
+                // Если у подарка есть варианты (размер/цвет) — variant обязателен
+                $variantId = $this->filled('gift_product_variant_id')
+                    ? (int) $this->input('gift_product_variant_id')
+                    : null;
+
+                if ($giftProduct->has_variants) {
+                    if (! $variantId) {
+                        $validator->errors()->add(
+                            'gift_product_variant_id',
+                            'Выберите размер для подарка.'
+                        );
+
+                        return;
+                    }
+
+                    // Variant должен принадлежать этому товару, быть активным и в наличии
+                    $variant = \App\Models\ProductVariant::where('id', $variantId)
+                        ->where('product_id', $giftProductId)
+                        ->where('is_active', true)
+                        ->first();
+
+                    if (! $variant) {
+                        $validator->errors()->add(
+                            'gift_product_variant_id',
+                            'Выбранный размер недоступен.'
+                        );
+
+                        return;
+                    }
+
+                    $stock = $variant->stock_quantity;
+                    if ($stock !== null && $stock !== '' && (float) $stock <= 0) {
+                        $validator->errors()->add(
+                            'gift_product_variant_id',
+                            'Выбранного размера нет в наличии.'
+                        );
+                    }
                 }
             }
         });
@@ -138,6 +190,7 @@ class CreateOrderRequest extends FormRequest
             // Акция
             'promotion_id' => 'nullable|integer|exists:promotions,id',
             'gift_product_id' => 'nullable|integer|exists:products,id',
+            'gift_product_variant_id' => 'nullable|integer|exists:product_variants,id',
             'use_discount_instead' => 'nullable|boolean',
 
             // Контактная информация

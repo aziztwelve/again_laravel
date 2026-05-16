@@ -62,3 +62,23 @@
   2026-05-14 12:15:30 App\Events\MessageCreated ................. 51.51ms DONE
   2026-05-14 12:15:30 App\Events\ConversationUpdated ................. RUNNING
   2026-05-14 12:15:30 App\Events\ConversationUpdated ............ 16.40ms DONE
+  2026-05-14 20:45:17 App\Events\MessageCreated ...................... RUNNING
+  2026-05-14 20:45:17 App\Events\MessageCreated ................. 62.07ms DONE
+  2026-05-14 20:45:17 App\Events\ConversationUpdated ................. RUNNING
+  2026-05-14 20:45:17 App\Events\ConversationUpdated ............ 11.70ms DONE
+  2026-05-15 04:42:27 App\Services\Notifications\Jobs\SendNotificationJob  RUNNING
+  2026-05-15 04:42:29 App\Services\Notifications\Jobs\SendNotificationJob  1s DONE
+  2026-05-15 05:41:27 App\Services\Notifications\Jobs\SendNotificationJob  RUNNING
+  2026-05-15 05:41:28 App\Services\Notifications\Jobs\SendNotificationJob  1s DONE
+  2026-05-15 05:52:57 App\Services\Notifications\Jobs\SendNotificationJob  RUNNING
+  2026-05-15 05:52:59 App\Services\Notifications\Jobs\SendNotificationJob  1s DONE
+  2026-05-15 05:53:50 App\Services\Notifications\Jobs\SendNotificationJob  RUNNING
+  2026-05-15 05:53:50 App\Services\Notifications\Jobs\SendNotificationJob  434.22ms DONE
+  2026-05-15 06:03:55 App\Events\MessageCreated ...................... RUNNING
+  2026-05-15 06:03:55 App\Events\MessageCreated ................. 43.48ms DONE
+  2026-05-15 06:03:55 App\Events\ConversationUpdated ................. RUNNING
+  2026-05-15 06:03:55 App\Events\ConversationUpdated ............ 11.44ms DONE
+  2026-05-15 11:10:48 App\Events\MessageCreated ...................... RUNNING
+  2026-05-15 11:10:48 App\Events\MessageCreated ................. 35.28ms DONE
+  2026-05-15 11:10:48 App\Events\ConversationUpdated ................. RUNNING
+  2026-05-15 11:10:48 App\Events\ConversationUpdated ............. 9.67ms DONE

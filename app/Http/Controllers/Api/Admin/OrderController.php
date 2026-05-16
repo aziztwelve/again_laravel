@@ -57,7 +57,7 @@ class OrderController extends Controller
 
         $user = $request->user();
 
-        $query = Order::with(['items.product', 'items.variant', 'promoCode', 'client.profile', 'address']);
+        $query = Order::with(['items.product', 'items.variant.optionValues.option', 'promoCode', 'client.profile', 'address']);
 
         // Если это клиент - показываем только его заказы
         if ($user instanceof \App\Models\Client) {
@@ -100,6 +100,7 @@ class OrderController extends Controller
         $order->load([
             'items.product.images',
             'items.variant.images',
+            'items.variant.optionValues.option',
             'items.color',
             'client',
             'promoCode',
@@ -237,7 +238,8 @@ class OrderController extends Controller
                     $order,
                     $promotionId,
                     $validated['gift_product_id'],
-                    $useDiscountInstead
+                    $useDiscountInstead,
+                    $validated['gift_product_variant_id'] ?? null
                 );
             }
 
@@ -290,7 +292,7 @@ class OrderController extends Controller
             DB::commit();
 
             // Загружаем заказ со всеми связями для ответа
-            $order->load(['items.product', 'items.variant', 'promoCode', 'giftCard', 'address']);
+            $order->load(['items.product', 'items.variant.optionValues.option', 'promoCode', 'giftCard', 'address']);
 
             return $this->successResponse(
                 'Заказ успешно создан',
@@ -499,7 +501,7 @@ class OrderController extends Controller
 
             DB::commit();
 
-            $order->load(['items.product', 'items.variant', 'promoCode', 'client', 'assignedUser.profile', 'assignedUser.roles']);
+            $order->load(['items.product', 'items.variant.optionValues.option', 'promoCode', 'client', 'assignedUser.profile', 'assignedUser.roles']);
 
             return $this->successResponse(
                 'Заказ успешно обновлён',
@@ -686,7 +688,7 @@ class OrderController extends Controller
 
             DB::commit();
 
-            $order->load(['items.product', 'items.variant']);
+            $order->load(['items.product', 'items.variant.optionValues.option']);
 
             return $this->successResponse(
                 'Товары успешно добавлены в заказ',
@@ -738,7 +740,7 @@ class OrderController extends Controller
 
             DB::commit();
 
-            $order->load(['items.product', 'items.variant']);
+            $order->load(['items.product', 'items.variant.optionValues.option']);
 
             return $this->successResponse(
                 'Товар успешно удалён из заказа',
