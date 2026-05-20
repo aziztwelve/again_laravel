@@ -190,6 +190,26 @@ class MoySkladHelperService
         return $productsAndVariantsSyncWithMoySklad->sync_products_with_moysklad();
     }
 
+    /**
+     * Получить первое юрлицо (organization) из МойСклад.
+     * Возвращает массив с полями meta, id, name.
+     *
+     * @return array|null
+     */
+    public function get_organization(): ?array
+    {
+        $response = Http::withHeaders([
+            'Authorization'   => 'Bearer ' . $this->token,
+            'Accept-Encoding' => 'gzip',
+        ])->get("{$this->baseURL}/entity/organization", ['limit' => 1]);
+
+        if (! $response->successful() || empty($response->json('rows'))) {
+            return null;
+        }
+
+        return $response->json('rows.0');
+    }
+
     private function create_custom_characteristic(string $name, string $type = 'string'): void
     {
         $msCharacteristic = UnknownObject::make($this->moySklad, [
