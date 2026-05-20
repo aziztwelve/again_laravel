@@ -52,6 +52,7 @@ class PromotionPublicController extends Controller
             $promotion->loadMissing([
                 'giftProducts.activeVariants.optionValues.option',
                 'giftProducts.activeVariants.images',
+                'giftProducts.activeVariants.table_color',
             ]);
         });
 
@@ -96,6 +97,7 @@ class PromotionPublicController extends Controller
                 'giftProducts.images',
                 'giftProducts.activeVariants.optionValues.option',
                 'giftProducts.activeVariants.images',
+                'giftProducts.activeVariants.table_color',
             ])
             ->orderBy('priority', 'desc')
             ->get();
@@ -153,6 +155,11 @@ class PromotionPublicController extends Controller
                         'sku' => $variant->sku ?? null,
                         'stock_quantity' => (float) $variant->stock_quantity,
                         'image' => $variant->images->first()?->url ?? null,
+                        'color' => $variant->table_color ? [
+                            'id' => $variant->table_color->id,
+                            'name' => $variant->table_color->name,
+                            'code' => $variant->table_color->code,
+                        ] : null,
                         'option_values' => $variant->optionValues->map(function ($optionValue) {
                             return [
                                 'id' => $optionValue->id,

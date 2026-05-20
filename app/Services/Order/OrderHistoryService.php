@@ -40,9 +40,21 @@ class OrderHistoryService
         'assigned_user_id' => 'Менеджер',
     ];
 
+    public const ACTION_COPIED = 'copied';
+
     public function logCreated(Order $order): void
     {
         $this->write($order, self::ACTION_CREATED, 'Заказ создан');
+    }
+
+    public function logCopiedFrom(Order $newOrder, Order $sourceOrder): void
+    {
+        $this->write($newOrder, self::ACTION_COPIED, "Заказ скопирован из заказа №{$sourceOrder->order_number}");
+    }
+
+    public function logCopiedTo(Order $sourceOrder, Order $newOrder): void
+    {
+        $this->write($sourceOrder, self::ACTION_COPIED, "Заказ скопирован в новый заказ №{$newOrder->order_number}");
     }
 
     public function logDeleted(Order $order, ?string $reason = null): void

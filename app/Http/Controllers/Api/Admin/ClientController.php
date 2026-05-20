@@ -71,8 +71,16 @@ class ClientController extends Controller
                 });
             })
             ->when($request->sort, function ($query, $sort) {
-                [$column, $direction] = explode(',', $sort);
-                $query->orderBy($column, $direction);
+                $allowedSorts = ['id', 'email', 'bonus_balance', 'created_at', 'orders_count'];
+                $parts = explode(',', $sort);
+                $column = $parts[0] ?? null;
+                $direction = strtolower($parts[1] ?? 'desc');
+
+                if (in_array($column, $allowedSorts, true) && in_array($direction, ['asc', 'desc'], true)) {
+                    $query->orderBy($column, $direction);
+                } else {
+                    $query->latest();
+                }
             }, function ($query) {
                 $query->latest();
             });

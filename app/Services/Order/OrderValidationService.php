@@ -462,6 +462,27 @@ class OrderValidationService
             $priceDifference = abs($priceData['price_after_discount'] - $frontendPrice);
         }
 
+        // Если расчётная цена бэка МЕНЬШЕ цены с фронта — пропускаем заказ.
+        // Клиент в выигрыше: он рассчитывал заплатить больше, мы посчитаем по новой
+        // (более низкой) цене. Заказ создаётся с final_price из priceData, который
+        // возвращается из этой же функции выше — клиент платит ровно сколько
+        // должен по актуальным скидкам.
+        // Такое расхождение случается, когда у юзера в localStorage висит «старая»
+        // цена товара, а на бэке уже активирована/обновлена скидка.
+        // PRICE_MISMATCH оставляем только если расчётная цена ВЫШЕ — там нужно
+        // явное подтверждение клиента, что он готов заплатить больше.
+        if ($priceDifference > 0.01 && $calculatedPrice < $frontendPrice) {
+            Log::info('Backend price is lower than frontend price — order accepted with backend price', [
+                'product_id' => $productId,
+                'variant_id' => $variantId,
+                'frontend_price' => $frontendPrice,
+                'actual_price' => $calculatedPrice,
+                'price_difference' => $priceDifference,
+            ]);
+
+            return null;
+        }
+
         if ($priceDifference > 0.01) {
             return [
                 'item' => $index,

@@ -70,6 +70,40 @@ class UserController extends Controller
         ]);
     }
 
+    /**
+     * Лёгкий список «менеджеров» для select-фильтров (например, на странице
+     * заказов: «Менеджер» в шапке столбца). Возвращает плоский массив
+     * [{id, name}] без пагинации, чтобы фронт не парсил Paginator.
+     *
+     * Под «менеджерами» понимаем всех админ-пользователей: super-admin / admin /
+     * manager. Регулярные клиенты живут в отдельной таблице clients и сюда
+     * не попадают.
+     */
+    public function managers(): \Illuminate\Http\JsonResponse
+    {
+        $users = User::with('profile:id,user_id,first_name,last_name')
+            ->whereHas('roles', function ($q) {
+                $q->whereIn('slug', ['super-admin', 'admin', 'manager']);
+            })
+            ->orderBy('id')
+            ->get(['id', 'email']);
+
+        $items = $users->map(function (User $u) {
+            $p = $u->profile;
+            $name = trim(implode(' ', array_filter([
+                $p->first_name ?? null,
+                $p->last_name ?? null,
+            ])));
+
+            return [
+                'id' => $u->id,
+                'name' => $name !== '' ? $name : ($u->email ?: ('#'.$u->id)),
+            ];
+        })->values();
+
+        return response()->json(['managers' => $items]);
+    }
+
 
     public function indexDeleted(Request $request): \Illuminate\Http\JsonResponse
     {

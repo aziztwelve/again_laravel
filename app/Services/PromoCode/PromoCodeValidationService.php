@@ -9,13 +9,15 @@ use Illuminate\Support\Facades\Log;
 class PromoCodeValidationService
 {
     /**
-     * Валидация промокода для клиента
+     * Валидация промокода для клиента (или гостя)
      *
      * @param string $code Код промокода
-     * @param Client $client Клиент
+     * @param Client|null $client Клиент. NULL для гостевого заказа — тогда
+     *                            разрешены только публичные промокоды
+     *                            (applies_to_all_clients=true без привязок).
      * @return array ['success' => bool, 'message' => string, 'promo_code' => PromoCode|null, 'code' => string|null]
      */
-    public function validate(string $code, Client $client): array
+    public function validate(string $code, ?Client $client = null): array
     {
         // 1. Поиск промокода
         $promoCodeResult = $this->findPromoCode($code);
@@ -136,14 +138,29 @@ class PromoCodeValidationService
      * Проверка доступности промокода для конкретного клиента
      *
      * @param PromoCode $promoCode Промокод
-     * @param Client $client Клиент
+     * @param Client|null $client Клиент или NULL для гостя
      * @return array
      */
-    private function checkClientEligibility(PromoCode $promoCode, Client $client): array
+    private function checkClientEligibility(PromoCode $promoCode, ?Client $client): array
     {
-        // Если промокод доступен всем клиентам
+        // Если промокод доступен всем клиентам — разрешаем и гостям тоже.
         if ($promoCode->applies_to_all_clients) {
             return ['success' => true];
+        }
+
+        // Гость не может использовать персональные промокоды: проверить
+        // привязку по client_id физически некуда. Сообщение объясняет, что
+        // авторизация нужна именно для этого кода, а не вообще для заказа.
+        if ($client === null) {
+            Log::info('Guest tried to use personal promo code', [
+                'code' => $promoCode->code,
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'Этот промокод доступен только зарегистрированным клиентам. Войдите в аккаунт или используйте публичный промокод.',
+                'code' => 'PROMO_REQUIRES_AUTH',
+            ];
         }
 
         // Проверяем, есть ли привязка к конкретным клиентам
@@ -175,10 +192,10 @@ class PromoCodeValidationService
      * Проверка лимитов использования промокода
      *
      * @param PromoCode $promoCode Промокод
-     * @param Client $client Клиент
+     * @param Client|null $client Клиент или NULL для гостя
      * @return array
      */
-    private function checkUsageLimits(PromoCode $promoCode, Client $client): array
+    private function checkUsageLimits(PromoCode $promoCode, ?Client $client): array
     {
         // Проверка общего лимита использований
         if ($promoCode->max_uses && $promoCode->times_uses >= $promoCode->max_uses) {
@@ -197,22 +214,26 @@ class PromoCodeValidationService
             ];
         }
 
-        // Проверка использования конкретным клиентом
-        $clientUsage = $promoCode->usages()
-            ->where('client_id', $client->id)
-            ->exists();
+        // Проверка использования конкретным клиентом. Для гостя пропускаем —
+        // невозможно сопоставить с прошлыми использованиями без аккаунта.
+        // Защиту от спама обеспечивает rate-limit на endpoint + max_uses.
+        if ($client !== null) {
+            $clientUsage = $promoCode->usages()
+                ->where('client_id', $client->id)
+                ->exists();
 
-        if ($clientUsage) {
-            Log::info('Client already used promo code', [
-                'code' => $promoCode->code,
-                'client_id' => $client->id
-            ]);
+            if ($clientUsage) {
+                Log::info('Client already used promo code', [
+                    'code' => $promoCode->code,
+                    'client_id' => $client->id
+                ]);
 
-            return [
-                'success' => false,
-                'message' => 'Вы уже использовали этот промокод',
-                'code' => 'PROMO_ALREADY_USED',
-            ];
+                return [
+                    'success' => false,
+                    'message' => 'Вы уже использовали этот промокод',
+                    'code' => 'PROMO_ALREADY_USED',
+                ];
+            }
         }
 
         return ['success' => true];
@@ -331,17 +352,18 @@ class PromoCodeValidationService
      * Логирование использования промокода
      *
      * @param PromoCode $promoCode Промокод
-     * @param Client $client Клиент
+     * @param Client|null $client Клиент или NULL для гостя
      * @param array $context Дополнительный контекст
      * @return void
      */
-    public function logPromoCodeUsage(PromoCode $promoCode, Client $client, array $context = []): void
+    public function logPromoCodeUsage(PromoCode $promoCode, ?Client $client, array $context = []): void
     {
         Log::info('Promo code applied successfully', [
             'promo_code_id' => $promoCode->id,
             'code' => $promoCode->code,
-            'client_id' => $client->id,
-            'client_email' => $client->email ?? null,
+            'client_id' => $client?->id,
+            'client_email' => $client?->email,
+            'is_guest' => $client === null,
             'discount_type' => $promoCode->discount_type,
             'discount_amount' => $promoCode->discount_amount,
             'discount_behavior' => $promoCode->discount_behavior,

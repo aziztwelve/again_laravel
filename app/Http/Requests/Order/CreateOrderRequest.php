@@ -21,6 +21,9 @@ class CreateOrderRequest extends FormRequest
         // сборка фронта или JS-кэш), дотягиваем недостающие first_name/last_name/phone
         // из его же профиля в БД — заказ всё равно оформляется на этого же клиента,
         // дублировать ввод тех же данных на чекауте не требуется.
+        //
+        // Для гостевых заказов (нет $this->user()) этот блок безопасно пропускается:
+        // данные приходят целиком из payload фронта.
         $user = $this->input('user');
         if (! is_array($user)) {
             $user = [];
@@ -96,61 +99,90 @@ class CreateOrderRequest extends FormRequest
                 }
             }
 
-            // gift_product_id обязателен только если promotion_id указан И use_discount_instead != true
-            if ($this->filled('promotion_id') && ! $this->boolean('use_discount_instead')) {
-                if (! $this->filled('gift_product_id')) {
-                    $validator->errors()->add('gift_product_id', 'Выберите подарок для акции.');
-
-                    return;
-                }
-
-                // Проверяем, что выбранный подарок относится к этой акции
+            // Валидация акции и подарка.
+            if ($this->filled('promotion_id')) {
                 $promotion = \App\Models\Promotion::with('giftProducts')->find($this->input('promotion_id'));
-                $giftProductId = (int) $this->input('gift_product_id');
-                $giftProduct = $promotion?->giftProducts->firstWhere('id', $giftProductId);
 
-                if (! $giftProduct) {
-                    $validator->errors()->add('gift_product_id', 'Выбранный подарок недоступен в этой акции.');
+                // BUG-3: с акцией, у которой allow_promo_codes=false,
+                // нельзя выбрать "скидку вместо подарка" — выбор отсутствует на UI,
+                // и попытка прислать use_discount_instead=true означает обход правил акции.
+                if ($promotion && $this->boolean('use_discount_instead') && ! $promotion->allow_promo_codes) {
+                    $validator->errors()->add(
+                        'use_discount_instead',
+                        'С этой акцией нельзя выбрать скидку вместо подарка.'
+                    );
 
                     return;
                 }
 
-                // Если у подарка есть варианты (размер/цвет) — variant обязателен
-                $variantId = $this->filled('gift_product_variant_id')
-                    ? (int) $this->input('gift_product_variant_id')
-                    : null;
-
-                if ($giftProduct->has_variants) {
-                    if (! $variantId) {
-                        $validator->errors()->add(
-                            'gift_product_variant_id',
-                            'Выберите размер для подарка.'
-                        );
+                // gift_product_id обязателен, только если клиент НЕ выбрал «скидку вместо подарка».
+                if (! $this->boolean('use_discount_instead')) {
+                    if (! $this->filled('gift_product_id')) {
+                        $validator->errors()->add('gift_product_id', 'Выберите подарок для акции.');
 
                         return;
                     }
 
-                    // Variant должен принадлежать этому товару, быть активным и в наличии
-                    $variant = \App\Models\ProductVariant::where('id', $variantId)
-                        ->where('product_id', $giftProductId)
-                        ->where('is_active', true)
-                        ->first();
+                    // Проверяем, что выбранный подарок относится к этой акции
+                    $giftProductId = (int) $this->input('gift_product_id');
+                    $giftProduct = $promotion?->giftProducts->firstWhere('id', $giftProductId);
 
-                    if (! $variant) {
-                        $validator->errors()->add(
-                            'gift_product_variant_id',
-                            'Выбранный размер недоступен.'
-                        );
+                    if (! $giftProduct) {
+                        $validator->errors()->add('gift_product_id', 'Выбранный подарок недоступен в этой акции.');
 
                         return;
                     }
 
-                    $stock = $variant->stock_quantity;
-                    if ($stock !== null && $stock !== '' && (float) $stock <= 0) {
-                        $validator->errors()->add(
-                            'gift_product_variant_id',
-                            'Выбранного размера нет в наличии.'
-                        );
+                    // Сколько единиц подарка отгружаем (берём из пивота акции).
+                    $giftQuantity = (int) ($giftProduct->pivot->quantity ?? 1);
+
+                    // Если у подарка есть варианты (размер/цвет) — variant обязателен
+                    $variantId = $this->filled('gift_product_variant_id')
+                        ? (int) $this->input('gift_product_variant_id')
+                        : null;
+
+                    if ($giftProduct->has_variants) {
+                        if (! $variantId) {
+                            $validator->errors()->add(
+                                'gift_product_variant_id',
+                                'Выберите размер для подарка.'
+                            );
+
+                            return;
+                        }
+
+                        // Variant должен принадлежать этому товару, быть активным и в наличии
+                        $variant = \App\Models\ProductVariant::where('id', $variantId)
+                            ->where('product_id', $giftProductId)
+                            ->where('is_active', true)
+                            ->first();
+
+                        if (! $variant) {
+                            $validator->errors()->add(
+                                'gift_product_variant_id',
+                                'Выбранный размер недоступен.'
+                            );
+
+                            return;
+                        }
+
+                        $stock = $variant->stock_quantity;
+                        if ($stock !== null && $stock !== '' && (float) $stock < $giftQuantity) {
+                            $validator->errors()->add(
+                                'gift_product_variant_id',
+                                'Выбранного размера нет в наличии.'
+                            );
+                        }
+                    } else {
+                        // BUG-2: подарок-товар без вариантов раньше не проверялся.
+                        // Если stock < запрашиваемого количества — клиенту нельзя его «получить».
+                        $stock = $giftProduct->stock_quantity;
+                        if ($stock !== null && $stock !== '' && (float) $stock < $giftQuantity) {
+                            $validator->errors()->add(
+                                'gift_product_id',
+                                'Подарка нет в наличии.'
+                            );
+                        }
                     }
                 }
             }
@@ -198,6 +230,9 @@ class CreateOrderRequest extends FormRequest
             'user.first_name' => 'required|string|max:255',
             'user.last_name' => 'required|string|max:255',
             'user.phone' => 'nullable|string|max:20',
+            // Email опционален: для гостевого заказа полезен (чек/уведомление),
+            // для авторизованного клиента подтягивается из его аккаунта.
+            'user.email' => 'nullable|email|max:255',
 
             'client_id' => [
                 'nullable',

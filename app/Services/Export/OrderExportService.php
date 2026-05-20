@@ -105,9 +105,18 @@ class OrderExportService extends ExportService
         return [
             $order->id,
             $order->order_number ?? '',
-            $order->client->profile->full_name ?? '',
-            $order->client->email ?? '',
-            $order->client->profile->phone ?? '',
+            // Для гостевых заказов order->client = null — используем nullsafe и
+            // fallback на данные получателя из order_addresses + сам order.
+            $order->client?->profile?->full_name
+                ?? trim(
+                    ($order->address?->recipient_last_name ?? '')
+                    .' '.($order->address?->recipient_first_name ?? '')
+                ),
+            $order->client?->email ?? $order->email ?? '',
+            $order->client?->profile?->phone
+                ?? $order->phone
+                ?? $order->address?->recipient_phone
+                ?? '',
             $orderStatus,
             $paymentStatus,
             NumberHelper::formatRussian($order->total_amount),

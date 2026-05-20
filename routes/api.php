@@ -27,6 +27,7 @@ use App\Http\Controllers\Api\Admin\GiftCard\GiftCardController;
 use App\Http\Controllers\Api\Admin\MoySkladController;
 use App\Http\Controllers\Api\Admin\NotificationController;
 use App\Http\Controllers\Api\Admin\OrderController;
+use App\Http\Controllers\Api\Public\Order\PublicCheckoutController;
 use App\Http\Controllers\Api\Public\Order\PublicOrderController;
 use App\Http\Controllers\Api\Admin\OrderStatsController;
 use App\Http\Controllers\Api\Admin\OrderViewController;
@@ -72,6 +73,7 @@ use App\Http\Controllers\Api\Auth\RegisteredUserController;
 use App\Http\Controllers\Api\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\DeliveryController;
 use App\Http\Controllers\Api\PromoCodeController;
+use App\Http\Controllers\Api\Public\Cart\CartPriceController;
 use App\Http\Controllers\Api\Public\Catalog\CatalogController;
 use App\Http\Controllers\Api\Public\Conversation\PublicConversationController;
 use App\Http\Controllers\Api\Public\GiftCard\GiftCardPublicController;
@@ -128,6 +130,14 @@ Route::prefix('/public')->group(function () {
             ->name('check-applicable');
     });
 
+    // Публичный пересчёт цен товаров в корзине. Используется фронтом перед
+    // оформлением заказа, чтобы синхронизировать «старые» цены из localStorage
+    // с актуальными ценами/скидками на бэке (см. CartPriceController).
+    Route::prefix('cart')->name('cart.')->group(function () {
+        Route::post('/refresh-prices', [CartPriceController::class, 'refresh'])
+            ->name('refresh-prices');
+    });
+
     Route::prefix('catalog')->name('catalog.')->group(function () {
 
         // Категории для меню каталога
@@ -142,7 +152,7 @@ Route::prefix('/public')->group(function () {
         Route::get('/products', [CatalogController::class, 'products'])
             ->name('products');
 
-        Route::get('/products/{product}', [CatalogController::class, 'getProduct'])
+        Route::get('/products/{product:slug}', [CatalogController::class, 'getProduct'])
             ->name('products');
     });
 
@@ -170,12 +180,26 @@ Route::prefix('/public')->group(function () {
         Route::get('/track/{tracking_number}', [DeliveryController::class, 'track'])
             ->name('track');
 
+        // Публичный список способов доставки для витрины (нужен в т.ч. гостям
+        // на /checkout). Возвращает только активные, без чувствительных полей —
+        // тот же контроллер, что используется в админке.
+        Route::get('/methods', [DeliveryMethodController::class, 'get_all_delivery_methods'])
+            ->name('methods');
+
     });
 
     // Публичный просмотр заказа по view_token (используется на витрине /orders/{token})
     Route::get('/orders/{viewToken}', [PublicOrderController::class, 'show'])
         ->where('viewToken', '[a-f0-9]{32}')
         ->name('public.orders.show');
+
+    // Публичный чекаут — оформление заказа без обязательной авторизации.
+    // Если в заголовке Authorization приходит валидный Bearer-токен sanctum,
+    // заказ привяжется к клиенту; иначе оформится как гостевой (client_id = NULL).
+    // Throttle: 30 запросов в минуту с одного IP — защита от ботов/спама.
+    Route::middleware('throttle:30,1')
+        ->post('/orders', [PublicCheckoutController::class, 'store'])
+        ->name('public.orders.store');
 
 });
 
@@ -739,6 +763,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/{order}/items', [OrderController::class, 'addItems'])->name('add-items');
         Route::delete('/{order}/items/{item}', [OrderController::class, 'removeItem'])->name('remove-item');
         Route::post('/{order}/send-email', [OrderController::class, 'sendEmail'])->name('send-email');
+        Route::post('/{order}/duplicate', [OrderController::class, 'duplicate'])->name('duplicate');
 
         // DeliveryMethodController
         Route::get('/delivery-methods', [DeliveryMethodController::class, 'index']);
@@ -749,6 +774,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // Управление пользователями
     Route::prefix('users')->name('users.')->group(function () {
         Route::get('/', [UserController::class, 'index']);
+        // Лёгкий список менеджеров для select-фильтров (id+name).
+        // Регистрируем ДО роутов с {user}/{id}, чтобы 'managers' не попал в плейсхолдер.
+        Route::get('/managers', [UserController::class, 'managers'])->name('managers');
         Route::post('/', [UserController::class, 'store']);
         Route::put('/{user}', [UserController::class, 'update']);
         Route::delete('/{user}', [UserController::class, 'destroy']);

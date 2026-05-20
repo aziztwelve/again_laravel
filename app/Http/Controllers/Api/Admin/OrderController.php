@@ -20,6 +20,7 @@ use App\Services\Order\OrderAuthorizationService;
 use App\Services\Order\OrderCreationService;
 use App\Services\Order\OrderDeletionService;
 use App\Services\Order\OrderFilterService;
+use App\Services\Order\OrderHistoryService;
 use App\Services\Order\OrderItemService;
 use App\Services\Order\OrderUpdateService;
 use App\Services\Order\OrderValidationService;
@@ -57,7 +58,17 @@ class OrderController extends Controller
 
         $user = $request->user();
 
-        $query = Order::with(['items.product', 'items.variant.optionValues.option', 'promoCode', 'client.profile', 'address']);
+        $query = Order::with([
+            'items.product',
+            'items.variant.optionValues.option',
+            'items.variant.table_color',
+            'promoCode',
+            'client.profile',
+            'address',
+            'deliveryMethod',
+            'deliveryTarget',
+            'assignedUser.profile',
+        ]);
 
         // Если это клиент - показываем только его заказы
         if ($user instanceof \App\Models\Client) {
@@ -100,7 +111,7 @@ class OrderController extends Controller
         $order->load([
             'items.product.images',
             'items.variant.images',
-            'items.variant.optionValues.option',
+            'items.variant.optionValues.option', 'items.variant.table_color',
             'items.color',
             'client',
             'promoCode',
@@ -292,7 +303,7 @@ class OrderController extends Controller
             DB::commit();
 
             // Загружаем заказ со всеми связями для ответа
-            $order->load(['items.product', 'items.variant.optionValues.option', 'promoCode', 'giftCard', 'address']);
+            $order->load(['items.product', 'items.variant.optionValues.option', 'items.variant.table_color', 'promoCode', 'giftCard', 'address']);
 
             return $this->successResponse(
                 'Заказ успешно создан',
@@ -501,7 +512,7 @@ class OrderController extends Controller
 
             DB::commit();
 
-            $order->load(['items.product', 'items.variant.optionValues.option', 'promoCode', 'client', 'assignedUser.profile', 'assignedUser.roles']);
+            $order->load(['items.product', 'items.variant.optionValues.option', 'items.variant.table_color', 'promoCode', 'client', 'assignedUser.profile', 'assignedUser.roles']);
 
             return $this->successResponse(
                 'Заказ успешно обновлён',
@@ -688,7 +699,7 @@ class OrderController extends Controller
 
             DB::commit();
 
-            $order->load(['items.product', 'items.variant.optionValues.option']);
+            $order->load(['items.product', 'items.variant.optionValues.option', 'items.variant.table_color']);
 
             return $this->successResponse(
                 'Товары успешно добавлены в заказ',
@@ -740,7 +751,7 @@ class OrderController extends Controller
 
             DB::commit();
 
-            $order->load(['items.product', 'items.variant.optionValues.option']);
+            $order->load(['items.product', 'items.variant.optionValues.option', 'items.variant.table_color']);
 
             return $this->successResponse(
                 'Товар успешно удалён из заказа',
@@ -968,6 +979,88 @@ class OrderController extends Controller
             'message' => $message,
             ...$extra,
         ], $status);
+    }
+
+    /**
+     * Дублировать заказ: копируем все поля, позиции и адрес доставки.
+     * История, логи, бонусы, промокоды и платёжные данные не копируются.
+     * Новый заказ получает статус "new", payment_status = "pending".
+     */
+    public function duplicate(Order $order): JsonResponse
+    {
+        // Генерируем уникальный view_token
+        do {
+            $viewToken = bin2hex(random_bytes(16));
+        } while (Order::where('view_token', $viewToken)->exists());
+
+        // Поля, которые НЕ копируем
+        $exclude = [
+            'id', 'order_number', 'view_token',
+            'status', 'payment_status',
+            'payment_id', 'paid_at',
+            'tracking_number',
+            'created_at', 'updated_at',
+        ];
+
+        // Используем getRawOriginal() чтобы получить сырые значения из БД
+        // без cast-преобразований (иначе JSON-поля типа legacy_meta превратятся
+        // в PHP-массивы и MySQL выбросит "Array to string conversion").
+        $raw = collect($order->getRawOriginal())
+            ->except($exclude)
+            ->toArray();
+
+        $raw['status']         = 'new';
+        $raw['payment_status'] = 'pending';
+        $raw['view_token']     = $viewToken;
+        $raw['source']         = 'admin_copy';
+        // Временный уникальный плейсхолдер (NOT NULL constraint),
+        // сразу после INSERT перезаписываем на реальный id.
+        $raw['order_number']   = 'TMP-' . bin2hex(random_bytes(8));
+
+        $newOrder = Order::create($raw);
+
+        // Устанавливаем order_number = id (как в OrderCreationService)
+        $newOrder->forceFill(['order_number' => (string) $newOrder->id])->save();
+
+        // Копируем позиции заказа
+        foreach ($order->items as $item) {
+            $newOrder->items()->create([
+                'product_id'         => $item->product_id,
+                'product_variant_id' => $item->product_variant_id,
+                'color_id'           => $item->color_id,
+                'quantity'           => $item->quantity,
+                'price'              => $item->price,
+                'discount'           => $item->discount,
+                'is_gift'            => $item->is_gift,
+                'promotion_id'       => $item->promotion_id,
+                'legacy_name'        => $item->legacy_name,
+                'legacy_sku'         => $item->legacy_sku,
+                'purchase_price'     => $item->purchase_price,
+            ]);
+        }
+
+        // Копируем адрес доставки
+        if ($order->address) {
+            $newOrder->address()->create(
+                collect($order->address->toArray())
+                    ->except(['id', 'order_id', 'created_at', 'updated_at'])
+                    ->toArray()
+            );
+        }
+
+        // Пишем в историю обоих заказов
+        $historyService = app(OrderHistoryService::class);
+        $historyService->logCopiedFrom($newOrder, $order);
+        $historyService->logCopiedTo($order, $newOrder);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Заказ скопирован',
+            'order'   => [
+                'id'           => $newOrder->id,
+                'order_number' => $newOrder->order_number,
+            ],
+        ]);
     }
 
     /**

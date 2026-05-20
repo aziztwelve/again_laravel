@@ -4,6 +4,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Illuminate\Validation\ValidationException;
 
@@ -50,6 +51,27 @@ return Application::configure(basePath: dirname(__DIR__))
                     'success' => false,
                     'message' => 'Не авторизован',
                 ], 401);
+            }
+        });
+
+        // HttpException-наследники (ThrottleRequestsException → 429,
+        // AccessDeniedHttpException → 403, MethodNotAllowedHttpException → 405 и т.д.)
+        // должны сохранять свой HTTP-статус, иначе ниже общий catchall
+        // превратит их в 500. Регистрируем ПЕРЕД generic `\Exception`.
+        $exceptions->render(function (HttpExceptionInterface $e, Request $request) {
+            if ($request->is('api/*')) {
+                $status = $e->getStatusCode();
+                $defaultMessages = [
+                    403 => 'Доступ запрещён',
+                    405 => 'Метод не поддерживается',
+                    429 => 'Слишком много запросов. Попробуйте позже.',
+                ];
+                return response()->json([
+                    'success' => false,
+                    'message' => $defaultMessages[$status]
+                        ?? ($e->getMessage() ?: 'Ошибка'),
+                    'error' => config('app.debug') ? $e->getMessage() : null,
+                ], $status);
             }
         });
 

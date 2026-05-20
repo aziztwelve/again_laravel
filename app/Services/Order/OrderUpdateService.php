@@ -73,6 +73,36 @@ class OrderUpdateService
                     : $this->formatDeliveryDate($paidAt);
             }
 
+            // Автоматическая синхронизация paid_at со сменой статуса оплаты:
+            //  - переключили на «Оплачено» и paid_at в запросе не пришла,
+            //    а у заказа её ещё нет → ставим текущее время.
+            //  - переключили обратно (не «paid») и paid_at в запросе не пришла →
+            //    очищаем дату оплаты.
+            // Если фронт явно прислал paid_at в этом же запросе — уважаем его значение.
+            if (
+                array_key_exists('payment_status', $filteredData)
+                && ! array_key_exists('paid_at', $data)
+            ) {
+                $newStatus = $filteredData['payment_status'];
+                if ($newStatus instanceof \App\Enums\PaymentStatus) {
+                    $newStatus = $newStatus->value;
+                }
+                $oldStatus = $originalSnapshot['payment_status'];
+                if ($oldStatus instanceof \App\Enums\PaymentStatus) {
+                    $oldStatus = $oldStatus->value;
+                }
+
+                if ($newStatus !== $oldStatus) {
+                    if ($newStatus === 'paid') {
+                        if (empty($order->paid_at)) {
+                            $filteredData['paid_at'] = now()->format('Y-m-d H:i:s');
+                        }
+                    } else {
+                        $filteredData['paid_at'] = null;
+                    }
+                }
+            }
+
             // Определяем delivery_method_id по имени если пришёл объект delivery_method
             if (! isset($filteredData['delivery_method_id']) && isset($data['delivery_method']['name'])) {
                 $method = DeliveryMethod::where('name', $data['delivery_method']['name'])->first();
@@ -255,26 +285,65 @@ class OrderUpdateService
     }
 
     /**
-     * Обновить товары в заказе
+     * Обновить товары в заказе.
+     *
+     * Логика «удалить и пересоздать» опасна для импортированных заказов:
+     * у их позиций product_id = null (товар по SKU не разрешился), и любой
+     * пустой/некорректный $items ранее затирал валидные данные. Поэтому:
+     *
+     *   1) Если на вход пришёл пустой массив (после фильтрации) — НЕ трогаем
+     *      существующие позиции. PUT с пустыми items ничем не отличается от
+     *      PUT без items, кроме как ошибкой клиента.
+     *   2) Принимаем legacy-позиции с legacy_sku/legacy_name, чтобы можно
+     *      было редактировать импортированные заказы, не теряя данные.
      */
     private function updateOrderItems(Order $order, array $items): void
     {
-        // Удаляем старые товары
+        // Отбрасываем мусор: позиция должна иметь либо product_id, либо
+        // хотя бы legacy_sku/legacy_name (импортированные заказы), и
+        // положительное quantity.
+        $valid = array_values(array_filter(
+            $items,
+            function ($item) {
+                if (! is_array($item)) {
+                    return false;
+                }
+                $hasProduct = ! empty($item['product_id']);
+                $hasLegacy = ! empty($item['legacy_sku']) || ! empty($item['legacy_name']);
+                $qty = (int) ($item['quantity'] ?? 0);
+
+                return ($hasProduct || $hasLegacy) && $qty > 0;
+            }
+        ));
+
+        // Защита: пустой/полностью невалидный массив НЕ должен сносить позиции.
+        if (empty($valid)) {
+            Log::warning('OrderUpdate: items payload is empty/invalid, skipping items wipe', [
+                'order_id' => $order->id,
+                'received_count' => count($items),
+            ]);
+
+            return;
+        }
+
         $order->items()->delete();
 
-        // Создаем новые
-        foreach ($items as $item) {
+        foreach ($valid as $item) {
             $order->items()->create([
-                'product_id' => $item['product_id'],
-                'variant_id' => $item['variant_id'] ?? null,
-                'product_variant_id' => $item['product_variant_id'] ?? null,
+                'product_id' => $item['product_id'] ?? null,
+                // В таблице order_items есть только product_variant_id.
+                // Принимаем оба ключа от фронта на случай legacy-кода.
+                'product_variant_id' => $item['product_variant_id']
+                    ?? $item['variant_id']
+                    ?? null,
                 'color_id' => $item['color_id'] ?? null,
+                'legacy_sku' => $item['legacy_sku'] ?? null,
+                'legacy_name' => $item['legacy_name'] ?? null,
                 'quantity' => $item['quantity'],
                 'price' => $item['price'],
             ]);
         }
 
-        // Пересчитываем сумму заказа
         $total = $order->items()->sum(DB::raw('quantity * price'));
         $order->update(['total_amount' => $total]);
     }

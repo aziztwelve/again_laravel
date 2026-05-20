@@ -26,15 +26,18 @@ class OrderCreationService
      * Создать заказ из валидированных данных
      *
      * @param  array  $orderData  Данные заказа
-     * @param  int  $clientId  ID клиента
+     * @param  int|null  $clientId  ID клиента; NULL для гостевого заказа
      * @return Order Созданный заказ
      */
-    public function createOrder(array $orderData, int $clientId): Order
+    public function createOrder(array $orderData, ?int $clientId = null): Order
     {
         $deliveryAddress = $orderData['delivery_address'] ?? [];
         $userData = $orderData['user'] ?? [];
         $recipient = $orderData['recipient'] ?? [];
         $deliveryMethodData = $orderData['delivery_method'] ?? [];
+        // Если в payload пришёл client_id (админ создаёт заказ за клиента) —
+        // он имеет приоритет. Если в payload его нет — берём переданный.
+        // Для гостевого заказа оба источника пусты и client_id остаётся NULL.
         $resolvedClientId = $orderData['client_id'] ?? $clientId;
         $deliveryMethodId = $this->resolveDeliveryMethodId($deliveryMethodData);
 
@@ -42,7 +45,9 @@ class OrderCreationService
             'client_id' => $resolvedClientId,
             'status' => $this->resolveOrderStatus($orderData['status'] ?? null),
             'payment_status' => $this->resolvePaymentStatus($orderData['payment_status'] ?? null),
-            'order_number' => $this->generateOrderNumber(),
+            // Временный плейсхолдер, чтобы пройти UNIQUE constraint на order_number;
+            // после INSERT-а сразу перезаписываем на сам id (см. ниже).
+            'order_number' => 'TMP-'.bin2hex(random_bytes(8)),
             'view_token' => $this->generateViewToken(),
             'total_amount' => $orderData['total'] ?? $this->calculateTotalFromItems($orderData['items'] ?? []),
             'payment_method' => $orderData['payment_method'] ?? null,
@@ -58,14 +63,30 @@ class OrderCreationService
             // Заметки
             'notes' => $orderData['notes'] ?? $deliveryAddress['buyer_comment'] ?? null,
 
-            // Контактная информация
+            // Email покупателя — для гостевых заказов, когда client_id = NULL.
+            // Для авторизованных клиентов оставляем NULL: email есть в client->email.
+            'email' => $userData['email'] ?? null,
+
+            // Контактная информация (поля first_name/last_name/phone сейчас в схеме
+            // orders отсутствуют — реальные данные получателя пишутся в order_addresses
+            // ниже). Оставляем ключи на случай добавления колонок в будущем — Laravel
+            // отфильтрует лишнее через $fillable.
             'first_name' => $userData['first_name'] ?? null,
             'last_name' => $userData['last_name'] ?? null,
             'phone' => $userData['phone'] ?? null,
 
+            // IP/User-agent — полезно для гостевых заказов как анти-фрод сигнал.
+            'ip_address' => $orderData['ip_address'] ?? null,
+            'user_agent' => $orderData['user_agent'] ?? null,
+
             // Временные метки
             'created_at' => now(),
         ]);
+
+        // Единый номер заказа = primary key (например, 67715).
+        // Это упрощает коммуникацию: один и тот же номер в админке, на витрине,
+        // в письмах, в платёжках и в складских отгрузках.
+        $order->forceFill(['order_number' => (string) $order->id])->save();
 
         $hasAddressData = ! empty(array_filter($deliveryAddress, fn ($value) => $value !== null && $value !== ''));
         $hasRecipientData = ! empty(array_filter($recipient, fn ($value) => $value !== null && $value !== ''));
@@ -93,11 +114,6 @@ class OrderCreationService
         $this->historyService->logCreated($order);
 
         return $order;
-    }
-
-    private function generateOrderNumber(): string
-    {
-        return 'ORD-'.strtoupper(uniqid());
     }
 
     /**
@@ -500,12 +516,13 @@ class OrderCreationService
             'status' => $order->status,
             'payment_status' => $order->payment_status,
 
-            // Клиент
+            // Клиент (для гостевых заказов order->client = null — берём из самого заказа)
             'client' => [
                 'id' => $order->client?->id,
-                'name' => $order->first_name.' '.$order->last_name,
-                'email' => $order->client->email ?? null,
-                'phone' => $order->phone,
+                'name' => trim(($order->first_name ?? '').' '.($order->last_name ?? '')) ?: null,
+                'email' => $order->client?->email ?? $order->email,
+                'phone' => $order->phone ?? $order->address?->recipient_phone,
+                'is_guest' => $order->client_id === null,
             ],
 
             // Суммы

@@ -43,6 +43,9 @@ class Order extends Model
         'ip_address',
         'user_agent',
         'notes',
+        // Email покупателя (для гостевых заказов, когда нет client_id).
+        // Для авторизованных клиентов email берётся из связанной модели Client.
+        'email',
 
         'delivery_method_id',
         'delivery_zone_id',

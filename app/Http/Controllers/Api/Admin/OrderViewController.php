@@ -74,8 +74,14 @@ class OrderViewController extends Controller
             ->orderBy('id')
             ->value('id');
 
+        $frontendUrl = rtrim((string) config('app.frontend_url'), '/');
+        $viewOrderUrl = $order->view_token && $frontendUrl
+            ? $frontendUrl.'/orders/'.$order->view_token
+            : null;
+
         return $this->successResponse('Просмотр заказа', [
             'order' => $order,
+            'view_order_url' => $viewOrderUrl,
             'summary' => $summary,
             'client_stats' => $clientStats,
             'history' => $this->formatHistory($order),

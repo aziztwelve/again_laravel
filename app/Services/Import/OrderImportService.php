@@ -518,7 +518,40 @@ class OrderImportService
         // "DD.MM.YYYY HH:MM <event> [пользователем NAME]\n…"
         $historyEntries = $this->parseHistory((string) ($header['history_text'] ?? ''));
 
+        // Уточняем paid_at по последнему событию "Статус оплаты изменен ... на 'Оплачен'".
+        // Если в истории такого события нет — оставляем фолбэк на created_at, выставленный выше.
+        if ($paymentStatus === PaymentStatus::PAID->value) {
+            $paidAt = $this->resolvePaidAtFromHistory($historyEntries);
+            if ($paidAt) {
+                $orderData['paid_at'] = $paidAt;
+            }
+        }
+
         return [$orderData, $addressData, $itemsData, $historyEntries, $totals];
+    }
+
+    /**
+     * Находит время последнего перехода в статус "Оплачен" в распарсенной истории.
+     *
+     * @param  array<int, array<string, mixed>>  $entries
+     */
+    protected function resolvePaidAtFromHistory(array $entries): ?Carbon
+    {
+        $latest = null;
+        foreach ($entries as $entry) {
+            $descr = (string) ($entry['description'] ?? '');
+            if ($descr === '' || mb_strpos($descr, "на 'Оплачен'") === false) {
+                continue;
+            }
+            $when = $entry['created_at'] ?? null;
+            if (!$when instanceof Carbon) {
+                continue;
+            }
+            if ($latest === null || $when->greaterThan($latest)) {
+                $latest = $when;
+            }
+        }
+        return $latest;
     }
 
     /**

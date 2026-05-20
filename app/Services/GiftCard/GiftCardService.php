@@ -3,9 +3,11 @@
 namespace App\Services\GiftCard;
 
 
+use App\Jobs\GiftCard\SendGiftCardJob;
 use App\Models\GiftCard\GiftCard;
 use App\Models\GiftCard\GiftCardTransaction;
 use App\Models\Order;
+use Carbon\Carbon;
 use Exception;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -42,10 +44,17 @@ class GiftCardService
                 'type' => $giftCardData['type'] ?? GiftCard::TYPE_ELECTRONIC,
                 'status' => GiftCard::STATUS_INACTIVE,
 
-                // Отправитель
+                // Отправитель. Для гостевых заказов order->client = null,
+                // поэтому используем nullsafe ?-> и fallback на сам order
+                // (там есть email/phone, заполненные на чекауте).
                 'sender_name' => $giftCardData['sender_name'] ?? null,
-                'sender_email' => $giftCardData['sender_email'] ?? $order->client->email ?? null,
-                'sender_phone' => $giftCardData['sender_phone'] ?? $order->client->profile->phone ?? null,
+                'sender_email' => $giftCardData['sender_email']
+                    ?? $order->client?->email
+                    ?? $order->email,
+                'sender_phone' => $giftCardData['sender_phone']
+                    ?? $order->client?->profile?->phone
+                    ?? $order->phone
+                    ?? $order->address?->recipient_phone,
 
                 // Получатель
                 'recipient_name' => $recipientData['name'],
@@ -257,10 +266,18 @@ class GiftCardService
         $recipientType = $giftCardData['recipient_type'] ?? 'self';
 
         if ($recipientType === 'self') {
+            // Для гостевых заказов нет $order->client / profile —
+            // тянем данные из самого order + связанного order_addresses.
             return [
-                'name' => $order->client->profile->first_name ?? $giftCardData['sender_name'],
-                'email' => $order->client->email,
-                'phone' => $order->client->profile->phone ?? null,
+                'name' => $order->client?->profile?->first_name
+                    ?? $order->first_name
+                    ?? $order->address?->recipient_first_name
+                    ?? $giftCardData['sender_name']
+                    ?? null,
+                'email' => $order->client?->email ?? $order->email,
+                'phone' => $order->client?->profile?->phone
+                    ?? $order->phone
+                    ?? $order->address?->recipient_phone,
             ];
         }
 
@@ -336,6 +353,73 @@ class GiftCardService
             ]);
 
             return now();
+        }
+    }
+
+    /**
+     * Поставить в очередь отправку подарочной карты (немедленно или по расписанию).
+     * Извлечён из OrderController, чтобы переиспользовать в гостевом чекауте.
+     */
+    public function scheduleDelivery(GiftCard $giftCard, array $data): void
+    {
+        // Только электронные карты доставляются — пластиковые отправляются курьером.
+        if ($giftCard->type !== GiftCard::TYPE_ELECTRONIC) {
+            Log::info('Skipping delivery for non-electronic gift card', [
+                'gift_card_id' => $giftCard->id,
+                'type' => $giftCard->type,
+            ]);
+
+            return;
+        }
+
+        $deliveryType = $data['delivery_type'] ?? 'immediate';
+
+        if ($deliveryType === 'immediate') {
+            SendGiftCardJob::dispatch($giftCard->id);
+            Log::info('Gift card scheduled for immediate delivery', ['gift_card_id' => $giftCard->id]);
+
+            return;
+        }
+
+        if (empty($giftCard->scheduled_at)) {
+            Log::warning('Scheduled delivery requested but no scheduled_at date', [
+                'gift_card_id' => $giftCard->id,
+            ]);
+            SendGiftCardJob::dispatch($giftCard->id);
+
+            return;
+        }
+
+        try {
+            $tzCard = $giftCard->timezone ?: 'Europe/Moscow';
+            $scheduledAt = Carbon::parse($giftCard->scheduled_at);
+            $scheduledAtInCardTz = $scheduledAt->copy()->setTimezone($tzCard);
+            $scheduledAtMsk = $tzCard === 'Europe/Moscow'
+                ? $scheduledAtInCardTz
+                : $scheduledAtInCardTz->copy()->setTimezone('Europe/Moscow');
+
+            if ($scheduledAtMsk->copy()->utc()->isFuture()) {
+                SendGiftCardJob::dispatch($giftCard->id)
+                    ->delay($scheduledAtMsk->copy()->utc());
+
+                Log::info('Gift card scheduled (MSK-based)', [
+                    'gift_card_id' => $giftCard->id,
+                    'card_tz' => $tzCard,
+                    'scheduled_at_utc' => $scheduledAtMsk->copy()->utc()->toDateTimeString(),
+                ]);
+            } else {
+                SendGiftCardJob::dispatch($giftCard->id);
+                Log::warning('Scheduled date is in the past (MSK-based), sending immediately', [
+                    'gift_card_id' => $giftCard->id,
+                ]);
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to parse scheduled_at, sending immediately', [
+                'gift_card_id' => $giftCard->id,
+                'scheduled_at' => $giftCard->scheduled_at,
+                'error' => $e->getMessage(),
+            ]);
+            SendGiftCardJob::dispatch($giftCard->id);
         }
     }
 }

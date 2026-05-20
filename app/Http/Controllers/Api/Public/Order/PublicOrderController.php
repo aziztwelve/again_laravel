@@ -100,16 +100,20 @@ class PublicOrderController extends Controller
                 $name .= ' ('.implode(' / ', $extras).')';
             }
 
-            $unitPrice = (float) ($item->unit_price ?? $item->price ?? 0);
+            $unitPrice = (float) ($item->price ?? 0);
+            $discount  = (float) ($item->discount ?? 0);
 
             return [
-                'id' => $item->id,
-                'name' => $name,
-                'sku' => $item->product?->sku ?? $item->variant?->sku ?? $item->legacy_sku ?? null,
-                'quantity' => (int) $item->quantity,
+                'id'         => $item->id,
+                'name'       => $name,
+                'sku'        => $item->product?->sku ?? $item->variant?->sku ?? $item->legacy_sku ?? null,
+                'quantity'   => (int) $item->quantity,
+                'price'      => $unitPrice,
+                'discount'   => $discount,
                 'unit_price' => $unitPrice,
-                'total' => $unitPrice * (int) $item->quantity,
-                'image' => $item->variant?->images?->first()?->url
+                'total'      => $unitPrice * (int) $item->quantity,
+                'is_gift'    => (bool) $item->is_gift,
+                'image'      => $item->variant?->images?->first()?->url
                     ?? $item->product?->images?->first()?->url
                     ?? null,
             ];
@@ -139,7 +143,8 @@ class PublicOrderController extends Controller
             'recipient' => [
                 'name' => $recipientName,
                 'phone' => $recipientPhone,
-                'email' => $order->client?->email,
+                // Для гостевого заказа клиента нет — берём email из самого заказа.
+                'email' => $order->client?->email ?? $order->email,
             ],
             'items' => $items,
             'tracking_number' => $order->tracking_number,

@@ -84,7 +84,12 @@ class PromotionService
         bool $useDiscountInstead = false,
         ?int $giftVariantId = null
     ): void {
-        DB::beginTransaction();
+        // ВНИМАНИЕ: этот метод вызывается из OrderController::store, который уже
+        // обёрнут в DB::beginTransaction(). Открывать здесь ещё одну транзакцию
+        // НЕЛЬЗЯ — это создаст вложенный SAVEPOINT, и если бросить
+        // ValidationException, outer rollback не сможет найти savepoint
+        // (ошибка "SAVEPOINT trans2 does not exist"). lockForUpdate ниже
+        // работает корректно и в рамках уже открытой outer-транзакции.
 
         try {
             // Обновляем заказ
@@ -100,17 +105,59 @@ class PromotionService
             $quantity = $giftProduct?->pivot->quantity ?? 1;
 
             if (! $useDiscountInstead && $giftProduct) {
-                // Если у товара есть варианты — подарок добавляем строго на конкретный variant
+                // Если у товара есть варианты — подарок добавляем строго на конкретный variant.
+                // Stock-проверка и списание делаются АТОМАРНО, под pessimistic lock,
+                // чтобы исключить гонку, при которой два параллельных заказа могут
+                // забрать один и тот же последний экземпляр подарка (см. BUG-1).
                 $variant = null;
                 if ($giftVariantId) {
                     $variant = \App\Models\ProductVariant::where('id', $giftVariantId)
                         ->where('product_id', $giftProductId)
+                        ->lockForUpdate()
                         ->first();
+
+                    if (! $variant) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            'gift_product_variant_id' => ['Выбранный размер недоступен.'],
+                        ]);
+                    }
+
+                    $stock = $variant->stock_quantity;
+                    if ($stock !== null && $stock !== '' && (float) $stock < $quantity) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            'gift_product_variant_id' => ['Выбранного размера нет в наличии.'],
+                        ]);
+                    }
+                } else {
+                    // Подарок-товар без вариантов — блокируем строку самого товара и проверяем остаток.
+                    // Раньше тут не было проверки stock на уровне service (см. BUG-2):
+                    // CreateOrderRequest проверял остаток только у вариантов, и товар-подарок
+                    // без вариантов мог уйти с stock_quantity → -1.
+                    $productLock = \App\Models\Product::where('id', $giftProductId)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if (! $productLock) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            'gift_product_id' => ['Подарок недоступен.'],
+                        ]);
+                    }
+
+                    $stock = $productLock->stock_quantity;
+                    if ($stock !== null && $stock !== '' && (float) $stock < $quantity) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            'gift_product_id' => ['Подарка нет в наличии.'],
+                        ]);
+                    }
                 }
 
                 $order->items()->create([
                     'product_id' => $giftProductId,
                     'product_variant_id' => $variant?->id,
+                    // Денормализуем цвет в OrderItem.color_id (как и у обычных позиций),
+                    // чтобы в админке/сборке заказа было видно, какого цвета подарок.
+                    // Источник правды — product_variants.color_id выбранного варианта.
+                    'color_id' => $variant?->color_id,
                     'quantity' => $quantity,
                     'price' => 0.00, // Подарок бесплатный
                     'discount' => 0.00,
@@ -118,7 +165,8 @@ class PromotionService
                     'promotion_id' => $promotion->id,
                 ]);
 
-                // Списываем остаток с того, что отгружаем (variant если есть, иначе сам товар)
+                // Списываем остаток с того, что отгружаем (variant если есть, иначе сам товар).
+                // Stock уже проверен под lockForUpdate выше — decrement безопасен.
                 if ($variant) {
                     $variant->decrement('stock_quantity', $quantity);
                 } else {
@@ -139,8 +187,6 @@ class PromotionService
             // Увеличиваем счетчик использований
             $promotion->increment('times_used');
 
-            DB::commit();
-
             Log::info('Promotion applied to order', [
                 'promotion_id' => $promotion->id,
                 'order_id' => $order->id,
@@ -149,15 +195,16 @@ class PromotionService
                 'used_discount_instead' => $useDiscountInstead,
             ]);
 
-        } catch (\Exception $e) {
-            DB::rollBack();
-
+        } catch (\Throwable $e) {
             Log::error('Failed to apply promotion to order', [
                 'promotion_id' => $promotion->id,
                 'order_id' => $order->id,
                 'error' => $e->getMessage(),
             ]);
 
+            // Пробрасываем дальше — outer DB::beginTransaction() в OrderController
+            // сам выполнит rollback. ValidationException попадёт в стандартный
+            // Laravel-обработчик и вернёт клиенту 422.
             throw $e;
         }
     }
