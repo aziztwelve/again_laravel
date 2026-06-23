@@ -382,11 +382,12 @@ class OrderCreationService
     public function updateOrderTotals(Order $order, array $totals): void
     {
         $order->update([
-            'discount_amount' => $totals['total_discount'] + ($totals['total_promo_discount'] ?? 0),
+            'discount_amount'      => $totals['total_discount'] + ($totals['total_promo_discount'] ?? 0),
+            'total_items_discount' => $totals['total_discount'] ?? 0,
+            'total_promo_discount' => $totals['total_promo_discount'] ?? 0,
         ]);
 
         $order->updateTotalAmount();
-
     }
 
     /**

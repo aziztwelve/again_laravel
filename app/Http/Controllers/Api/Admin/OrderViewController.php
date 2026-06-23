@@ -8,6 +8,7 @@ use App\Models\Order;
 use App\Services\Order\OrderAuthorizationService;
 use App\Services\Order\OrderCreationService;
 use App\Services\Order\OrderCustomFieldsService;
+use App\Services\Order\OrderDiscountService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -17,6 +18,7 @@ class OrderViewController extends Controller
         protected OrderAuthorizationService $orderAuthorizationService,
         protected OrderCreationService $orderCreationService,
         protected OrderCustomFieldsService $orderCustomFieldsService,
+        protected OrderDiscountService $orderDiscountService,
     ) {}
 
     /**
@@ -38,6 +40,8 @@ class OrderViewController extends Controller
             'items.color',
             'client.profile',
             'promoCode',
+            'appliedDiscount',
+            'appliedDiscounts',
             'promotion',
             'giftCard',
             'address',
@@ -56,6 +60,24 @@ class OrderViewController extends Controller
         ]);
 
         $summary = $this->orderCreationService->getOrderSummary($order);
+
+        // Auto-скидки (от привязки Product↔Discount), сгруппированные по discount_id.
+        // Пишем прямо в order, чтобы фронт получил их вместе с applied_discounts (ручные).
+        $autoDiscounts = $this->orderDiscountService->getAutoDiscountsSummary($order);
+        $order->setAttribute('auto_discounts', $autoDiscounts);
+
+        // Дедупликация: если ручная скидка ID совпадает с auto-скидкой,
+        // не показываем её отдельно (она уже учтена как auto и не стекается
+        // повторно — см. OrderDiscountService::applyManualDiscountsStacked).
+        // Чтобы UI не рисовал две одинаковые строки и не показывал бесполезную
+        // кнопку «Снять» для уже не работающей записи.
+        $autoIds = array_flip(array_map(fn ($d) => (int) $d['id'], $autoDiscounts));
+        if (! empty($autoIds) && $order->relationLoaded('appliedDiscounts')) {
+            $filtered = $order->appliedDiscounts->filter(
+                fn ($d) => ! isset($autoIds[(int) $d->id])
+            )->values();
+            $order->setRelation('appliedDiscounts', $filtered);
+        }
 
         $client = $order->client;
         $clientStats = null;

@@ -19,6 +19,9 @@ class PromoCodeService
         $code = $request->get('code');
         $clientId = $request->get('client_id');
         $productIds = $request->get('product_ids') ?? [];
+        // Если передан order_id — исключаем его из проверки usages
+        // (повторное применение купона к тому же заказу не должно блокироваться).
+        $excludeOrderId = $request->get('order_id') ? (int) $request->get('order_id') : null;
 
         $client = $this->resolveClient($request, $clientId);
         if ($client instanceof \Illuminate\Http\JsonResponse) {
@@ -49,7 +52,11 @@ class PromoCodeService
                 return ['error' => response()->json(['message' => 'Промокод недоступен этому клиенту'], 400)];
             }
 
-            if ($promoCode->usages()->where('client_id', $client->id)->exists()) {
+            $usagesQuery = $promoCode->usages()->where('client_id', $client->id);
+            if ($excludeOrderId) {
+                $usagesQuery->where('order_id', '!=', $excludeOrderId);
+            }
+            if ($usagesQuery->exists()) {
                 return ['error' => response()->json(['message' => 'Этот клиент уже использовал данный промокод'], 400)];
             }
         }

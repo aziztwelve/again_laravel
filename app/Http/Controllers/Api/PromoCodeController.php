@@ -227,6 +227,87 @@ class PromoCodeController extends Controller
         ]);
     }
 
+    /**
+     * Создать копию промокода вместе со связями (товары, клиенты, сегменты).
+     * Код генерируется уникальным, изображение копируется в отдельный файл,
+     * копия создаётся неактивной и со сброшенным счётчиком использований.
+     */
+    public function duplicate(PromoCode $promoCode)
+    {
+        $copy = $promoCode->replicate();
+        $copy->code = $this->buildUniqueCode($promoCode->code);
+        $copy->is_active = false;
+        $copy->times_used = 0;
+
+        // Копируем файл изображения, чтобы удаление одного промокода
+        // не уносило картинку у второго (destroy() удаляет файл с диска).
+        if ($promoCode->image && \Storage::disk('public')->exists($promoCode->image)) {
+            $ext = pathinfo($promoCode->image, PATHINFO_EXTENSION);
+            $newPath = 'promo_codes/' . \Illuminate\Support\Str::random(40) . ($ext ? '.' . $ext : '');
+            \Storage::disk('public')->copy($promoCode->image, $newPath);
+            $copy->image = $newPath;
+        }
+
+        $copy->save();
+
+        // Товары (pivot хранит product_variant_id)
+        $productPivots = [];
+        foreach ($promoCode->products()->get() as $product) {
+            $productPivots[] = [
+                'product_id' => $product->id,
+                'product_variant_id' => $product->pivot->product_variant_id ?? null,
+            ];
+        }
+        foreach ($productPivots as $pivot) {
+            $copy->products()->attach([
+                $pivot['product_id'] => ['product_variant_id' => $pivot['product_variant_id']],
+            ]);
+        }
+
+        // Клиенты
+        $clientIds = $promoCode->clients()->pluck('clients.id')->all();
+        if (!empty($clientIds)) {
+            $copy->clients()->attach($clientIds);
+        }
+
+        // Сегменты (с сохранением auto_apply из pivot)
+        $segmentSync = [];
+        foreach ($promoCode->segments as $segment) {
+            $segmentSync[$segment->id] = ['auto_apply' => $segment->pivot->auto_apply];
+        }
+        if (!empty($segmentSync)) {
+            $copy->segments()->sync($segmentSync);
+        }
+
+        $copy->load('clients');
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Копия промокода создана',
+            'data' => $copy,
+        ], 201);
+    }
+
+    /**
+     * Формирует уникальный код для копии: CODE-COPY, CODE-COPY-2 и т.д.
+     */
+    private function buildUniqueCode(?string $code): string
+    {
+        $base = trim((string) $code);
+        if ($base === '') {
+            $base = 'PROMO';
+        }
+
+        $candidate = $base . '-COPY';
+        $i = 2;
+        while (PromoCode::withTrashed()->where('code', $candidate)->exists()) {
+            $candidate = $base . '-COPY-' . $i;
+            $i++;
+        }
+
+        return $candidate;
+    }
+
 
     public function validate(Request $request)
     {

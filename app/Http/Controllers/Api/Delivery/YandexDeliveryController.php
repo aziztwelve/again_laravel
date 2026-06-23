@@ -51,6 +51,7 @@ class YandexDeliveryController extends Controller
         ]);
 
         $filter = array_filter($validated, fn ($v) => $v !== null);
+        if (isset($filter['geo_id'])) $filter['geo_id'] = (int) $filter['geo_id'];
         $points = $this->service->getPickupPoints($filter);
 
         return response()->json([

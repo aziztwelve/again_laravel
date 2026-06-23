@@ -19,6 +19,56 @@ class ChatsIntegrationController extends Controller
 {
     use HelperTrait;
 
+    public function getTelegramSettings()
+    {
+        try {
+            $bot = TelegraphBot::latest()->first();
+
+            return response()->json([
+                'success' => true,
+                'bot_name' => $bot?->name ?? '',
+                'has_token' => $bot !== null,
+            ]);
+        } catch (Exception $e) {
+            Log::error($e);
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    public function updateTelegramBotName(Request $request)
+    {
+        try {
+            $request->validate([
+                'bot_name' => 'required|string',
+            ]);
+
+            $bot = TelegraphBot::latest()->first();
+
+            if (!$bot) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Бот не найден. Сначала настройте токен.',
+                ]);
+            }
+
+            $bot->update(['name' => $request->get('bot_name')]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Имя бота обновлено.',
+            ]);
+        } catch (Exception $e) {
+            Log::error($e);
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ]);
+        }
+    }
+
     public function telegram_integration(Request $request)
     {
         try {
@@ -53,6 +103,8 @@ class ChatsIntegrationController extends Controller
                     'token' => $telegram_token,
                     'name' => $request->get('bot_name'),
                 ]);
+            } else {
+                $bot->update(['name' => $request->get('bot_name')]);
             }
 
             $bot->registerCommands([

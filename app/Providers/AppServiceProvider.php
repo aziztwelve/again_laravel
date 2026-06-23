@@ -5,6 +5,7 @@ namespace App\Providers;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use App\Services\PaymentService;
@@ -30,9 +31,19 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-
         JsonResource::withoutWrapping();
 
+        // Прокси для всех Http:: запросов — Telegram иначе недоступен с RU-хостинга.
+        // CURLPROXY_SOCKS5_HOSTNAME (7) = socks5h — DNS резолвится на стороне прокси.
+        if (env('TELEGRAM_PROXY')) {
+            Http::globalOptions([
+                'curl' => [
+                    CURLOPT_PROXYTYPE => CURLPROXY_SOCKS5_HOSTNAME,
+                    CURLOPT_PROXY     => '127.0.0.1',
+                    CURLOPT_PROXYPORT => 1080,
+                ],
+            ]);
+        }
     }
 
     public static function setUrlsToHttps(LengthAwarePaginator $paginator): LengthAwarePaginator

@@ -164,7 +164,15 @@ class PromoCode extends Model
 
     public function isApplicableToProduct($productId): bool
     {
-        if ($this->applies_to_all_products) {
+        // Промокод применим ко всем товарам, если type='all' ИЛИ
+        // applies_to_all_products=true. Эти два поля исторически дублируют
+        // друг друга (type добавлен позже миграцией 2025_09_25), и в legacy
+        // данных может быть выставлено только одно из них. Канонический
+        // чек используется в OrderValidationService::isPromoApplicableToProduct,
+        // PromoCodeService и PromoCodeValidationService — здесь делаем так же,
+        // чтобы пересчёт скидок (OrderDiscountService) согласовывался с
+        // первичной привязкой промо.
+        if ($this->type === 'all' || $this->applies_to_all_products) {
             return true;
         }
 

@@ -314,36 +314,23 @@ trait ProductsTrait
 
     public function applyPromoCodeToProduct($model, PromoCode $promoCode): void
     {
-        // Определяем, есть ли у товара скидка
-        $hasDiscount = $model->discount_id || ($model->old_price && $model->old_price > $model->price);
-
         // Проверяем, можно ли применить промокод
-        if (!$promoCode->canApplyToProductWithDiscount($hasDiscount)) {
+        if (!$promoCode->canApplyToProductWithDiscount(false)) {
             $model->promo_code_applicable = false;
             return;
         }
 
-        // Получаем оригинальную и текущую цену
-        $originalPrice = $model->old_price && $model->old_price > $model->price
-            ? $model->old_price
-            : $model->price;
-
+        // Получаем текущую цену (уже после авто-скидки).
         $currentPrice = $model->price;
 
         // Рассчитываем итоговую цену с промокодом
-        $result = $promoCode->calculateFinalPrice($originalPrice, $currentPrice, $hasDiscount);
+        $result = $promoCode->calculateFinalPrice($currentPrice, $currentPrice, false);
 
         // Сохраняем информацию о промокоде
         $model->promo_code_id = $promoCode->id;
         $model->promo_code_discount = $result['promo_discount'];
         $model->price_with_promo = $result['final_price'];
         $model->promo_code_applicable = true;
-
-        // Если промокод заменяет скидку, сохраняем старую цену
-        if ($promoCode->discount_behavior === PromoCode::DISCOUNT_BEHAVIOR_REPLACE && $hasDiscount) {
-            $model->original_discount_replaced = true;
-            $model->price_before_promo = $currentPrice;
-        }
     }
 
 

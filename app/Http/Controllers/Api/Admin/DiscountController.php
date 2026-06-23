@@ -202,5 +202,60 @@ class DiscountController extends Controller
             'message' => 'Скидка успешно удалена',
         ]);
     }
+
+    /**
+     * Создать копию скидки вместе со связями (товары, варианты, категории).
+     * Копия создаётся неактивной, чтобы не влиять на текущее ценообразование
+     * до того, как администратор её проверит и включит вручную.
+     */
+    public function duplicate(Discount $discount)
+    {
+        $copy = $discount->replicate();
+        $copy->name = $this->buildCopyName($discount->name);
+        $copy->is_active = false;
+        $copy->save();
+
+        // Копируем полиморфные связи как есть (attach сам проставит discountable_type).
+        $productIds = $discount->products()->pluck('products.id')->all();
+        $variantIds = $discount->productVariants()->pluck('product_variants.id')->all();
+        $categoryIds = $discount->categories()->pluck('categories.id')->all();
+
+        if (!empty($productIds)) {
+            $copy->products()->attach($productIds);
+        }
+        if (!empty($variantIds)) {
+            $copy->productVariants()->attach($variantIds);
+        }
+        if (!empty($categoryIds)) {
+            $copy->categories()->attach($categoryIds);
+        }
+
+        $copy->load(['categories', 'products']);
+
+        return response()->json([
+            'message' => 'Копия скидки создана',
+            'discount' => new DiscountResource($copy),
+        ], 201);
+    }
+
+    /**
+     * Формирует имя для копии: «Название (копия)», «Название (копия 2)» и т.д.
+     */
+    private function buildCopyName(?string $name): string
+    {
+        $base = trim((string) $name);
+        if ($base === '') {
+            $base = 'Скидка';
+        }
+
+        $candidate = $base . ' (копия)';
+        $i = 2;
+        while (Discount::where('name', $candidate)->exists()) {
+            $candidate = $base . ' (копия ' . $i . ')';
+            $i++;
+        }
+
+        return $candidate;
+    }
 }
 

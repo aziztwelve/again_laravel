@@ -211,6 +211,60 @@ class PromotionController extends Controller
     }
 
     /**
+     * Создать копию акции вместе со связями (товары-триггеры и товары-подарки).
+     * Копия создаётся неактивной и со сброшенным счётчиком использований.
+     */
+    public function duplicate(Promotion $promotion): JsonResponse
+    {
+        $copy = $promotion->replicate();
+        $copy->name = $this->buildCopyName($promotion->name);
+        $copy->is_active = false;
+        $copy->times_used = 0;
+        $copy->save();
+
+        // Товары-триггеры
+        $triggerIds = $promotion->triggerProducts()->pluck('products.id')->all();
+        if (!empty($triggerIds)) {
+            $copy->triggerProducts()->sync($triggerIds);
+        }
+
+        // Товары-подарки (с сохранением quantity из pivot)
+        $giftSync = [];
+        foreach ($promotion->giftProducts as $gift) {
+            $giftSync[$gift->id] = ['quantity' => $gift->pivot->quantity];
+        }
+        if (!empty($giftSync)) {
+            $copy->giftProducts()->sync($giftSync);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Копия акции создана',
+            'data' => $copy->load(['triggerProducts', 'giftProducts']),
+        ], 201);
+    }
+
+    /**
+     * Формирует имя для копии: «Название (копия)», «Название (копия 2)» и т.д.
+     */
+    private function buildCopyName(?string $name): string
+    {
+        $base = trim((string) $name);
+        if ($base === '') {
+            $base = 'Акция';
+        }
+
+        $candidate = $base.' (копия)';
+        $i = 2;
+        while (Promotion::where('name', $candidate)->exists()) {
+            $candidate = $base.' (копия '.$i.')';
+            $i++;
+        }
+
+        return $candidate;
+    }
+
+    /**
      * Получить список товаров для выбора
      */
     public function getProducts(Request $request): JsonResponse

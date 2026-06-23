@@ -1064,6 +1064,103 @@ class OrderController extends Controller
     }
 
     /**
+     * Добавить «ручную» скидку к заказу. Скидки стекаются — повторный вызов
+     * с другим discount_id просто добавит её к уже применённым (не заменит).
+     *
+     * Логика стекинга и порядок (auto → ручные stack → промокод по своему
+     * discount_behavior) инкапсулированы в {@see OrderDiscountService}.
+     */
+    public function applyDiscount(Request $request, Order $order): JsonResponse
+    {
+        $request->validate(['discount_id' => 'required|exists:discounts,id']);
+
+        $discount = \App\Models\Discount::find($request->discount_id);
+        if (! $discount || ! $discount->isValid()) {
+            return response()->json(['success' => false, 'message' => 'Скидка недоступна или истекла'], 400);
+        }
+
+        try {
+            $service = app(\App\Services\Order\OrderDiscountService::class);
+
+            // Уже применена — отдадим осмысленное сообщение, но не падаем.
+            if ($order->appliedDiscounts()->where('discounts.id', $discount->id)->exists()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Скидка «{$discount->name}» уже применена к заказу",
+                ], 409);
+            }
+
+            // Не привязываем скидку, которая в реальности даст 0 ₽:
+            // - discount_type='specific' без привязанных товаров,
+            // - 'category' без подходящих категорий,
+            // - либо та же Discount, что уже работает как auto на всех применимых позициях.
+            $reason = $service->checkApplicabilityReason($order, $discount);
+            if ($reason !== null) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $reason,
+                ], 422);
+            }
+
+            $service->attach($order, $discount);
+
+            $fresh = $order->fresh();
+            app(OrderHistoryService::class)->logUpdated(
+                $order,
+                ['total_amount' => null],
+                ['total_amount' => $fresh->total_amount, 'discount_applied' => $discount->name]
+            );
+
+            return response()->json([
+                'success'  => true,
+                'message'  => "Скидка «{$discount->name}» применена",
+                'discount' => ['id' => $discount->id, 'name' => $discount->name],
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('applyDiscount failed', [
+                'order_id' => $order->id,
+                'error'    => $e->getMessage(),
+                'line'     => $e->getLine(),
+            ]);
+            return response()->json(['success' => false, 'message' => 'Ошибка при применении скидки'], 500);
+        }
+    }
+
+    /**
+     * Снять ручную скидку с заказа.
+     *  - если передан query/body параметр discount_id → снимем только эту;
+     *  - без параметра → снимем все ручные скидки (legacy «снять всё»).
+     * После снятия авто-скидки и промокод переприменяются автоматически.
+     */
+    public function removeDiscount(Request $request, Order $order): JsonResponse
+    {
+        try {
+            $service = app(\App\Services\Order\OrderDiscountService::class);
+            $discountId = $request->input('discount_id');
+
+            if ($discountId) {
+                $ok = $service->detach($order, (int) $discountId);
+                if (! $ok) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Скидка не была применена к заказу',
+                    ], 404);
+                }
+                return response()->json(['success' => true, 'message' => 'Скидка снята']);
+            }
+
+            $service->detachAll($order);
+            return response()->json(['success' => true, 'message' => 'Все скидки сняты']);
+        } catch (\Throwable $e) {
+            Log::error('removeDiscount failed', [
+                'order_id' => $order->id,
+                'error'    => $e->getMessage(),
+            ]);
+            return response()->json(['success' => false, 'message' => 'Ошибка при снятии скидки'], 500);
+        }
+    }
+
+    /**
      * Ответ с ошибками валидации
      */
     private function validationErrorResponse(array $errors): JsonResponse

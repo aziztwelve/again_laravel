@@ -72,6 +72,7 @@ use App\Http\Controllers\Api\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Api\Auth\RegisteredUserController;
 use App\Http\Controllers\Api\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\DeliveryController;
+use App\Http\Controllers\Api\Delivery\YandexDeliveryController;
 use App\Http\Controllers\Api\PromoCodeController;
 use App\Http\Controllers\Api\Public\Cart\CartPriceController;
 use App\Http\Controllers\Api\Public\Catalog\CatalogController;
@@ -185,6 +186,16 @@ Route::prefix('/public')->group(function () {
         // тот же контроллер, что используется в админке.
         Route::get('/methods', [DeliveryMethodController::class, 'get_all_delivery_methods'])
             ->name('methods');
+
+        // Яндекс.Доставка (Platform API)
+        Route::prefix('yandex')->name('yandex.')->group(function () {
+            Route::get('/location', [YandexDeliveryController::class, 'detectLocation'])->name('location');
+            Route::get('/geocode', [YandexDeliveryController::class, 'geocode'])->name('geocode');
+            Route::get('/pvz', [YandexDeliveryController::class, 'pvz'])->name('pvz');
+            Route::post('/calculate', [YandexDeliveryController::class, 'calculate'])->name('calculate');
+            Route::post('/offers/confirm', [YandexDeliveryController::class, 'confirmOffer'])->name('offers.confirm');
+            Route::get('/request/{requestId}', [YandexDeliveryController::class, 'requestInfo'])->name('request.info');
+        });
 
     });
 
@@ -559,6 +570,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::group(['prefix' => 'promo-codes'], function () {
         Route::get('/', [PromoCodeController::class, 'index']);
         Route::post('/', [PromoCodeController::class, 'store']);
+        Route::post('/{promoCode}/duplicate', [PromoCodeController::class, 'duplicate']);
         Route::put('/{promoCode}', [PromoCodeController::class, 'update']);
         Route::delete('/{promoCode}', [PromoCodeController::class, 'destroy']);
     });
@@ -626,6 +638,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
         // Удалить акцию
         Route::delete('/{promotion}', [PromotionController::class, 'destroy'])->name('destroy');
+
+        // Создать копию акции
+        Route::post('/{promotion}/duplicate', [PromotionController::class, 'duplicate'])->name('duplicate');
 
         // Получить список товаров для выбора
         Route::get('/products/list', [PromotionController::class, 'getProducts'])->name('products.list');
@@ -729,6 +744,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::group(['prefix' => 'discounts', 'as' => 'discounts.'], function () {
         Route::get('/', [DiscountController::class, 'index']);
         Route::post('/', [DiscountController::class, 'store']);
+        Route::post('/{discount}/duplicate', [DiscountController::class, 'duplicate'])->name('duplicate');
         Route::put('/{discount}', [DiscountController::class, 'update']);
         Route::delete('/{discount}', [DiscountController::class, 'destroy']);
     });
@@ -764,6 +780,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::delete('/{order}/items/{item}', [OrderController::class, 'removeItem'])->name('remove-item');
         Route::post('/{order}/send-email', [OrderController::class, 'sendEmail'])->name('send-email');
         Route::post('/{order}/duplicate', [OrderController::class, 'duplicate'])->name('duplicate');
+        Route::post('/{order}/apply-discount', [OrderController::class, 'applyDiscount'])->name('apply-discount');
+        Route::delete('/{order}/discount', [OrderController::class, 'removeDiscount'])->name('remove-discount');
 
         // DeliveryMethodController
         Route::get('/delivery-methods', [DeliveryMethodController::class, 'index']);
@@ -870,7 +888,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
         });
 
         Route::prefix('/chats')->group(function () {
+            Route::get('/telegram', [ChatsIntegrationController::class, 'getTelegramSettings']);
             Route::post('/telegram', [ChatsIntegrationController::class, 'telegram_integration']);
+            Route::patch('/telegram/name', [ChatsIntegrationController::class, 'updateTelegramBotName']);
         });
 
         Route::prefix('/vk')->group(function () {

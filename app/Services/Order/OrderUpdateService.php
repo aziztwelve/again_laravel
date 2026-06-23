@@ -344,8 +344,41 @@ class OrderUpdateService
             ]);
         }
 
-        $total = $order->items()->sum(DB::raw('quantity * price'));
+        $itemsTotal = $order->items()->where('is_gift', false)->sum(DB::raw('quantity * price'));
+        $delivery   = (float) ($order->delivery_cost ?? 0);
+        $giftCard   = (float) ($order->gift_card_amount ?? 0);
+        $total = max(0, $itemsTotal + $delivery - $giftCard);
         $order->update(['total_amount' => $total]);
+    }
+
+    /**
+     * Переприменить промокод к заказу заново (например, после снятия ручной скидки).
+     * Чисто снимает текущий промокод (удаляет usage, декрементит times_used)
+     * и применяет тот же код заново к актуальным ценам позиций.
+     */
+    public function reapplyPromoCode(Order $order): void
+    {
+        $promoCode = $order->promo_code_id
+            ? PromoCode::find($order->promo_code_id)
+            : null;
+
+        if (!$promoCode) {
+            return;
+        }
+
+        $code = $promoCode->code;
+
+        // Самостоятельно снимаем старое использование, чтобы applyPromoCodeChange
+        // не создал дубль usage и не инкрементировал times_used повторно.
+        $promoCode->usages()->where('order_id', $order->id)->delete();
+        $promoCode->decrement('times_used');
+
+        // Сбрасываем привязку и в памяти, и в БД, чтобы applyPromoCodeChange
+        // не пошёл по ветке «без изменений» и не пытался ещё раз снять промо.
+        $order->promo_code_id = null;
+        $order->save();
+
+        $this->applyPromoCodeChange($order, $code);
     }
 
     /**
@@ -374,7 +407,8 @@ class OrderUpdateService
             return;
         }
 
-        // Снятие старого промокода (если был)
+        // Снятие старого промокода (если был): удаляем usage, decrement times_used.
+        // Цены и pivot ручных скидок ниже пересчитает OrderDiscountService::recalculate().
         if ($currentPromoId) {
             $oldPromo = PromoCode::find($currentPromoId);
             if ($oldPromo) {
@@ -384,16 +418,12 @@ class OrderUpdateService
                 $oldPromo->decrement('times_used');
             }
             $order->promo_code_id = null;
-            $order->total_promo_discount = 0;
-            // discount_amount хранит сумму всех скидок: items + promo. После снятия промо
-            // оставляем только items-скидку (если была посчитана).
-            $order->discount_amount = $order->total_items_discount ?? 0;
         }
 
-        // Если новый код пустой — просто очистка, ничего не применяем
+        // Если новый код пустой — просто очистка промокода и пересчёт.
         if ($newCode === null) {
             $order->save();
-            $order->updateTotalAmount();
+            $this->resolveDiscountService()->recalculate($order->fresh());
             return;
         }
 
@@ -403,69 +433,127 @@ class OrderUpdateService
             Log::warning('OrderUpdate: client missing, cannot validate promo code', [
                 'order_id' => $order->id,
             ]);
+            // Сохраним состояние с уже отвязанным старым промо.
+            $order->save();
+            $this->resolveDiscountService()->recalculate($order->fresh());
             return;
         }
 
         $validation = $this->promoValidationService->validate($newCode, $client);
         if (! $validation['success']) {
-            // Не падаем — просто не применяем. Контроллер для валидации
-            // нового кода должен использовать /api/promo-codes/validate.
+            // Не падаем — просто не применяем новый. Старый уже отвязан.
+            // Контроллер для валидации нового кода должен использовать /api/promo-codes/validate.
             Log::info('OrderUpdate: promo code validation failed', [
                 'order_id' => $order->id,
                 'code' => $newCode,
                 'reason' => $validation['code'] ?? 'unknown',
             ]);
+            $order->save();
+            $this->resolveDiscountService()->recalculate($order->fresh());
             return;
         }
 
         $promoCode = $validation['promo_code'];
 
-        // Пересчёт промо-скидки по существующим позициям заказа.
-        // Используем ту же логику что и при создании (validateOrderItems с promoCode),
-        // но без проверки фронт-цен — берём как есть из БД.
-        $itemsForValidation = $order->items()
-            ->get()
-            ->map(function ($item) {
-                return [
-                    'product_id' => $item->product_id,
-                    'product_variant_id' => $item->product_variant_id,
-                    'variant_id' => $item->product_variant_id,
-                    'color_id' => $item->color_id,
-                    'quantity' => $item->quantity,
-                    // фронт-цена = текущая цена позиции, чтобы checkPriceMatch не падал
-                    'price' => $item->price,
-                ];
-            })
-            ->all();
-
-        $itemsValidation = $this->orderValidationService
-            ->validateOrderItems($itemsForValidation, $promoCode);
-
-        $totals = $this->orderValidationService
-            ->calculateOrderTotals($itemsValidation['validated_items']);
-
-        $totalPromoDiscount = $totals['total_promo_discount'] ?? 0;
-        $totalItemsDiscount = $totals['total_discount'] ?? 0;
-        $totalDiscountAmount = $totalItemsDiscount + $totalPromoDiscount;
-        $totalOriginal = ($totals['order_total'] ?? 0) + $totalDiscountAmount;
-
-        // Привязка к заказу
+        // Привязываем промокод и фиксируем usage / times_used.
+        // Сами цены позиций, total_items_discount, total_promo_discount, pivot
+        // ручных скидок пересчитает OrderDiscountService::recalculate() ниже —
+        // он уважает discount_behavior (replace/stack/skip) и стекает ручные
+        // скидки поверх auto, что эта функция исторически делала неполно.
         $order->promo_code_id = $promoCode->id;
-        $order->total_amount_original = round($totalOriginal, 2);
-        $order->total_promo_discount = round($totalPromoDiscount, 2);
-        $order->total_items_discount = round($totalItemsDiscount, 2);
-        $order->discount_amount = round($totalDiscountAmount, 2);
         $order->save();
 
-        // Создаём запись использования
         $promoCode->usages()->create([
-            'client_id' => $client->id,
-            'order_id' => $order->id,
-            'discount_amount' => round($totalPromoDiscount, 2),
+            'client_id'       => $client->id,
+            'order_id'        => $order->id,
+            'discount_amount' => 0, // обновим после recalc, когда узнаем точную сумму
         ]);
         $promoCode->increment('times_used');
 
-        $order->updateTotalAmount();
+        $fresh = $order->fresh();
+        $this->resolveDiscountService()->recalculate($fresh);
+        $fresh->refresh();
+
+        // Сохраняем total_amount_original = сумма оригиналов (до скидок).
+        $totalDiscountAmount = (float) ($fresh->total_items_discount ?? 0)
+            + (float) ($fresh->total_promo_discount ?? 0);
+        $totalOriginal = $fresh->items()
+            ->where('is_gift', false)
+            ->sum(\Illuminate\Support\Facades\DB::raw('quantity * price'))
+            + $totalDiscountAmount;
+        $fresh->total_amount_original = round((float) $totalOriginal, 2);
+        $fresh->save();
+
+        // Обновляем discount_amount в записи usage актуальной суммой.
+        $promoCode->usages()
+            ->where('order_id', $order->id)
+            ->update(['discount_amount' => round((float) $fresh->total_promo_discount, 2)]);
+    }
+
+    /**
+     * Лениво резолвим OrderDiscountService, чтобы не плодить циклическую
+     * зависимость в конструкторе (OrderDiscountService -> OrderUpdateService).
+     */
+    private function resolveDiscountService(): \App\Services\Order\OrderDiscountService
+    {
+        return app(\App\Services\Order\OrderDiscountService::class);
+    }
+
+    /**
+     * Переприменить «авто-скидки» (от привязки Product↔Discount) к позициям заказа.
+     *
+     * Используется при снятии ручной скидки или промокода: после того как мы
+     * восстановили item.price до состояния без скидок, нам нужно вернуть на
+     * место авто-скидку, иначе пропадает зачёркнутая цена и блок «Скидка»
+     * исчезает целиком (даже если у товара действительно есть скидка
+     * через Discount-привязку).
+     *
+     * Логика: для каждой не-подарочной позиции грузим product / variant,
+     * прогоняем через applyDiscountToProduct (тот же путь, что в каталоге
+     * и валидации заказа), записываем item.price = price_after_discount,
+     * item.discount = total_discount per unit.
+     *
+     * После выполнения order.total_items_discount пересчитан по items.
+     * Поле total_promo_discount этот метод не трогает.
+     */
+    public function reapplyAutoDiscounts(Order $order): void
+    {
+        $totalItemsDiscount = 0.0;
+
+        foreach ($order->items()->get() as $item) {
+            if ($item->is_gift || ! $item->product_id) {
+                continue;
+            }
+
+            $model = $item->product_variant_id
+                ? \App\Models\ProductVariant::find($item->product_variant_id)
+                : \App\Models\Product::find($item->product_id);
+
+            if (! $model) {
+                continue;
+            }
+
+            // applyDiscountToProduct мутирует модель: model->price становится
+            // ценой после авто-скидки, model->total_discount — размер скидки.
+            $this->orderValidationService->applyDiscountToProduct($model);
+
+            $perUnitDiscount = (float) ($model->total_discount ?? 0);
+            $newPrice = (float) $model->price;
+
+            $item->update([
+                'price'    => round($newPrice, 2),
+                'discount' => round($perUnitDiscount, 2),
+            ]);
+
+            $totalItemsDiscount += $perUnitDiscount * (int) $item->quantity;
+        }
+
+        $order->total_items_discount = round($totalItemsDiscount, 2);
+        $order->discount_amount = round(
+            (float) $order->total_items_discount + (float) ($order->total_promo_discount ?? 0),
+            2
+        );
+        $order->save();
     }
 
     /**

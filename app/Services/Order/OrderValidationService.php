@@ -503,6 +503,79 @@ class OrderValidationService
         return null;
     }
 
+    /**
+     * Пересчитать промо-скидку для позиций существующего заказа.
+     *
+     * Отличие от validateOrderItems:
+     *  item.price уже содержит финальную цену после авто-скидки — не применяем её повторно.
+     *
+     * @param  array     $items       Позиции из БД (order_items)
+     * @param  PromoCode $promoCode   Применяемый промокод
+     */
+    public function recalculatePromoForExistingItems(
+        array $items,
+        PromoCode $promoCode
+    ): array {
+        $validatedItems = [];
+
+        foreach ($items as $item) {
+            $productId = $item['product_id'];
+            $variantId = $item['variant_id'] ?? $item['product_variant_id'] ?? null;
+            $currentPrice = (float) $item['price'];                       // после авто-скидки
+            $autoDiscount = (float) ($item['current_discount'] ?? 0);     // авто-скидка за штуку
+            $originalPrice = round($currentPrice + $autoDiscount, 2);      // оригинал до авто
+            $hasDiscount = $autoDiscount > 0.001;
+            $quantity = (int) $item['quantity'];
+
+            if (! $this->isPromoApplicableToProduct($promoCode, $productId, $variantId)) {
+                // Промо не применяется — позиция остаётся с авто-скидкой как была.
+                $validatedItems[] = [
+                    'product_id'           => $productId,
+                    'variant_id'           => $variantId,
+                    'color_id'             => $item['color_id'] ?? null,
+                    'quantity'             => $quantity,
+                    'original_price'       => $originalPrice,
+                    'price_after_discount' => $currentPrice,
+                    'final_price'          => $currentPrice,
+                    'discount_amount'      => round($autoDiscount, 2),
+                    'promo_discount'       => 0,
+                    'total_discount'       => round($autoDiscount, 2),
+                    'promo_applied'        => false,
+                ];
+                continue;
+            }
+
+            // Учитываем discount_behavior: replace/stack/skip считаются от
+            // правильной базы (оригинал vs текущая цена).
+            $result = $promoCode->calculateFinalPrice($originalPrice, $currentPrice, $hasDiscount);
+            $finalPrice = round((float) $result['final_price'], 2);
+            $promoDiscount = round((float) $result['promo_discount'], 2);
+            // total_discount = оригинал − финальная цена. Для replace это «съест»
+            // авто-скидку (промо применяется к оригиналу), для stack — оставит её
+            // нетронутой (промо поверх), для skip — равно auto без промо.
+            $totalDiscount = round($originalPrice - $finalPrice, 2);
+
+            $validatedItems[] = [
+                'product_id'           => $productId,
+                'variant_id'           => $variantId,
+                'color_id'             => $item['color_id'] ?? null,
+                'quantity'             => $quantity,
+                'original_price'       => $originalPrice,
+                'price_after_discount' => $currentPrice,
+                'final_price'          => $finalPrice,
+                // discount_amount = «не-промо» часть итоговой скидки
+                // (то, что осталось от авто после применения промо по
+                // выбранному discount_behavior).
+                'discount_amount'      => max(0.0, round($totalDiscount - $promoDiscount, 2)),
+                'promo_discount'       => $promoDiscount,
+                'total_discount'       => $totalDiscount,
+                'promo_applied'        => $promoDiscount > 0,
+            ];
+        }
+
+        return $validatedItems;
+    }
+
     public function calculateOrderTotals(array $validatedItems): array
     {
         $orderTotal = 0;

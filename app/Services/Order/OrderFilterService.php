@@ -64,6 +64,16 @@ class OrderFilterService
             $query = $this->search($query, $request->search);
         }
 
+        // Поиск по email клиента (точный like)
+        if ($request->filled('email')) {
+            $query = $this->filterByEmail($query, $request->email);
+        }
+
+        // Поиск по номеру заказа (order_number или id)
+        if ($request->filled('order_number')) {
+            $query = $this->filterByOrderNumber($query, $request->order_number);
+        }
+
         // Узкий поиск по ФИО получателя — только по полям order_addresses.recipient_*.
         // В отличие от общего `search`, не «цепляет» имя/фамилию клиента из его профиля.
         if ($request->filled('recipient_search')) {
@@ -185,21 +195,76 @@ class OrderFilterService
      */
     private function filterByPhone(Builder $query, string $phone): Builder
     {
-        $cleanPhone = preg_replace('/[^0-9]/', '', $phone);
+        $needles = $this->phoneNeedles($phone);
+        if (empty($needles)) {
+            return $query;
+        }
 
-        return $query->where(function ($q) use ($cleanPhone) {
-            // Поиск в client.profile
-            $q->whereHas('client', function ($clientQuery) use ($cleanPhone) {
-                $clientQuery->whereHas('profile', function ($profileQuery) use ($cleanPhone) {
-                    $profileQuery->where('phone', 'like', '%' . $cleanPhone . '%');
+        return $query->where(function ($q) use ($needles) {
+            // Поиск в client.profile (нормализуем колонку на лету)
+            $q->whereHas('client', function ($clientQuery) use ($needles) {
+                $clientQuery->whereHas('profile', function ($profileQuery) use ($needles) {
+                    $profileQuery->where(function ($inner) use ($needles) {
+                        $this->applyPhoneLike($inner, 'phone', $needles);
+                    });
                 });
             });
 
             // Или поиск напрямую в orders, если телефон там тоже хранится
             if (\Schema::hasColumn('orders', 'phone')) {
-                $q->orWhere('orders.phone', 'like', '%' . $cleanPhone . '%');
+                $q->orWhere(function ($inner) use ($needles) {
+                    $this->applyPhoneLike($inner, 'orders.phone', $needles);
+                });
             }
         });
+    }
+
+    /**
+     * Нормализация телефона: оставляем только цифры.
+     */
+    private function normalizePhone(?string $raw): string
+    {
+        return preg_replace('/\D+/', '', (string) $raw) ?? '';
+    }
+
+    /**
+     * Возвращает список LIKE-needle'ов для поиска по телефону.
+     * Для 11-значных RU-номеров отдаёт сразу два варианта (с "7…" и "8…"),
+     * чтобы "+7 912…", "8 912…" и "7912…" считались эквивалентными независимо
+     * от того, как телефон записан в БД.
+     */
+    private function phoneNeedles(string $rawSearch): array
+    {
+        $digits = $this->normalizePhone($rawSearch);
+        if ($digits === '') {
+            return [];
+        }
+
+        $needles = ['%' . $digits . '%'];
+
+        if (strlen($digits) === 11 && in_array($digits[0], ['7', '8'], true)) {
+            $alt = ($digits[0] === '8' ? '7' : '8') . substr($digits, 1);
+            $needles[] = '%' . $alt . '%';
+        }
+
+        return $needles;
+    }
+
+    /**
+     * Подцепить к Builder'у OR-условия "REGEXP_REPLACE(col, '[^0-9]', '') LIKE ?"
+     * для каждого варианта needle.
+     */
+    private function applyPhoneLike(Builder $query, string $column, array $needles): void
+    {
+        if (empty($needles)) {
+            return;
+        }
+
+        $expr = "REGEXP_REPLACE(COALESCE({$column}, ''), '[^0-9]', '')";
+
+        foreach ($needles as $needle) {
+            $query->orWhereRaw("{$expr} LIKE ?", [$needle]);
+        }
     }
 
     /**
@@ -223,31 +288,29 @@ class OrderFilterService
      */
     private function search(Builder $query, string $search): Builder
     {
-        // Очищенная версия для поиска по телефону: только цифры
-        $cleanPhone = preg_replace('/[^0-9]/', '', $search);
+        // Все варианты needle'ов для поиска по телефону (включая 7↔8 для RU)
+        $phoneNeedles = $this->phoneNeedles($search);
 
-        return $query->where(function ($q) use ($search, $cleanPhone) {
+        return $query->where(function ($q) use ($search, $phoneNeedles) {
             // Поиск по ID заказа
             if (is_numeric($search)) {
                 $q->orWhere('orders.id', $search);
             }
 
             // Поиск по данным клиента: email, имя, телефон, адрес из user_profiles
-            $q->orWhereHas('client', function ($clientQuery) use ($search, $cleanPhone) {
-                $clientQuery->where(function ($cq) use ($search, $cleanPhone) {
+            $q->orWhereHas('client', function ($clientQuery) use ($search, $phoneNeedles) {
+                $clientQuery->where(function ($cq) use ($search, $phoneNeedles) {
                     // Email клиента
                     $cq->where('email', 'like', '%' . $search . '%');
 
                     // Данные профиля
-                    $cq->orWhereHas('profile', function ($profileQuery) use ($search, $cleanPhone) {
+                    $cq->orWhereHas('profile', function ($profileQuery) use ($search, $phoneNeedles) {
                         $profileQuery->where('first_name', 'like', '%' . $search . '%')
                             ->orWhere('last_name', 'like', '%' . $search . '%')
                             ->orWhereRaw("CONCAT(first_name, ' ', last_name) like ?", ['%' . $search . '%']);
 
-                        // Телефон (нормализованный)
-                        if (!empty($cleanPhone)) {
-                            $profileQuery->orWhere('phone', 'like', '%' . $cleanPhone . '%');
-                        }
+                        // Телефон: нормализуем обе стороны (REGEXP_REPLACE убирает все нецифры)
+                        $this->applyPhoneLike($profileQuery, 'phone', $phoneNeedles);
 
                         // Общий адрес клиента
                         $profileQuery->orWhere('address', 'like', '%' . $search . '%');
@@ -256,7 +319,7 @@ class OrderFilterService
             });
 
             // Поиск по адресу доставки заказа (order_addresses)
-            $q->orWhereHas('address', function ($addrQuery) use ($search, $cleanPhone) {
+            $q->orWhereHas('address', function ($addrQuery) use ($search, $phoneNeedles) {
                 $addrQuery->where('country', 'like', '%' . $search . '%')
                     ->orWhere('region', 'like', '%' . $search . '%')
                     ->orWhere('city', 'like', '%' . $search . '%')
@@ -265,15 +328,48 @@ class OrderFilterService
                     ->orWhere('recipient_first_name', 'like', '%' . $search . '%')
                     ->orWhere('recipient_last_name', 'like', '%' . $search . '%');
 
-                // Телефон получателя (нормализованный)
-                if (!empty($cleanPhone)) {
-                    $addrQuery->orWhere('recipient_phone', 'like', '%' . $cleanPhone . '%');
-                }
+                // Телефон получателя: нормализуем обе стороны
+                $this->applyPhoneLike($addrQuery, 'recipient_phone', $phoneNeedles);
             });
 
             // Поиск по другим полям в orders
             if (\Schema::hasColumn('orders', 'notes')) {
                 $q->orWhere('orders.notes', 'like', '%' . $search . '%');
+            }
+        });
+    }
+
+    /**
+     * Фильтр по email клиента (ищет по clients.email и orders.email для гостей)
+     */
+    private function filterByEmail(Builder $query, string $email): Builder
+    {
+        $needle = '%' . trim($email) . '%';
+
+        return $query->where(function ($q) use ($needle) {
+            // Email авторизованного клиента
+            $q->whereHas('client', fn ($cq) => $cq->where('email', 'like', $needle));
+
+            // Email гостевого заказа (хранится прямо в orders.email)
+            $q->orWhere('orders.email', 'like', $needle);
+        });
+    }
+
+    /**
+     * Фильтр по номеру заказа (order_number) или ID.
+     * Ищет по точному совпадению order_number и по числовому ID.
+     */
+    private function filterByOrderNumber(Builder $query, string $value): Builder
+    {
+        $value = trim($value);
+
+        return $query->where(function ($q) use ($value) {
+            // Поиск по order_number (like, чтобы работал частичный ввод)
+            $q->where('order_number', 'like', '%' . $value . '%');
+
+            // Числовой ID
+            if (is_numeric($value)) {
+                $q->orWhere('orders.id', (int) $value);
             }
         });
     }
@@ -440,6 +536,8 @@ class OrderFilterService
             'min_amount' => 'nullable|numeric|min:0',
             'max_amount' => 'nullable|numeric|min:0|gte:min_amount',
             'search' => 'nullable|string|max:255',
+            'email' => 'nullable|string|max:255',
+            'order_number' => 'nullable|string|max:100',
             'recipient_search' => 'nullable|string|max:255',
             'delivery_method_id' => 'nullable|integer|exists:delivery_methods,id',
             // Спец-значение 'null' допускаем как маркер «без менеджера», поэтому
@@ -447,7 +545,7 @@ class OrderFilterService
             'assigned_user_id' => 'nullable|string',
             'sort_by' => 'nullable|string|in:id,created_at,total_amount,status,payment_status,city_name,country_code',
             'sort_order' => 'nullable|string|in:asc,desc',
-            'per_page' => 'nullable|integer|min:1|max:100',
+            'per_page' => 'nullable|integer|min:1|max:200',
         ]);
     }
 }

@@ -133,9 +133,17 @@ class PublicOrderController extends Controller
             ],
             'payment_method' => $order->payment_method,
             'total_amount' => (float) $order->total_amount,
-            'discount_amount' => (float) $order->discount_amount
-                + (float) $order->total_promo_discount
-                + (float) $order->total_items_discount,
+            // discount_amount уже = total_items_discount + total_promo_discount
+            // (см. OrderDiscountService::recalculate), складывать компоненты
+            // повторно нельзя — выдаст удвоенную скидку в публичном виде.
+            'discount_amount' => (float) $order->discount_amount,
+            // Раскладка скидки на «обычные» (auto+ручные) и промокод —
+            // витрина показывает их отдельными строками в блоке «Итого».
+            'items_discount' => (float) ($order->total_items_discount ?? 0),
+            'promo_discount' => (float) ($order->total_promo_discount ?? 0),
+            'promo_code'     => $order->promoCode ? [
+                'code' => $order->promoCode->code,
+            ] : null,
             'delivery_cost' => (float) $order->delivery_cost,
             'delivery_method' => $deliveryMethodLabel,
             'delivery_target' => $deliveryTargetLabel,

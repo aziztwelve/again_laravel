@@ -9,4 +9,8 @@ class DeliveryServiceSetting extends Model
     protected $table = 'delivery_services_settings';
 
     protected $guarded = ["id"];
+
+    protected $casts = [
+        'settings' => 'array',
+    ];
 }

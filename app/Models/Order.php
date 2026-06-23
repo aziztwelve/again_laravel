@@ -29,6 +29,7 @@ class Order extends Model
         'total_promo_discount',
         'total_items_discount',
         'promo_code_id',
+        'applied_discount_id',
         'promotion_id',
         'payment_method',
         'payment_provider',
@@ -246,6 +247,36 @@ class Order extends Model
         return $this->belongsTo(PromoCode::class);
     }
 
+    /**
+     * «Ручная» скидка, применённая админом к заказу через кнопку «Скидка».
+     * NULL означает что никакой ручной скидки нет (только авто-скидки от привязки).
+     *
+     * @deprecated 2026-05-22 — заказ может иметь несколько ручных скидок.
+     *   Используйте {@see appliedDiscounts()}; колонка `applied_discount_id`
+     *   сохраняется для обратной совместимости и хранит первую (или последнюю
+     *   в зависимости от логики) скидку из pivot-а.
+     */
+    public function appliedDiscount(): BelongsTo
+    {
+        return $this->belongsTo(Discount::class, 'applied_discount_id');
+    }
+
+    /**
+     * Все ручные скидки, применённые к заказу администратором.
+     * Стекаются поверх авто-скидок (Product↔Discount); промокод применяется
+     * поверх результата согласно своему `discount_behavior`.
+     *
+     * pivot.applied_amount — суммарная сумма скидки по этому заказу
+     * (для UI/истории; источник истины для цен — order_items.price/discount).
+     */
+    public function appliedDiscounts(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(Discount::class, 'order_applied_discounts')
+            ->withPivot(['applied_amount', 'position'])
+            ->withTimestamps()
+            ->orderBy('order_applied_discounts.position');
+    }
+
     public function promotion()
     {
         return $this->belongsTo(Promotion::class);
@@ -289,7 +320,14 @@ class Order extends Model
 
     public function updateTotalAmount(): void
     {
-        $this->total_amount = $this->items()->sum(DB::raw('quantity * price'));
+        // item.price всегда хранит финальную цену (после всех скидок и промокода).
+        // Поэтому total = sum(qty * price) + delivery - gift_card.
+        // promo_discount и items_discount уже учтены в item.price — не вычитаем повторно.
+        $itemsTotal = $this->items()->where('is_gift', false)->sum(DB::raw('quantity * price'));
+        $delivery   = (float) ($this->delivery_cost ?? 0);
+        $giftCard   = (float) ($this->gift_card_amount ?? 0);
+
+        $this->total_amount = max(0, $itemsTotal + $delivery - $giftCard);
         $this->save();
     }
 
