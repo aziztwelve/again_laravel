@@ -11,16 +11,28 @@ use Exception;
 
 class EmailAdapter extends AbstractMessageAdapter
 {
-    protected MailSetting $settings;
+    protected ?MailSetting $settings = null;
 
-    public function __construct()
+    /**
+     * Лениво загружает настройки почты. Бросает понятное исключение, только
+     * если настроек нет И они реально нужны (при отправке письма).
+     *
+     * Раньше загрузка/проверка были в конструкторе, из-за чего адаптер падал
+     * с TypeError при любом резолве (включая boot консольных команд и тесты
+     * с RefreshDatabase, когда в БД ещё нет mail_settings).
+     */
+    protected function settings(): MailSetting
     {
-        $this->settings = MailSetting::first();
+        if ($this->settings === null) {
+            $this->settings = MailSetting::first();
 
-        if (!$this->settings) {
-            Log::error("EmailAdapter: MailSettings not found in database");
-            throw new Exception("Email settings не найдены в БД");
+            if (!$this->settings) {
+                Log::error("EmailAdapter: MailSettings not found in database");
+                throw new Exception("Email settings не найдены в БД");
+            }
         }
+
+        return $this->settings;
     }
 
     /**
@@ -40,7 +52,7 @@ class EmailAdapter extends AbstractMessageAdapter
 
             Mail::html($htmlContent, function ($message) use ($to, $attachments) {
                 $message->to($to)
-                    ->from($this->settings->from_address)
+                    ->from($this->settings()->from_address)
                     ->subject('Re: Ответ от поддержки');
 
                 // ← ДОБАВИЛИ: Прикрепляем файлы
