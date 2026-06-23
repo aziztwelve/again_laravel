@@ -41,6 +41,7 @@ class Order extends Model
         'utm_campaign',
         'utm_content',
         'utm_term',
+        'utm_link_id',
         'ip_address',
         'user_agent',
         'notes',
@@ -215,6 +216,11 @@ class Order extends Model
     public function lead()
     {
         return $this->belongsTo(Lead::class);
+    }
+
+    public function utmLink(): BelongsTo
+    {
+        return $this->belongsTo(UtmLink::class, 'utm_link_id');
     }
 
     public function items()

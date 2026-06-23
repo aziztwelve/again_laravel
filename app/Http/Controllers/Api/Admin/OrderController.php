@@ -150,6 +150,14 @@ class OrderController extends Controller
 
             $validated = $request->validated();
 
+            // UTM-атрибуция из куки utm_link_id, если она есть в запросе
+            // (см. docs/tasks/utm-tracking.md, решение #2).
+            $cookieUtmLinkId = $request->cookie('utm_link_id');
+            if (is_numeric($cookieUtmLinkId)
+                && \App\Models\UtmLink::whereKey((int) $cookieUtmLinkId)->exists()) {
+                $validated['utm_link_id'] = (int) $cookieUtmLinkId;
+            }
+
             if ($authUser instanceof Client) {
                 $validated['client_id'] = $authUser->id;
                 $orderClient = $authUser;

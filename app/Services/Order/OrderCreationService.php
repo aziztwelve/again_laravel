@@ -79,6 +79,11 @@ class OrderCreationService
             'ip_address' => $orderData['ip_address'] ?? null,
             'user_agent' => $orderData['user_agent'] ?? null,
 
+            // UTM-атрибуция: метка берётся из куки utm_link_id (см.
+            // docs/tasks/utm-tracking.md, решение #2). NULL если перехода по
+            // UTM-ссылке не было.
+            'utm_link_id' => $orderData['utm_link_id'] ?? null,
+
             // Временные метки
             'created_at' => now(),
         ]);

@@ -62,6 +62,10 @@ use App\Http\Controllers\Api\Admin\ThirdPartyIntegrations\Vk\VKWebhookController
 use App\Http\Controllers\Api\Admin\ThirdPartyIntegrations\VKSettingsController;
 use App\Http\Controllers\Api\Admin\UnitController;
 use App\Http\Controllers\Api\Admin\UserController;
+use App\Http\Controllers\Api\Admin\Utm\MarketingChannelController;
+use App\Http\Controllers\Api\Admin\Utm\UtmAnalyticsController;
+use App\Http\Controllers\Api\Admin\Utm\UtmLinkController;
+use App\Http\Controllers\Api\Admin\Utm\UtmTagController;
 use App\Http\Controllers\Api\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Api\Auth\ConfirmablePasswordController;
 use App\Http\Controllers\Api\Auth\EmailVerificationNotificationController;
@@ -657,6 +661,30 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/analytics', [CartAnalyticsController::class, 'cartAnalytics']);
     });
 
+    // UTM-метки: каналы маркетинга, теги, метки (см. docs/tasks/utm-tracking.md)
+    Route::prefix('/utm')->name('utm.')->group(function () {
+        // Каналы маркетинга
+        Route::get('/marketing-channels', [MarketingChannelController::class, 'index']);
+        Route::post('/marketing-channels', [MarketingChannelController::class, 'store']);
+        Route::get('/marketing-channels/{marketingChannel}', [MarketingChannelController::class, 'show']);
+        Route::put('/marketing-channels/{marketingChannel}', [MarketingChannelController::class, 'update']);
+        Route::delete('/marketing-channels/{marketingChannel}', [MarketingChannelController::class, 'destroy']);
+
+        // Теги
+        Route::get('/tags', [UtmTagController::class, 'index']);
+        Route::post('/tags', [UtmTagController::class, 'store']);
+        Route::get('/tags/{utmTag}', [UtmTagController::class, 'show']);
+        Route::put('/tags/{utmTag}', [UtmTagController::class, 'update']);
+        Route::delete('/tags/{utmTag}', [UtmTagController::class, 'destroy']);
+
+        // UTM-метки
+        Route::get('/links', [UtmLinkController::class, 'index']);
+        Route::post('/links', [UtmLinkController::class, 'store']);
+        Route::get('/links/{utmLink}', [UtmLinkController::class, 'show']);
+        Route::put('/links/{utmLink}', [UtmLinkController::class, 'update']);
+        Route::delete('/links/{utmLink}', [UtmLinkController::class, 'destroy']);
+    });
+
     // Financial info api
     Route::prefix('/analytics')->group(function () {
         Route::get('/financial-summary-sales', [FinancialAnalyticsController::class, 'financialSummarySales']);
@@ -666,6 +694,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/report/dashboard', [FinancialAnalyticsController::class, 'report_dashboard']);
         Route::get('/products/income', [FinancialAnalyticsController::class, 'income_by_products']);
         Route::get('/chart', [FinancialAnalyticsController::class, 'weeklyAmount']);
+        // UTM-аналитика: сводная таблица + pie + chart
+        Route::get('/utm', [UtmAnalyticsController::class, 'index']);
     });
 
     // Categories

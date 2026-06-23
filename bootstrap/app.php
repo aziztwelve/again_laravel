@@ -21,6 +21,14 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission' => \App\Http\Middleware\CheckPermission::class,
         ]);
 
+        // Кука UTM-атрибуции ставится web-роутом /go/{slug}, а читается
+        // api-роутом чекаута. Исключаем её из шифрования, чтобы значение
+        // (id метки) одинаково читалось в обеих middleware-группах.
+        // См. docs/tasks/utm-tracking.md.
+        $middleware->encryptCookies(except: [
+            'utm_link_id',
+        ]);
+
         //   Stateful API для Sanctum
 //        $middleware->statefulApi();
     })

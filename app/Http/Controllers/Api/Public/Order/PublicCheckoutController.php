@@ -76,6 +76,10 @@ class PublicCheckoutController extends Controller
             $validated['ip_address'] = $request->ip();
             $validated['user_agent'] = $request->userAgent();
 
+            // UTM-атрибуция: метка пришла в куке от редирект-трекера /go/{slug}
+            // (см. docs/tasks/utm-tracking.md, решение #2).
+            $validated['utm_link_id'] = $this->resolveUtmLinkId($request);
+
             // 1. Промокод
             $promoCode = null;
             if (! empty($validated['promo_code'])) {
@@ -296,5 +300,22 @@ class PublicCheckoutController extends Controller
             'message' => 'Обнаружены ошибки при проверке товаров в корзине',
             'errors' => $errors,
         ], 422);
+    }
+
+    /**
+     * Достаёт id UTM-метки из куки utm_link_id (её ставит редирект-трекер
+     * /go/{slug}). Возвращает NULL, если куки нет или метка не существует.
+     */
+    private function resolveUtmLinkId(Request $request): ?int
+    {
+        $cookieValue = $request->cookie('utm_link_id');
+
+        if (! is_numeric($cookieValue)) {
+            return null;
+        }
+
+        $linkId = (int) $cookieValue;
+
+        return \App\Models\UtmLink::whereKey($linkId)->exists() ? $linkId : null;
     }
 }
