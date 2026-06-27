@@ -462,4 +462,81 @@ class AbandonedCartTest extends TestCase
         $this->assertNotNull($row);
         $this->assertGreaterThanOrEqual(2, $row['versions_count']);
     }
+
+    // ===================== Промокод на шаге 2 (фаза 2) =====================
+
+    private function enablePromo(): void
+    {
+        config([
+            'abandoned_cart.promo.enabled' => true,
+            'abandoned_cart.promo.step' => 2,
+            'abandoned_cart.promo.discount_type' => 'percentage',
+            'abandoned_cart.promo.discount_amount' => 10,
+            'abandoned_cart.promo.ttl_days' => 7,
+            'abandoned_cart.promo.code_prefix' => 'CART',
+        ]);
+    }
+
+    public function test_step2_issues_promo_code_when_enabled(): void
+    {
+        Queue::fake();
+        $this->enablePromo();
+
+        $client = $this->client(['email' => 'promo@example.com']);
+        // abandoned_at 73ч назад → due и шаг 1 (0ч), и шаг 2 (48ч).
+        $cart = $this->cart($client, 'abandoned', now()->subHours(73), [
+            'abandoned_at' => now()->subHours(73),
+            'recovery_token' => 'tok'.uniqid(),
+        ]);
+
+        $this->service()->processChain();
+
+        $cart->refresh();
+        $this->assertNotNull($cart->recovery_promo_code);
+        $this->assertDatabaseHas('promo_codes', [
+            'code' => $cart->recovery_promo_code,
+            'max_uses' => 1,
+            'is_active' => 1,
+            'applies_to_all_clients' => 1,
+        ]);
+    }
+
+    public function test_promo_code_not_regenerated_on_repeat(): void
+    {
+        Queue::fake();
+        $this->enablePromo();
+
+        $client = $this->client(['email' => 'promo2@example.com']);
+        $cart = $this->cart($client, 'abandoned', now()->subHours(73), [
+            'abandoned_at' => now()->subHours(73),
+            'recovery_token' => 'tok'.uniqid(),
+        ]);
+
+        $this->service()->processChain();
+        $cart->refresh();
+        $code = $cart->recovery_promo_code;
+        $this->assertNotNull($code);
+        $this->assertSame(1, \App\Models\PromoCode::where('code', $code)->count());
+
+        // Повторный прогон не плодит новые промокоды (шаг 2 уже отправлен).
+        $this->service()->processChain();
+        $this->assertSame(1, \App\Models\PromoCode::where('code', $code)->count());
+    }
+
+    public function test_no_promo_code_when_disabled(): void
+    {
+        Queue::fake();
+        config(['abandoned_cart.promo.enabled' => false]);
+
+        $client = $this->client(['email' => 'promo3@example.com']);
+        $cart = $this->cart($client, 'abandoned', now()->subHours(73), [
+            'abandoned_at' => now()->subHours(73),
+            'recovery_token' => 'tok'.uniqid(),
+        ]);
+
+        $this->service()->processChain();
+
+        $cart->refresh();
+        $this->assertNull($cart->recovery_promo_code);
+    }
 }
