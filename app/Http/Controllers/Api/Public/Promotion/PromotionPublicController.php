@@ -39,7 +39,7 @@ class PromotionPublicController extends Controller
 
         $validated = $validator->validated();
 
-        $promotions = $this->promotionService->findApplicablePromotions(
+        $promotions = $this->promotionService->findResolvedPromotions(
             $validated['items'],
             $validated['total']
         );
@@ -64,6 +64,7 @@ class PromotionPublicController extends Controller
                     'name' => $promotion->name,
                     'description' => $promotion->description,
                     'allow_promo_codes' => $promotion->allow_promo_codes,
+                    'is_stackable' => (bool) $promotion->is_stackable,
                     'min_purchase_amount' => $promotion->min_purchase_amount,
                     'priority' => $promotion->priority,
                     'gift_products' => $promotion->giftProducts->map(function ($product) {
@@ -111,6 +112,7 @@ class PromotionPublicController extends Controller
                     'description' => $promotion->description,
                     'min_purchase_amount' => $promotion->min_purchase_amount,
                     'allow_promo_codes' => $promotion->allow_promo_codes,
+                    'is_stackable' => (bool) $promotion->is_stackable,
                     'starts_at' => $promotion->starts_at,
                     'ends_at' => $promotion->ends_at,
                     'trigger_products' => $promotion->triggerProducts->map(function ($product) {

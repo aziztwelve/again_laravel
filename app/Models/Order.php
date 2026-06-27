@@ -42,6 +42,7 @@ class Order extends Model
         'utm_content',
         'utm_term',
         'utm_link_id',
+        'cart_id',
         'ip_address',
         'user_agent',
         'notes',
@@ -221,6 +222,11 @@ class Order extends Model
     public function utmLink(): BelongsTo
     {
         return $this->belongsTo(UtmLink::class, 'utm_link_id');
+    }
+
+    public function cart(): BelongsTo
+    {
+        return $this->belongsTo(Cart::class);
     }
 
     public function items()

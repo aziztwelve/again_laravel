@@ -20,11 +20,11 @@ class CatalogService
                 $q->where('show_in_catalog_menu', true)
                     ->orderBy('menu_order', 'asc')
                     ->orderBy('name', 'asc')
-                    ->select(['id', 'name', 'slug', 'parent_id']);
+                    ->select(['id', 'name', 'slug', 'parent_id', 'is_new_product', 'is_coming_soon']);
             }])
             ->orderBy('menu_order', 'asc')
             ->orderBy('name', 'asc')
-            ->get(['id', 'name', 'slug']);
+            ->get(['id', 'name', 'slug', 'is_new_product', 'is_coming_soon']);
     }
 
 
@@ -80,6 +80,10 @@ class CatalogService
             ]);
 
 
+        // Категория «Скоро в продаже»: показывать товары без остатка,
+        // подбираемые по флагу (минуя pivot-привязку).
+        $isComingSoon = false;
+
         // Фильтр по категории (ID или SLUG)
         if (!empty($filters['category_id']) || !empty($filters['category_slug'])) {
 
@@ -96,6 +100,11 @@ class CatalogService
                 if ($category->is_new_product) {
                     // Показываем ВСЕ товары с меткой "новинка"
                     $query->where('is_new', true);
+                } elseif ($category->is_coming_soon) {
+                    // «Скоро в продаже»: только товары без остатка (is_active уже = true).
+                    // Товар автоматически уходит из категории, как только появляется остаток.
+                    $isComingSoon = true;
+                    $query->where('stock_quantity', '<=', 0);
                 } else {
                     // Обычная логика - товары привязанные к категории
                     $query->whereHas('categories', function ($q) use ($category) {
@@ -149,11 +158,17 @@ class CatalogService
             });
         }
 
-        // Сортировка: сперва товары в наличии, затем по выбранному полю
+        // Сортировка: сперва товары в наличии, затем по выбранному полю.
+        // Для категории «Скоро в продаже» все товары без остатка — сортируем
+        // только по выбранному полю (по умолчанию display_order).
         $sortBy = $filters['sort_by'] ?? 'display_order';
         $sortOrder = $filters['sort_order'] ?? 'asc';
-        $query->orderByRaw('CASE WHEN stock_quantity > 0 THEN 0 ELSE 1 END')
-            ->orderBy($sortBy, $sortOrder);
+
+        if (!$isComingSoon) {
+            $query->orderByRaw('CASE WHEN stock_quantity > 0 THEN 0 ELSE 1 END');
+        }
+
+        $query->orderBy($sortBy, $sortOrder);
 
         return $query;
     }

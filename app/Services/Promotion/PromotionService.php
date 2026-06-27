@@ -45,6 +45,45 @@ class PromotionService
     }
 
     /**
+     * Свести список применимых акций к итоговому набору по правилам стекирования.
+     *
+     * Семантика флага is_stackable:
+     *   - Если есть хотя бы одна стекируемая применимая акция — применяются ВСЕ
+     *     стекируемые; невзаимные (is_stackable=false) при этом пропускаются
+     *     (они «эксклюзивные» и не комбинируются).
+     *   - Если стекируемых акций нет — берётся одна с наибольшим priority
+     *     (полностью совместимо со старым поведением «одна акция на заказ»).
+     *
+     * На вход ожидается коллекция, отсортированная по priority desc
+     * (как возвращает findApplicablePromotions).
+     */
+    public function resolveApplicablePromotions(Collection $applicable): Collection
+    {
+        if ($applicable->isEmpty()) {
+            return collect();
+        }
+
+        $stackable = $applicable->filter(fn (Promotion $p) => $p->isStackable())->values();
+
+        if ($stackable->isNotEmpty()) {
+            return $stackable;
+        }
+
+        // Стекируемых нет — старое поведение: одна акция по приоритету.
+        return $applicable->take(1)->values();
+    }
+
+    /**
+     * Найти и сразу свести применимые акции к итоговому набору.
+     */
+    public function findResolvedPromotions(array $cartItems, float $cartTotal): Collection
+    {
+        return $this->resolveApplicablePromotions(
+            $this->findApplicablePromotions($cartItems, $cartTotal)
+        );
+    }
+
+    /**
      * Проверить, применима ли акция к корзине
      */
     protected function isPromotionApplicable(Promotion $promotion, array $cartItems, float $cartTotal): bool
@@ -180,6 +219,7 @@ class PromotionService
                 'order_id' => $order->id,
                 'client_id' => $order->client_id,
                 'gift_product_id' => $giftProductId,
+                'gift_product_variant_id' => $useDiscountInstead ? null : $giftVariantId,
                 'gift_quantity' => $quantity,
                 'used_discount_instead' => $useDiscountInstead,
             ]);
@@ -210,6 +250,66 @@ class PromotionService
     }
 
     /**
+     * Применить несколько акций к заказу (накопительные/стекируемые подарки).
+     *
+     * Принимает массив выборов вида:
+     *   [
+     *     ['promotion_id' => int, 'gift_product_id' => ?int,
+     *      'gift_product_variant_id' => ?int, 'use_discount_instead' => bool],
+     *     ...
+     *   ]
+     *
+     * Каждая акция применяется отдельной записью (свой подарок + своя запись в
+     * promotion_usages + инкремент times_used). Вызывается внутри outer-транзакции
+     * контроллера заказа — собственную транзакцию НЕ открываем (см. коммент в
+     * applyPromotionToOrder).
+     *
+     * Дубли подарков разрешены: один и тот же товар-подарок от двух акций даёт
+     * две отдельные подарочные позиции (каждая со своим promotion_id).
+     */
+    public function applyPromotionsToOrder(Order $order, array $selections): void
+    {
+        foreach ($selections as $selection) {
+            $promotionId = (int) ($selection['promotion_id'] ?? 0);
+            if (! $promotionId) {
+                continue;
+            }
+
+            $promotion = Promotion::find($promotionId);
+
+            if (! $promotion) {
+                Log::warning('Promotion not found (multi)', ['promotion_id' => $promotionId]);
+
+                continue;
+            }
+
+            if (! $promotion->isActive()) {
+                Log::warning('Promotion is not active (multi)', ['promotion_id' => $promotionId]);
+
+                continue;
+            }
+
+            $useDiscountInstead = (bool) ($selection['use_discount_instead'] ?? false);
+            $giftProductId = $selection['gift_product_id'] ?? null;
+
+            // Без подарка и без «скидки вместо подарка» применять нечего.
+            if (! $useDiscountInstead && empty($giftProductId)) {
+                continue;
+            }
+
+            $this->applyPromotionToOrder(
+                $order,
+                $promotion,
+                (int) ($giftProductId ?? 0),
+                $useDiscountInstead,
+                isset($selection['gift_product_variant_id'])
+                    ? (int) $selection['gift_product_variant_id']
+                    : null
+            );
+        }
+    }
+
+    /**
      * Проверить, можно ли использовать промокод с акцией
      */
     public function canUsePromoCodeWithPromotion(?Promotion $promotion): bool
@@ -222,54 +322,59 @@ class PromotionService
     }
 
     /**
-     * Отменить применение акции к заказу
+     * Отменить применение акций к заказу.
+     *
+     * Поддерживает несколько акций на одном заказе (накопительные подарки):
+     * откатывает times_used по каждой затронутой акции, удаляет все записи
+     * promotion_usages этого заказа и все подарочные позиции.
      */
     public function cancelPromotionFromOrder(Order $order): void
     {
         DB::beginTransaction();
 
         try {
-            if (! $order->promotion_id) {
-                return;
+            // Все акции, применённые к заказу (источник правды — usages).
+            $usages = \App\Models\PromotionUsage::where('order_id', $order->id)->get();
+
+            // Откатываем счётчик использований по каждой акции.
+            $promotionIds = $usages->pluck('promotion_id')->filter()->unique();
+            foreach ($promotionIds as $promotionId) {
+                $count = $usages->where('promotion_id', $promotionId)->count();
+                $promotion = Promotion::find($promotionId);
+                if ($promotion && $count > 0) {
+                    // Не уводим счётчик в минус.
+                    $newValue = max(0, (int) $promotion->times_used - $count);
+                    $promotion->update(['times_used' => $newValue]);
+                }
             }
 
-            $promotion = Promotion::find($order->promotion_id);
+            // Удаляем все записи об использовании заказа.
+            \App\Models\PromotionUsage::where('order_id', $order->id)->delete();
 
-            if ($promotion) {
-                // Уменьшаем счетчик использований
-                $promotion->decrement('times_used');
-
-                // Удаляем запись об использовании
-                $promotion->usages()
-                    ->where('order_id', $order->id)
-                    ->delete();
-            }
-
-            // Удаляем подарочные товары из заказа.
+            // Удаляем все подарочные позиции заказа.
             // ВАЖНО: возврат остатка на склад сюда НЕ добавляем — он уже делается
             // в OrderCreationService::cancelOrder() для всех позиций заказа, включая
             // подарочные. Дублирование привело бы к двойному инкременту stock_quantity.
             $order->items()
                 ->where('is_gift', true)
-                ->where('promotion_id', $order->promotion_id)
                 ->delete();
 
-            // Убираем акцию из заказа
-            $order->update([
-                'promotion_id' => null,
-            ]);
+            // Сбрасываем «основную» акцию заказа (back-compat поле).
+            if ($order->promotion_id) {
+                $order->update(['promotion_id' => null]);
+            }
 
             DB::commit();
 
-            Log::info('Promotion cancelled from order', [
+            Log::info('Promotions cancelled from order', [
                 'order_id' => $order->id,
-                'promotion_id' => $promotion?->id,
+                'promotion_ids' => $promotionIds->values()->all(),
             ]);
 
         } catch (\Exception $e) {
             DB::rollBack();
 
-            Log::error('Failed to cancel promotion from order', [
+            Log::error('Failed to cancel promotions from order', [
                 'order_id' => $order->id,
                 'error' => $e->getMessage(),
             ]);
@@ -283,11 +388,21 @@ class PromotionService
      */
     public function getPromotionStats(Promotion $promotion): array
     {
+        // Под стекированием orders.promotion_id хранит лишь одну акцию, поэтому
+        // считаем заказы/выручку через promotion_usages (по distinct order_id),
+        // а не через relation orders() — иначе статистика занижается.
+        $orderIds = $promotion->usages()
+            ->whereNotNull('order_id')
+            ->distinct()
+            ->pluck('order_id');
+
         return [
             'total_uses' => $promotion->times_used,
             'remaining_uses' => $promotion->max_uses ? ($promotion->max_uses - $promotion->times_used) : null,
-            'total_orders' => $promotion->orders()->count(),
-            'total_revenue' => $promotion->orders()->sum('total_amount'),
+            'total_orders' => $orderIds->count(),
+            'total_revenue' => $orderIds->isEmpty()
+                ? 0
+                : Order::whereIn('id', $orderIds)->sum('total_amount'),
             'unique_clients' => $promotion->usages()->distinct('client_id')->count('client_id'),
             'gift_chosen_count' => $promotion->usages()->where('used_discount_instead', false)->count(),
             'discount_chosen_count' => $promotion->usages()->where('used_discount_instead', true)->count(),

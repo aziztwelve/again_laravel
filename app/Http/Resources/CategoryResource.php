@@ -21,6 +21,7 @@ class CategoryResource extends JsonResource
             'menu_order' => $this->menu_order,
             'banner_image' => $this->banner_image,
             'is_new_product' => $this->is_new_product,
+            'is_coming_soon' => $this->is_coming_soon,
             'banner_url' => $this->banner_image ? url('storage/' . $this->banner_image) : null,
 
 

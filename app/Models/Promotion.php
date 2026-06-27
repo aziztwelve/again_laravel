@@ -18,6 +18,7 @@ class Promotion extends Model
         'ends_at',
         'min_purchase_amount',
         'allow_promo_codes',
+        'is_stackable',
         'is_active',
         'priority',
         'max_uses',
@@ -29,6 +30,7 @@ class Promotion extends Model
         'ends_at' => 'datetime',
         'min_purchase_amount' => 'decimal:2',
         'allow_promo_codes' => 'boolean',
+        'is_stackable' => 'boolean',
         'is_active' => 'boolean',
         'priority' => 'integer',
         'max_uses' => 'integer',
@@ -100,6 +102,14 @@ class Promotion extends Model
     public function allowsPromoCodes(): bool
     {
         return $this->allow_promo_codes;
+    }
+
+    /**
+     * Проверка: складывается ли акция с другими стекируемыми акциями
+     */
+    public function isStackable(): bool
+    {
+        return (bool) $this->is_stackable;
     }
 
     /**

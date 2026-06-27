@@ -67,6 +67,11 @@ class PublicCheckoutController extends Controller
             // (даже если в payload пришло client_id, его игнорируем).
             if ($orderClient === null) {
                 unset($validated['client_id']);
+
+                // Гостевая корзина: токен из HttpOnly-cookie — для привязки заказа
+                // к серверной корзине гостя (универсальная корзина). См.
+                // docs/tasks/universal-cart.md.
+                $validated['guest_token'] = $request->cookie(config('cart.cookie.name', 'guest_token'));
             } else {
                 $validated['client_id'] = $orderClient->id;
             }
@@ -115,11 +120,12 @@ class PublicCheckoutController extends Controller
             }
 
             // 3. Валидация позиций
-            $promotionId = $validated['promotion_id'] ?? null;
+            $promotions = $validated['promotions'] ?? [];
+            $primaryPromotionId = $promotions[0]['promotion_id'] ?? null;
             $itemsValidation = $this->orderValidationService->validateOrderItems(
                 $validated['items'],
                 $promoCode,
-                $promotionId
+                $primaryPromotionId
             );
 
             if (! $itemsValidation['valid']) {
@@ -153,16 +159,9 @@ class PublicCheckoutController extends Controller
                 $this->orderCreationService->updateOrderTotals($order, $totals);
             }
 
-            // 7. Акция
-            if ($promotionId && ! empty($validated['gift_product_id'])) {
-                $useDiscountInstead = $validated['use_discount_instead'] ?? false;
-                $this->orderCreationService->applyPromotionToOrder(
-                    $order,
-                    $promotionId,
-                    $validated['gift_product_id'],
-                    $useDiscountInstead,
-                    $validated['gift_product_variant_id'] ?? null
-                );
+            // 7. Акции (накопительные/стекируемые подарки)
+            if (! empty($promotions)) {
+                $this->orderCreationService->applyPromotionsToOrder($order, $promotions);
             }
 
             // 8. Подарочная карта как способ оплаты

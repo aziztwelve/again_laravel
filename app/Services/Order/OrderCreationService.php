@@ -4,6 +4,7 @@ namespace App\Services\Order;
 
 use App\Enums\OrderStatus;
 use App\Enums\PaymentStatus;
+use App\Models\Cart;
 use App\Models\DeliveryMethod;
 use App\Models\GiftCard\GiftCard;
 use App\Models\Order;
@@ -118,7 +119,72 @@ class OrderCreationService
 
         $this->historyService->logCreated($order);
 
+        // Связываем заказ с корзиной клиента и помечаем её оформленной
+        // (фича «Брошенная корзина» — см. docs/tasks/abandoned-cart.md, решение #1).
+        // Останавливает триггерную цепочку напоминаний и наполняет «Заказы»/«Конверсию».
+        if ($resolvedClientId) {
+            $this->linkCartToOrder($order, (int) $resolvedClientId);
+        } elseif (! empty($orderData['guest_token'])) {
+            // Гостевой заказ: ищем корзину по guest_token (универсальная корзина).
+            // См. docs/tasks/universal-cart.md.
+            $this->linkGuestCartToOrder($order, (string) $orderData['guest_token']);
+        }
+
         return $order;
+    }
+
+    /**
+     * Найти активную (status = 'active') или брошенную (status = 'abandoned')
+     * корзину клиента, пометить её 'ordered' и привязать к заказу через
+     * orders.cart_id. Приоритет — активная корзина; при её отсутствии берём
+     * самую свежую брошенную (клиент мог вернуться по ссылке восстановления).
+     */
+    protected function linkCartToOrder(Order $order, int $clientId): void
+    {
+        $cart = Cart::where('client_id', $clientId)
+            ->whereIn('status', ['active', 'abandoned'])
+            // Активная ('active') — раньше брошенной ('abandoned'): 0 < 1.
+            ->orderByRaw("status = 'abandoned'")
+            ->orderByDesc('created_at')
+            ->first();
+
+        if (! $cart) {
+            return;
+        }
+
+        $cart->update([
+            'status' => 'ordered',
+            'ordered_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $order->forceFill(['cart_id' => $cart->id])->save();
+    }
+
+    /**
+     * Привязать гостевой заказ к гостевой корзине по guest_token и пометить её
+     * оформленной. Приоритет — активная корзина, затем брошенная (гость мог
+     * вернуться по ссылке восстановления). См. docs/tasks/universal-cart.md.
+     */
+    protected function linkGuestCartToOrder(Order $order, string $guestToken): void
+    {
+        $cart = Cart::where('guest_token', $guestToken)
+            ->whereIn('status', ['active', 'abandoned'])
+            ->orderByRaw("status = 'abandoned'")
+            ->orderByDesc('created_at')
+            ->first();
+
+        if (! $cart) {
+            return;
+        }
+
+        $cart->update([
+            'status' => 'ordered',
+            'ordered_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $order->forceFill(['cart_id' => $cart->id])->save();
     }
 
     /**
@@ -371,6 +437,40 @@ class OrderCreationService
             Log::error('Failed to apply promotion to order', [
                 'order_id' => $order->id,
                 'promotion_id' => $promotionId,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Применить несколько акций к заказу (накопительные/стекируемые подарки).
+     *
+     * @param  Order  $order  Заказ
+     * @param  array  $selections  Массив выборов акций:
+     *   [['promotion_id'=>int,'gift_product_id'=>?int,
+     *     'gift_product_variant_id'=>?int,'use_discount_instead'=>bool], ...]
+     */
+    public function applyPromotionsToOrder(Order $order, array $selections): void
+    {
+        if (empty($selections)) {
+            return;
+        }
+
+        try {
+            $this->promotionService->applyPromotionsToOrder($order, $selections);
+
+            Log::info('Promotions applied to order', [
+                'order_id' => $order->id,
+                'promotion_ids' => array_values(array_filter(array_map(
+                    fn ($s) => $s['promotion_id'] ?? null,
+                    $selections
+                ))),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to apply promotions to order', [
+                'order_id' => $order->id,
                 'error' => $e->getMessage(),
             ]);
 

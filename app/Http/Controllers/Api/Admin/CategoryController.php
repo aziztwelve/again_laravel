@@ -63,6 +63,7 @@ class CategoryController extends Controller
             'show_in_catalog_menu' => 'nullable|boolean',
             'show_as_home_banner' => 'nullable|boolean',
             'is_new_product' => 'nullable|boolean',
+            'is_coming_soon' => 'nullable|boolean',
             'menu_order' => 'nullable|integer|min:0',
             'banner_image' => 'nullable|image|max:10240',
 
@@ -78,6 +79,7 @@ class CategoryController extends Controller
         $category->show_in_catalog_menu = $validated['show_in_catalog_menu'] ?? false;
         $category->show_as_home_banner = $validated['show_as_home_banner'] ?? false;
         $category->is_new_product = $validated['is_new_product'] ?? false;
+        $category->is_coming_soon = $validated['is_coming_soon'] ?? false;
         $category->menu_order = $validated['menu_order'] ?? 0;
 
         // Загрузка баннера
@@ -131,6 +133,7 @@ class CategoryController extends Controller
             'show_in_catalog_menu' => 'nullable|boolean',
             'show_as_home_banner' => 'nullable|boolean',
             'is_new_product' => 'nullable|boolean',
+            'is_coming_soon' => 'nullable|boolean',
             'menu_order' => 'nullable|integer|min:0',
             'banner_image' => 'nullable|image|max:5120',
             'remove_banner_image' => 'nullable|boolean',
@@ -148,6 +151,7 @@ class CategoryController extends Controller
         $category->show_in_catalog_menu = $validated['show_in_catalog_menu'] ?? $category->show_in_catalog_menu;
         $category->show_as_home_banner = $validated['show_as_home_banner'] ?? $category->show_as_home_banner;
         $category->is_new_product = $validated['is_new_product'] ?? $category->is_new_product;
+        $category->is_coming_soon = $validated['is_coming_soon'] ?? $category->is_coming_soon;
         $category->menu_order = $validated['menu_order'] ?? $category->menu_order;
 
         // Удаление старого баннера если загружен новый или если запрошено удаление

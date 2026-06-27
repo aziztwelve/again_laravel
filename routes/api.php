@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\Admin\ChatsIntegrationController;
 use App\Http\Controllers\Api\Admin\ClientController;
 use App\Http\Controllers\Api\Admin\ColorController;
 use App\Http\Controllers\Api\Admin\ContactRequestController;
+use App\Http\Controllers\Api\Admin\RestockSubscriptionController as AdminRestockSubscriptionController;
 use App\Http\Controllers\Api\Admin\ConversationController;
 use App\Http\Controllers\Api\Admin\CountriesController;
 use App\Http\Controllers\Api\Admin\DeliveryCountryController;
@@ -79,7 +80,9 @@ use App\Http\Controllers\Api\DeliveryController;
 use App\Http\Controllers\Api\Delivery\YandexDeliveryController;
 use App\Http\Controllers\Api\PromoCodeController;
 use App\Http\Controllers\Api\Public\Cart\CartPriceController;
+use App\Http\Controllers\Api\Public\Cart\CartRestoreController;
 use App\Http\Controllers\Api\Public\Catalog\CatalogController;
+use App\Http\Controllers\Api\Public\Catalog\RestockSubscriptionController;
 use App\Http\Controllers\Api\Public\Conversation\PublicConversationController;
 use App\Http\Controllers\Api\Public\GiftCard\GiftCardPublicController;
 use App\Http\Controllers\Api\Public\OtoBanner\PublicOtoBannerController;
@@ -141,6 +144,18 @@ Route::prefix('/public')->group(function () {
     Route::prefix('cart')->name('cart.')->group(function () {
         Route::post('/refresh-prices', [CartPriceController::class, 'refresh'])
             ->name('refresh-prices');
+
+        // Восстановление брошенной корзины по токену из письма (фича
+        // «Брошенная корзина»). Публичный, без авторизации, с rate-limit.
+        // Новый канонический путь /cart/recovery/{token} (универсальная корзина),
+        // старый /cart/restore/{token} оставлен алиасом. См. docs/tasks/universal-cart.md.
+        Route::middleware('throttle:30,1')
+            ->get('/recovery/{token}', [CartRestoreController::class, 'show'])
+            ->name('recovery');
+
+        Route::middleware('throttle:30,1')
+            ->get('/restore/{token}', [CartRestoreController::class, 'show'])
+            ->name('restore');
     });
 
     Route::prefix('catalog')->name('catalog.')->group(function () {
@@ -160,6 +175,12 @@ Route::prefix('/public')->group(function () {
         Route::get('/products/{product:slug}', [CatalogController::class, 'getProduct'])
             ->name('products');
     });
+
+    // Подписка «Сообщить о поступлении» (публичная, без авторизации).
+    // Throttle: 10 запросов в минуту с одного IP — анти-спам.
+    Route::middleware('throttle:10,1')
+        ->post('/restock-subscriptions', [RestockSubscriptionController::class, 'store'])
+        ->name('public.restock-subscriptions.store');
 
     Route::prefix('statuses')->name('statuses.')->group(function () {
         Route::get('/', [StatusController::class, 'index'])->name('index');
@@ -256,6 +277,20 @@ Route::prefix('/cart-items')->group(function () {
     Route::post('/add-multiple-items-to-cart', [CartController::class, 'add_multiple_items_to_cart']);
     Route::delete('/cancel', [CartController::class, 'cancel_cart']);
     Route::delete('/remove-item', [CartController::class, 'remove_single_item_from_cart']);
+});
+
+// Универсальная серверная корзина (гость + клиент) — единые эндпоинты на
+// CartResolver. Работают идентично для гостя (cookie guest_token) и клиента
+// (Sanctum-токен). Старые /cart-items/* оставлены как алиасы на переходный
+// период. См. docs/tasks/universal-cart.md.
+Route::prefix('/cart')->group(function () {
+    Route::get('/', [CartController::class, 'cart_items']);
+    Route::post('/items', [CartController::class, 'add_item_to_cart']);
+    Route::post('/items/bulk', [CartController::class, 'add_multiple_items_to_cart']);
+    Route::patch('/items', [CartController::class, 'add_item_to_cart']);
+    Route::delete('/items', [CartController::class, 'remove_single_item_from_cart']);
+    Route::patch('/contact', [CartController::class, 'update_contact']);
+    Route::delete('/cancel', [CartController::class, 'cancel_cart']);
 });
 
 // colors
@@ -514,6 +549,13 @@ Route::middleware(['auth:sanctum'])->group(function () {
             ->name('contact_request.attach-manager');
     });
 
+    // Заявки «Сообщить о поступлении» (Скоро в продаже)
+    Route::prefix('/restock-subscriptions')->group(function () {
+        Route::get('/', [AdminRestockSubscriptionController::class, 'index']);
+        Route::get('/count', [AdminRestockSubscriptionController::class, 'count']);
+        Route::delete('/{restock_subscription}', [AdminRestockSubscriptionController::class, 'destroy']);
+    });
+
     Route::prefix('/slides')->group(function () {
         // список слайдов (публично или под auth — см. примечание)
         Route::get('/', [SlideController::class, 'index']);
@@ -659,6 +701,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::prefix('/carts')->group(function () {
         Route::get('/', [CartController::class, 'carts']);
         Route::get('/analytics', [CartAnalyticsController::class, 'cartAnalytics']);
+        // Ручная отправка напоминания (шаг F). См. docs/tasks/abandoned-cart.md.
+        Route::post('/{cart}/remind', [CartController::class, 'remind']);
     });
 
     // UTM-метки: каналы маркетинга, теги, метки (см. docs/tasks/utm-tracking.md)

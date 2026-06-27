@@ -8,6 +8,8 @@ use App\Models\Cart;
 use App\Models\Color;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Services\Cart\CartResolver;
+use App\Services\Cart\AbandonedCartService;
 use App\Traits\ProductsTrait;
 use DB;
 use Illuminate\Http\Request;
@@ -16,24 +18,129 @@ class CartController extends Controller
 {
     use ProductsTrait;
 
+    public function __construct(
+        private readonly CartResolver $resolver,
+        private readonly AbandonedCartService $abandonedCartService,
+    ) {
+    }
+
     public function carts(Request $request)
     {
         $request->validate([
             'status' => 'nullable|in:abandoned,ordered',
             'date_from' => 'nullable|date',
             'date_to' => 'nullable|date|after_or_equal:date_from',
+            'search' => 'nullable|string|max:255',
+            'per_page' => 'nullable|integer|min:1|max:100',
         ]);
 
-        $carts = Cart::with('client')
-            ->when($request->filled('status'), fn($q) => $q->where('status', $request->status))
-            ->when($request->filled('date_from'), fn($q) => $q->whereDate('created_at', '>=', $request->date_from))
-            ->when($request->filled('date_to'), fn($q) => $q->whereDate('created_at', '<=', $request->date_to))
+        $search = trim((string) $request->query('search', ''));
+
+        $carts = Cart::query()
+            ->select('cart.*')
+            // «N версий» — число корзин этого покупателя по идентичности
+            // (client_id для клиента, guest_token для гостя). Подзапрос, без N+1.
+            ->selectRaw(
+                '(SELECT COUNT(*) FROM cart AS cv WHERE '
+                .'(cart.client_id IS NOT NULL AND cv.client_id = cart.client_id) '
+                .'OR (cart.client_id IS NULL AND cart.guest_token IS NOT NULL AND cv.guest_token = cart.guest_token)'
+                .') AS versions_count'
+            )
+            ->with([
+                'client.profile',
+                'items',
+                // Последняя коммуникация для колонок «Канал / Коммуникация / Тип».
+                'communications' => fn ($q) => $q->orderByDesc('id'),
+            ])
+            ->when($request->filled('status'), fn ($q) => $q->where('status', $request->status))
+            ->when($request->filled('date_from'), fn ($q) => $q->whereDate('created_at', '>=', $request->date_from))
+            ->when($request->filled('date_to'), fn ($q) => $q->whereDate('created_at', '<=', $request->date_to))
+            ->when($search !== '', function ($q) use ($search) {
+                $q->where(function ($sub) use ($search) {
+                    if (ctype_digit($search)) {
+                        $sub->orWhere('cart.id', (int) $search);
+                    }
+                    $sub->orWhereHas('client', fn ($c) => $c->where('email', 'like', "%{$search}%"))
+                        ->orWhereHas('client.profile', function ($p) use ($search) {
+                            $p->where('phone', 'like', "%{$search}%")
+                                ->orWhere('first_name', 'like', "%{$search}%")
+                                ->orWhere('last_name', 'like', "%{$search}%");
+                        });
+                });
+            })
             ->orderByDesc('created_at')
-            ->paginate($request->get('per_page', 10));
+            ->paginate($request->get('per_page', 10))
+            ->through(function (Cart $cart) {
+                $lastComm = $cart->communications->first();
+
+                return [
+                    'id' => $cart->id,
+                    'status' => $cart->status, // active | abandoned | ordered
+                    'total' => (float) $cart->total,
+                    'positions_count' => $cart->items->count(),          // кол-во позиций
+                    'items_qty' => (int) $cart->items->sum('quantity'),  // кол-во товаров (шт.)
+                    'versions_count' => (int) ($cart->versions_count ?? 1), // «N версий»
+                    'created_at' => $cart->created_at,
+                    'updated_at' => $cart->updated_at,                   // «Последнее обновление»
+                    'ordered_at' => $cart->ordered_at,
+                    'abandoned_at' => $cart->abandoned_at,
+                    'customer' => [
+                        'name' => $cart->client?->profile?->full_name,
+                        'phone' => $cart->client?->profile?->phone,
+                        'email' => $cart->client?->email,
+                    ],
+                    'last_communication' => $lastComm ? [
+                        'channel' => $lastComm->channel,   // «Канал»
+                        'type' => $lastComm->type,         // «Тип коммуникации» (trigger)
+                        'status' => $lastComm->status,
+                        'sent_at' => $lastComm->sent_at,   // «Коммуникация» (дата)
+                    ] : null,
+                ];
+            });
 
         return response()->json([
             'success' => true,
-            'data' => $carts
+            'data' => $carts,
+        ]);
+    }
+
+    /**
+     * Ручная отправка напоминания по корзине из админки (шаг F).
+     * См. docs/tasks/abandoned-cart.md.
+     */
+    public function remind(Request $request, Cart $cart)
+    {
+        $validated = $request->validate([
+            'channel' => 'nullable|in:email,telegram,whatsapp,vk',
+        ]);
+
+        $result = $this->abandonedCartService->sendManual($cart, $validated['channel'] ?? null);
+
+        if (! ($result['ok'] ?? false)) {
+            $messages = [
+                'not_eligible' => 'Корзина оформлена или пуста — отправка недоступна.',
+                'no_consent' => 'Гость не давал согласия на рассылку.',
+                'throttled' => 'Слишком частая отправка. Попробуйте позже.',
+                'no_contact' => 'Нет доступного контакта для выбранного канала.',
+            ];
+
+            return response()->json([
+                'success' => false,
+                'message' => $messages[$result['reason'] ?? ''] ?? 'Не удалось отправить напоминание.',
+            ], 422);
+        }
+
+        $comm = $result['communication'];
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Напоминание отправлено.',
+            'communication' => [
+                'channel' => $comm->channel,
+                'type' => $comm->type,
+                'status' => $comm->status,
+                'sent_at' => $comm->sent_at,
+            ],
         ]);
     }
 
@@ -50,16 +157,10 @@ class CartController extends Controller
             'items.*.price' => 'required|numeric|min:0'
         ]);
 
-        $client = auth('sanctum')->user();
+        // Корзина гостя или клиента — единая точка (CartResolver).
+        $cart = $this->resolver->resolveOrCreate($request);
 
-        if ($client instanceof \App\Models\User) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Клиент должен быть экземпляром модели Client, а не User.',
-            ]);
-        }
-
-        $this->sync($client, $validated['items'], true, false);
+        $this->sync($cart, $validated['items'], true);
 
         return response()->json(['success' => true, 'message' => 'Items added to cart.']);
     }
@@ -76,16 +177,9 @@ class CartController extends Controller
             'price' => 'required|numeric|min:0'
         ]);
 
-        $client = auth('sanctum')->user();
+        $cart = $this->resolver->resolveOrCreate($request);
 
-        if ($client instanceof \App\Models\User) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Клиент должен быть экземпляром модели Client, а не User.',
-            ]);
-        }
-
-        $this->sync($client, [$validated], false, false);
+        $this->sync($cart, [$validated], false);
 
         return response()->json(['success' => true, 'message' => 'Item added to cart.']);
     }
@@ -98,22 +192,11 @@ class CartController extends Controller
             'product_variant_id' => 'nullable|integer|exists:product_variants,id',
         ]);
 
-        $client = auth('sanctum')->user();
-
-        if (!$client || $client instanceof \App\Models\User) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Клиент должен быть экземпляром модели Client, а не User.',
-            ]);
-        }
-
-        $cart = Cart::where('client_id', $client->id)
-            ->whereNull('status')
-            ->first();
+        $cart = $this->resolver->resolveActive($request);
 
         if (!$cart) {
             return response()->json([
-                'success' => false,
+                'success' => true,
                 'message' => 'Активная корзина не найдена.',
             ]);
         }
@@ -144,6 +227,10 @@ class CartController extends Controller
             'total' => $cart->items()->sum('total'),
             'total_original' => $cart->items()->sum('total_original'),
             'total_discount' => $cart->items()->sum('total_discount'),
+            // Фиксируем последнюю активность корзины — на это опирается детект
+            // брошенных корзин (см. docs/tasks/abandoned-cart.md). Модель Cart
+            // не управляет timestamps автоматически.
+            'updated_at' => now(),
         ]);
 
         if ($cart->items()->count() === 0) {
@@ -158,20 +245,7 @@ class CartController extends Controller
 
     public function cancel_cart(Request $request)
     {
-        $user = auth('sanctum')->user();
-
-        if (!$user) {
-            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
-        }
-
-        if ($user instanceof \App\Models\User) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Клиент должен быть экземпляром модели Client, а не User.',
-            ]);
-        }
-
-        $cart = Cart::where('client_id', $user->id)->whereNull('status')->first();
+        $cart = $this->resolver->resolveActive($request);
 
         if ($cart) {
             $cart->update([
@@ -181,6 +255,40 @@ class CartController extends Controller
         }
 
         return response()->json(['success' => true, 'message' => 'Корзина отменена успешно!']);
+    }
+
+    /**
+     * Захват контактов и согласия на рассылку (гостевой чекаут).
+     * Делает корзину eligible для цепочки напоминаний при явном opt-in.
+     * См. docs/tasks/universal-cart.md.
+     */
+    public function update_contact(Request $request)
+    {
+        $validated = $request->validate([
+            'email' => 'nullable|email',
+            'phone' => 'nullable|string|max:32',
+            'consent' => 'nullable|boolean',
+        ]);
+
+        $cart = $this->resolver->resolveOrCreate($request);
+
+        $attributes = ['last_activity_at' => now()];
+
+        if (array_key_exists('email', $validated)) {
+            $attributes['email'] = $validated['email'];
+        }
+        if (array_key_exists('phone', $validated)) {
+            $attributes['phone'] = $validated['phone'];
+        }
+        if (array_key_exists('consent', $validated)) {
+            $consent = (bool) $validated['consent'];
+            $attributes['marketing_consent'] = $consent;
+            $attributes['consent_at'] = $consent ? now() : null;
+        }
+
+        $cart->forceFill($attributes)->save();
+
+        return response()->json(['success' => true, 'message' => 'Контактные данные сохранены.']);
     }
 
     // logic for finding products or variants
@@ -196,23 +304,13 @@ class CartController extends Controller
     // That is why if you are authenticated do not forget to send your token in headers!!!!
     public function cart_items(Request $request)
     {
-
-        $user = auth('sanctum')->user();
-
-        if ($user instanceof \App\Models\User) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Клиент должен быть экземпляром модели Client, а не User.',
-            ]);
-        }
-
-        // means cart is not finished yet
-        $cart = Cart::where('client_id', $user->id)->whereNull('status')->first();
+        // Корзина гостя или клиента — единая точка (CartResolver), без создания.
+        $cart = $this->resolver->resolveActive($request);
 
         if (!$cart) {
             return response()->json([
-                'success' => false,
-                'message' => 'Активная корзина не найдена.',
+                'success' => true,
+                'items' => [],
             ]);
         }
 
@@ -341,36 +439,18 @@ class CartController extends Controller
     }
 
 
+    /**
+     * Применить позиции к уже разрешённой корзине (гостя или клиента).
+     * Корзину предоставляет CartResolver — здесь нет ветвления guest/auth.
+     */
     private function sync(
-        $user,
-        $found_items,
-        $delete_others = true,
-        $cancel_cart_if_found_items_are_empty = true,
-    ) {
-        if (!$user || empty($found_items)) {
+        Cart $cart,
+        array $found_items,
+        bool $delete_others = true,
+    ): void {
+        if (empty($found_items)) {
             return;
         }
-
-        // user should be instance of Client not User
-        if ($user instanceof \App\Models\User) {
-            return;
-        }
-
-        if ($cancel_cart_if_found_items_are_empty && empty($found_items)) {
-            $cart = Cart::where('client_id', $user->id)->whereNull('status')->first();
-            if ($cart) {
-                $cart->update([
-                    'status' => 'abandoned',
-                    'updated_at' => now(),
-                ]);
-            }
-            return;
-        }
-
-        $cart = Cart::firstOrCreate(
-            ['client_id' => $user->id, 'status' => null],
-            ['created_at' => now()]
-        );
 
         if ($delete_others) {
             $keysToKeep = collect($found_items)->map(function ($item) {
@@ -446,6 +526,10 @@ class CartController extends Controller
             'total' => $cart->items()->sum('total'),
             'total_original' => $cart->items()->sum('total_original'),
             'total_discount' => $cart->items()->sum('total_discount'),
+            // Фиксируем последнюю активность корзины — на это опирается детект
+            // брошенных корзин (см. docs/tasks/abandoned-cart.md). Модель Cart
+            // не управляет timestamps автоматически.
+            'updated_at' => now(),
         ]);
     }
 }

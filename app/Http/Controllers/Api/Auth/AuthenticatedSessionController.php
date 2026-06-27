@@ -11,6 +11,7 @@ use App\Models\UserPermission;
 use App\Notifications\LoginNotification;
 use App\Notifications\MailNotification;
 use App\Notifications\WelcomeNotification;
+use App\Services\Cart\CartMerger;
 use App\Traits\HelperTrait;
 use DB;
 use Exception;
@@ -18,6 +19,7 @@ use Hash;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cookie;
 use Illuminate\Http\JsonResponse;
 use OpenApi\Annotations as OA;
 
@@ -104,7 +106,7 @@ class AuthenticatedSessionController extends Controller
         }
     }
 
-    public function check_verification(Request $request)
+    public function check_verification(Request $request, CartMerger $merger)
     {
         $validation = $request->validate([
             'email' => "required|string",
@@ -138,6 +140,13 @@ class AuthenticatedSessionController extends Controller
 
         // Создаем токен
         $token = $client->createToken('authToken')->plainTextToken;
+
+        // Универсальная корзина: привязать гостевую корзину к клиенту
+        // (мердж в существующую или миграция) и сбросить guest-cookie.
+        // См. docs/tasks/universal-cart.md.
+        $cookieName = config('cart.cookie.name', 'guest_token');
+        $merger->attachGuestCartToClient($client->id, $request->cookie($cookieName));
+        Cookie::queue(Cookie::forget($cookieName));
 
         // Подгружаем профиль
         $client->load('profile');

@@ -12,6 +12,7 @@ class PromotionUsage extends Model
         'order_id',
         'client_id',
         'gift_product_id',
+        'gift_product_variant_id',
         'gift_quantity',
         'used_discount_instead',
     ];
@@ -51,5 +52,13 @@ class PromotionUsage extends Model
     public function giftProduct(): BelongsTo
     {
         return $this->belongsTo(Product::class, 'gift_product_id');
+    }
+
+    /**
+     * Выбранный вариант (размер/цвет) подарка
+     */
+    public function giftVariant(): BelongsTo
+    {
+        return $this->belongsTo(ProductVariant::class, 'gift_product_variant_id');
     }
 }

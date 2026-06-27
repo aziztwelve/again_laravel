@@ -60,6 +60,7 @@ class ProductPublicResource extends JsonResource
                 'color_id' => $variant->color_id,
                 'size' => $variant->name,
                 'quantity' => $variant->stock_quantity,
+                'in_stock' => (float)$variant->stock_quantity > 0,
                 'price' => (float)$variant->price,
                 'old_price' => $variant->old_price ? (float)$variant->old_price : null,
                 'images' => $variant->images ? ImageResource::collection($variant->images) : null,
@@ -91,6 +92,11 @@ class ProductPublicResource extends JsonResource
 
             // Остатки
             'stock_quantity' => (float)$this->stock_quantity,
+
+            // Доступность к покупке и CTA для витрины:
+            // in_stock = есть остаток; cta — какую кнопку показывать на карточке.
+            'in_stock' => (float)$this->stock_quantity > 0,
+            'cta' => (float)$this->stock_quantity > 0 ? 'add_to_cart' : 'notify_restock',
 
             // Размеры для доставки
             'weight' => (float)$this->weight,

@@ -21,12 +21,21 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission' => \App\Http\Middleware\CheckPermission::class,
         ]);
 
-        // Кука UTM-атрибуции ставится web-роутом /go/{slug}, а читается
-        // api-роутом чекаута. Исключаем её из шифрования, чтобы значение
-        // (id метки) одинаково читалось в обеих middleware-группах.
-        // См. docs/tasks/utm-tracking.md.
+        // Куки, читаемые/ставящиеся на api-роутах (без EncryptCookies в группе):
+        // - utm_link_id — UTM-атрибуция (см. docs/tasks/utm-tracking.md);
+        // - guest_token — идентичность гостевой корзины (см. docs/tasks/universal-cart.md).
+        // Исключаем из шифрования, чтобы значение одинаково читалось в любой
+        // middleware-группе.
         $middleware->encryptCookies(except: [
             'utm_link_id',
+            'guest_token',
+        ]);
+
+        // На api-группе по умолчанию нет cookie-middleware. Подключаем
+        // AddQueuedCookiesToResponse, чтобы Cookie::queue() (гостевая cookie в
+        // CartResolver) прикреплялась к ответу. См. docs/tasks/universal-cart.md.
+        $middleware->api(append: [
+            \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
         ]);
 
         //   Stateful API для Sanctum

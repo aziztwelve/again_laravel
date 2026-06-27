@@ -1,6 +1,6 @@
 # Задача: Функционал «UTM-метки»
 
-**Статус:** Реализовано (backend) — покрыто тестами
+**Статус:** Реализовано (backend + frontend) — backend покрыт тестами
 **Дата:** 2026-06-23
 **Раздел админки:** Аналитика → Источники заказов
 
@@ -320,9 +320,18 @@
   против персистентной `testing`-БД, а не `RefreshDatabase`. Стоит починить
   порядок миграций отдельной задачей.
 
-### TODO (frontend)
-- Страница в `again_dashboard` (графики, таблица, CRUD, «копировать в буфер»)
-  ещё не реализована — это следующий этап.
+### Frontend (again_dashboard) — реализовано 2026-06-24
+- Страница «Источники заказов»: `src/components/analytics/utm/Index.vue`
+  (заголовок, действия, фильтры, графики, сводная таблица, модалки).
+- Компоненты: `UtmFilters.vue`, `UtmBarChart.vue` (гистограмма),
+  `UtmDonutChart.vue` (круговая — разрез по клиентам), `UtmSummaryTable.vue`,
+  `UtmLinkFormModal.vue` (создание/редактирование метки + «Копировать»),
+  `UtmChannelsModal.vue` (CRUD каналов), `UtmTagsModal.vue` (CRUD тегов).
+- Композабл `src/composables/useUtmFunctions.ts` (вызовы `/api/utm/*` и
+  `/api/analytics/utm`), типы `src/types/utm/index.ts`.
+- Роут `/analytics/order-sources` (`analytics-order-sources`) в
+  `src/router/index.js`; пункт меню «Источники заказов» в
+  `src/components/containers/Sidebar.vue`.
 
 ---
 

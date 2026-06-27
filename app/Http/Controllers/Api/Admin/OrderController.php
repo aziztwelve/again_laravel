@@ -150,12 +150,19 @@ class OrderController extends Controller
 
             $validated = $request->validated();
 
-            // UTM-атрибуция из куки utm_link_id, если она есть в запросе
-            // (см. docs/tasks/utm-tracking.md, решение #2).
-            $cookieUtmLinkId = $request->cookie('utm_link_id');
-            if (is_numeric($cookieUtmLinkId)
-                && \App\Models\UtmLink::whereKey((int) $cookieUtmLinkId)->exists()) {
-                $validated['utm_link_id'] = (int) $cookieUtmLinkId;
+            // UTM-атрибуция. Приоритет — явно выбранная метка в теле запроса
+            // (менеджер указал её в форме ручного заказа). Если её нет — fallback
+            // на куку utm_link_id (см. docs/tasks/utm-tracking.md, риск #3).
+            if (! empty($validated['utm_link_id'])) {
+                if (! \App\Models\UtmLink::whereKey((int) $validated['utm_link_id'])->exists()) {
+                    unset($validated['utm_link_id']);
+                }
+            } else {
+                $cookieUtmLinkId = $request->cookie('utm_link_id');
+                if (is_numeric($cookieUtmLinkId)
+                    && \App\Models\UtmLink::whereKey((int) $cookieUtmLinkId)->exists()) {
+                    $validated['utm_link_id'] = (int) $cookieUtmLinkId;
+                }
             }
 
             if ($authUser instanceof Client) {
@@ -214,11 +221,12 @@ class OrderController extends Controller
             }
 
             // 4. Валидируем позиции заказа
-            $promotionId = $validated['promotion_id'] ?? null;
+            $promotions = $validated['promotions'] ?? [];
+            $primaryPromotionId = $promotions[0]['promotion_id'] ?? null;
             $itemsValidation = $this->orderValidationService->validateOrderItems(
                 $validated['items'],
                 $promoCode,
-                $promotionId
+                $primaryPromotionId
             );
 
             if (! $itemsValidation['valid']) {
@@ -249,17 +257,9 @@ class OrderController extends Controller
                 $this->orderCreationService->updateOrderTotals($order, $totals);
             }
 
-            // 7.5. Применяем акцию (если есть)
-            if ($promotionId && ! empty($validated['gift_product_id'])) {
-                $useDiscountInstead = $validated['use_discount_instead'] ?? false;
-
-                $this->orderCreationService->applyPromotionToOrder(
-                    $order,
-                    $promotionId,
-                    $validated['gift_product_id'],
-                    $useDiscountInstead,
-                    $validated['gift_product_variant_id'] ?? null
-                );
+            // 7.5. Применяем акции (накопительные/стекируемые подарки)
+            if (! empty($promotions)) {
+                $this->orderCreationService->applyPromotionsToOrder($order, $promotions);
             }
 
             //  8. Применяем подарочную карту (если есть)
