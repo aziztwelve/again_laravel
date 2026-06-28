@@ -86,8 +86,11 @@ class CartController extends Controller
                     'abandoned_at' => $cart->abandoned_at,
                     'customer' => [
                         'name' => $cart->client?->profile?->full_name,
-                        'phone' => $cart->client?->profile?->phone,
-                        'email' => $cart->client?->email,
+                        // Для гостя контакт берём из самой корзины (cart.email/phone),
+                        // у клиента — из профиля/аккаунта.
+                        'phone' => $cart->client?->profile?->phone ?: $cart->phone,
+                        'email' => $cart->client?->email ?: $cart->email,
+                        'is_guest' => is_null($cart->client_id),
                     ],
                     'last_communication' => $lastComm ? [
                         'channel' => $lastComm->channel,   // «Канал»
