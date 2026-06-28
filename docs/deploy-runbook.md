@@ -122,8 +122,55 @@ curl -s -o /dev/null -w "laravel /up -> %{http_code}\n" https://sub.againdev.ru/
 
 ---
 
+## Витрина и API на одном origin (важно для гостевой корзины)
+
+Витрина (`sub.againdev2.ru`) и API (`sub.againdev.ru`) — **разные домены**. Гостевая
+корзина завязана на HttpOnly-cookie `guest_token`; на разных доменах это сторонняя
+(third-party) cookie, и браузеры её блокируют → гостевая корзина не работает.
+
+**Решение (внедрено): same-origin `/api`.** На vhost витрины `/api` обслуживается
+напрямую laravel через php-fpm, а витрина шлёт запросы на свой же origin.
+
+1. **nginx** `/etc/nginx/sites-available/sub.againdev2.ru` — в `server {443}` ДО
+   `location /` добавлены:
+   ```nginx
+   location /api {
+       root /var/www/html/laravel/public;
+       try_files $uri /index.php?$query_string;
+   }
+   location ~ \.php$ {
+       root /var/www/html/laravel/public;
+       include snippets/fastcgi-php.conf;
+       fastcgi_pass unix:/var/run/php/php8.3-fpm.sock;
+       fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+       include fastcgi_params;
+       fastcgi_read_timeout 1800;
+       fastcgi_send_timeout 1800;
+   }
+   ```
+   Применять: `cp` бэкап → правка → `nginx -t` → `nginx -s reload` (при ошибке `nginx -t` откатить из бэкапа).
+2. **nuxt-shop `.env`** — `API_URL=https://sub.againdev2.ru/api` (тот же origin;
+   `useApi` строит URL как `DEV_URI(=API_URL) + path`). После правки — пересборка.
+   `API_BASE_URL` (для картинок/echo) можно оставить на `sub.againdev.ru`.
+3. SSL-сертификат `live/sub.againdev.ru` имеет SAN на оба домена — SSR-self-вызовы
+   витрины на `sub.againdev2.ru` валидны по TLS.
+
+Проверка: `Set-Cookie: guest_token=…` без атрибута `Domain` (host-only) при
+`POST https://sub.againdev2.ru/api/cart/items/bulk` → cookie first-party.
+
+> Если деплоят на новый сервер/домены — повторить оба шага (nginx `/api` + `API_URL`),
+> иначе гостевая корзина/`guest_token` работать не будут.
+
+---
+
 ## История деплоев
 
+- **2026-06-28** — same-origin `/api` для витрины: nginx `sub.againdev2.ru` отдаёт
+  `/api` через php-fpm (laravel), `nuxt-shop` `API_URL=https://sub.againdev2.ru/api`.
+  Чинит гостевую корзину (`guest_token` стал first-party cookie). Также: фикс
+  recovery-ссылки (`/cart/restore` алиас → `/cart/recovery`, `CART_RECOVERY_URL`
+  на канонический путь), бейдж «Гость»/«Клиент» и контакт гостя в списке корзин,
+  выключена авто-рассылка (`ABANDONED_CART_ENABLED=false`).
 - **2026-06-27** — выкат: накопительные подарки (стекируемые акции,
   `promotions[]`), UTM-трекинг + фиксы дашборда, брошенные/универсальная корзина,
   restock-подписки, coming-soon. Применено 16 миграций; засеян
