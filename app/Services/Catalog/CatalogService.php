@@ -145,8 +145,9 @@ class CatalogService
             $query->where('price', '<=', $filters['price_before']);
         }
 
-        // Фильтр "В наличии" (существующий)
-        if (!empty($filters['in_stock'])) {
+        // Обычный каталог не должен показывать товары без остатка: они уходят
+        // в спецкатегорию «Скоро в продаже».
+        if (!$isComingSoon) {
             $query->where('stock_quantity', '>', 0);
         }
 

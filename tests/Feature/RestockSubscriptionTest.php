@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Jobs\NotifyRestockSubscribersJob;
+use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductRestockSubscription;
 use App\Services\Notifications\Jobs\SendNotificationJob;
@@ -167,5 +168,39 @@ class RestockSubscriptionTest extends TestCase
 
         // Уже notified — повторно не шлём.
         Bus::assertNotDispatched(SendNotificationJob::class);
+    }
+
+    public function test_public_catalog_hides_out_of_stock_products_by_default(): void
+    {
+        $inStock = $this->product(['stock_quantity' => 5]);
+        $outOfStock = $this->product(['stock_quantity' => 0]);
+
+        $response = $this->getJson('/api/public/catalog/products?per_page=50');
+
+        $response->assertOk();
+
+        $ids = collect($response->json('data'))->pluck('id');
+        $this->assertTrue($ids->contains($inStock->id));
+        $this->assertFalse($ids->contains($outOfStock->id));
+    }
+
+    public function test_coming_soon_category_shows_only_out_of_stock_products(): void
+    {
+        $category = Category::create([
+            'name' => 'Скоро в продаже ' . uniqid(),
+            'is_coming_soon' => true,
+            'show_in_catalog_menu' => true,
+        ]);
+
+        $inStock = $this->product(['stock_quantity' => 5]);
+        $outOfStock = $this->product(['stock_quantity' => 0]);
+
+        $response = $this->getJson('/api/public/catalog/products?per_page=50&category_slug=' . $category->slug);
+
+        $response->assertOk();
+
+        $ids = collect($response->json('data'))->pluck('id');
+        $this->assertFalse($ids->contains($inStock->id));
+        $this->assertTrue($ids->contains($outOfStock->id));
     }
 }

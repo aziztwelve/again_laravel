@@ -55,7 +55,7 @@ class UtmLink extends Model
      */
     public function getTrackingUrlAttribute(): string
     {
-        return rtrim(config('app.url'), '/').'/go/'.$this->slug;
+        return rtrim((string) config('utm.tracking_base_url', config('app.url')), '/').'/go/'.$this->slug;
     }
 
     /**
