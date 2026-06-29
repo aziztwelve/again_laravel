@@ -122,49 +122,96 @@ curl -s -o /dev/null -w "laravel /up -> %{http_code}\n" https://sub.againdev.ru/
 
 ---
 
-## Витрина и API на одном origin (важно для гостевой корзины)
+## Единый домен sub.againdev.ru (витрина + дашборд + API на одном origin)
 
-Витрина (`sub.againdev2.ru`) и API (`sub.againdev.ru`) — **разные домены**. Гостевая
-корзина завязана на HttpOnly-cookie `guest_token`; на разных доменах это сторонняя
-(third-party) cookie, и браузеры её блокируют → гостевая корзина не работает.
+Все три проекта обслуживаются на **одном домене** `sub.againdev.ru`. Старый
+домен витрины `sub.againdev2.ru` выведен из эксплуатации. Один origin
+автоматически делает все куки first-party — отдельные обходы (как раньше
+same-origin `/api`) больше не нужны.
 
-**Решение (внедрено): same-origin `/api`.** На vhost витрины `/api` обслуживается
-напрямую laravel через php-fpm, а витрина шлёт запросы на свой же origin.
+**Маршрутизация nginx на `sub.againdev.ru` (server {443}), порядок важен —
+specific ДО `location /`:**
+```nginx
+# API laravel (php-fpm)
+location /api {
+    root /var/www/html/laravel/public;
+    try_files $uri /index.php?$query_string;
+}
+# UTM редирект-трекер (ставит host-only cookie utm_link_id)
+location /go {
+    root /var/www/html/laravel/public;
+    try_files $uri /index.php?$query_string;
+}
+# Исполнитель php для laravel-локейшенов выше
+location ~ \.php$ {
+    root /var/www/html/laravel/public;
+    include snippets/fastcgi-php.conf;
+    fastcgi_pass unix:/var/run/php/php8.3-fpm.sock;
+    fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    include fastcgi_params;
+    fastcgi_read_timeout 1800;
+    fastcgi_send_timeout 1800;
+}
+# Дашборд (статика vue-admin)
+location /admin/ {
+    alias /var/www/html/vue-admin/dist/;
+    try_files $uri $uri/ /admin/index.html;
+}
+# Витрина (nuxt-shop SSR на 127.0.0.1:3000) — всё остальное
+location / {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+Применять: `cp` бэкап → правка → `nginx -t` → `nginx -s reload`
+(при ошибке `nginx -t` откатить из бэкапа).
 
-1. **nginx** `/etc/nginx/sites-available/sub.againdev2.ru` — в `server {443}` ДО
-   `location /` добавлены:
-   ```nginx
-   location /api {
-       root /var/www/html/laravel/public;
-       try_files $uri /index.php?$query_string;
-   }
-   location ~ \.php$ {
-       root /var/www/html/laravel/public;
-       include snippets/fastcgi-php.conf;
-       fastcgi_pass unix:/var/run/php/php8.3-fpm.sock;
-       fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
-       include fastcgi_params;
-       fastcgi_read_timeout 1800;
-       fastcgi_send_timeout 1800;
-   }
-   ```
-   Применять: `cp` бэкап → правка → `nginx -t` → `nginx -s reload` (при ошибке `nginx -t` откатить из бэкапа).
-2. **nuxt-shop `.env`** — `API_URL=https://sub.againdev2.ru/api` (тот же origin;
-   `useApi` строит URL как `DEV_URI(=API_URL) + path`). После правки — пересборка.
-   `API_BASE_URL` (для картинок/echo) можно оставить на `sub.againdev.ru`.
-3. SSL-сертификат `live/sub.againdev.ru` имеет SAN на оба домена — SSR-self-вызовы
-   витрины на `sub.againdev2.ru` валидны по TLS.
+**Куки на едином домене (host-only, first-party):**
+- `guest_token` (гостевая корзина) — ставится бэком, читается тем же origin.
+- `utm_link_id` (атрибуция UTM) — ставит `GET /go/{slug}`, читает api-чекаут.
 
-Проверка: `Set-Cookie: guest_token=…` без атрибута `Domain` (host-only) при
-`POST https://sub.againdev2.ru/api/cart/items/bulk` → cookie first-party.
+Оба должны выходить **без атрибута `Domain`** (host-only) и доходить до заказа,
+т.к. `/go`, `/api` и витрина — один origin.
 
-> Если деплоят на новый сервер/домены — повторить оба шага (nginx `/api` + `API_URL`),
-> иначе гостевая корзина/`guest_token` работать не будут.
+**Обязательные env (laravel `.env` на сервере):**
+```
+APP_URL=https://sub.againdev.ru
+FRONTEND_URL=https://sub.againdev.ru      # витрина = тот же домен
+# UTM_TRACKING_BASE_URL не задавать (по умолчанию = APP_URL)
+UTM_COOKIE_SECURE=true                     # домен на HTTPS
+# UTM_COOKIE_DOMAIN не задавать (host-only), UTM_COOKIE_SAMESITE=lax
+# CART_COOKIE_* / SESSION_DOMAIN не задавать (host-only)
+```
+**Витрина nuxt-shop `.env`:** `API_URL=https://sub.againdev.ru/api` (тот же origin).
+
+Проверка:
+```bash
+# guest_token — host-only first-party
+curl -sI -X POST https://sub.againdev.ru/api/cart/items/bulk | grep -i 'set-cookie'
+# /go ставит host-only utm_link_id и 302 на target_url
+curl -sI https://sub.againdev.ru/go/<slug> | grep -iE 'location|set-cookie'
+# атрибуция реально пишется в заказы
+cd /var/www/html/laravel && php artisan tinker --execute="echo \App\Models\Order::whereNotNull('utm_link_id')->where('created_at','>=',now()->subDay())->count();"
+```
+Ожидаем: `Set-Cookie` без `Domain=`; `/go` → 302 + `utm_link_id`; счётчик заказов с меткой растёт.
+
+> Если деплоят на новый сервер/домен — настроить nginx (`/api`, `/go`, `/admin`,
+> `/`) и env (`APP_URL`/`FRONTEND_URL` = один домен), иначе гостевая корзина
+> (`guest_token`) и UTM-атрибуция (`utm_link_id`) работать не будут.
 
 ---
 
 ## История деплоев
 
+- **2026-06-29** — переход на **единый домен** `sub.againdev.ru`: витрина,
+  дашборд и API на одном origin; домен витрины `sub.againdev2.ru` выведен из
+  эксплуатации. nginx маршрутит `/api` и `/go` в laravel, `/admin` — статика
+  vue-admin, `/` — nuxt-shop SSR. `guest_token` и `utm_link_id` стали host-only
+  first-party автоматически (обход same-origin `/api` больше не нужен). env:
+  `APP_URL=FRONTEND_URL=https://sub.againdev.ru`, `UTM_COOKIE_SECURE=true`.
+  Конфиги/код почищены от мёртвых доменов (`cors.php`, `app.frontend_url`,
+  фолбэки `FRONTEND_URL`).
 - **2026-06-28** — same-origin `/api` для витрины: nginx `sub.againdev2.ru` отдаёт
   `/api` через php-fpm (laravel), `nuxt-shop` `API_URL=https://sub.againdev2.ru/api`.
   Чинит гостевую корзину (`guest_token` стал first-party cookie). Также: фикс

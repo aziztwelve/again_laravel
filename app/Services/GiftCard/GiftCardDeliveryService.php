@@ -80,8 +80,8 @@ class GiftCardDeliveryService
             ? "\n\n💌 Сообщение{$from}:\n\"{$giftCard->message}\""
             : "";
 
-        $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'https://again8.ru'));
-        $shopUrl = rtrim($frontendUrl, '/');
+        $frontendUrl = config('app.frontend_url');
+        $shopUrl = rtrim((string) $frontendUrl, '/');
 
         return <<<MSG
 {$greeting}

@@ -52,7 +52,7 @@ class NotifyRestockSubscribersJob implements ShouldQueue
             return;
         }
 
-        $frontendUrl = rtrim(env('FRONTEND_URL', 'https://againdev2.ru'), '/');
+        $frontendUrl = rtrim((string) config('app.frontend_url'), '/');
         $productUrl = $frontendUrl . '/catalog/' . $product->slug;
 
         // Идемпотентность (#6): обрабатываем только pending; после рассылки → notified.

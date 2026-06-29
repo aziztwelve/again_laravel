@@ -6,9 +6,13 @@ return [
     | База публичного трекера
     |--------------------------------------------------------------------------
     | Домен, на котором менеджер раздаёт ссылки вида /go/{slug}. Он должен
-    | совпадать с доменом витрины/чекаута, иначе cookie utm_link_id не попадёт в
-    | заказ. Если не задано, используем FRONTEND_URL, затем APP_URL для обратной
-    | совместимости.
+    | совпадать с доменом витрины/чекаута, иначе host-only cookie utm_link_id
+    | не попадёт в заказ.
+    |
+    | Единый домен проекта — sub.againdev.ru: витрина, дашборд и API на одном
+    | origin, поэтому по умолчанию база = APP_URL (через FRONTEND_URL, который
+    | теперь тоже равен APP_URL). Отдельный UTM_TRACKING_BASE_URL нужен только
+    | для нестандартных окружений.
     */
     'tracking_base_url' => env('UTM_TRACKING_BASE_URL', env('FRONTEND_URL', env('APP_URL'))),
 
@@ -20,10 +24,10 @@ return [
     | api-чекаут. Имя куки фиксировано ('utm_link_id') и исключено из шифрования
     | в bootstrap/app.php — не меняйте без правки except-списка.
     |
-    | Для кросс-доменной схемы (витрина и API на разных origin) задайте:
-    |   UTM_COOKIE_DOMAIN=.example.com   (общий родительский домен)
-    |   UTM_COOKIE_SAMESITE=none
-    |   UTM_COOKIE_SECURE=true           (SameSite=None требует Secure + HTTPS)
+    | Единый домен (sub.againdev.ru): /go и чекаут на одном origin, поэтому
+    | кука — host-only (cookie_domain не задаём), SameSite=Lax, Secure=true
+    | (домен на HTTPS). Кросс-доменная схема (Domain=.example.com,
+    | SameSite=None) больше не нужна — оставлена в env только на случай отката.
     */
     'attribution' => [
         'cookie_minutes' => (int) env('UTM_COOKIE_MINUTES', 60 * 24 * 30), // 30 дней

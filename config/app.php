@@ -53,7 +53,10 @@ return [
     */
 
     'url' => env('APP_URL', 'http://localhost'),
-    'frontend_url' => env('FRONTEND_URL', 'https://again8.ru'),
+    // Единый домен: витрина живёт на том же origin, что и API. По умолчанию
+    // = APP_URL. Отдельный FRONTEND_URL держим только для обратной совместимости
+    // и нестандартных окружений.
+    'frontend_url' => env('FRONTEND_URL', env('APP_URL')),
 
     /*
     |--------------------------------------------------------------------------

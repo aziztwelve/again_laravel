@@ -341,11 +341,16 @@
 продакшеном или в следующих итерациях.
 
 ### Риски / требуют подтверждения
-1. ✅ **Кука атрибуции между доменами — реализовано конфигом.** Параметры куки
-   вынесены в `config/utm.php` (`UTM_COOKIE_DOMAIN`, `UTM_COOKIE_SAMESITE`,
-   `UTM_COOKIE_SECURE`, `UTM_COOKIE_MINUTES`). Для кросс-домена в проде задать
-   `UTM_COOKIE_DOMAIN=.example.com`, `UTM_COOKIE_SAMESITE=none`,
-   `UTM_COOKIE_SECURE=true`. По умолчанию — текущий домен, SameSite=Lax.
+1. ✅ **Кука атрибуции — единый домен `sub.againdev.ru` (актуализировано 2026-06-29).**
+   Витрина, дашборд и API на одном origin, поэтому кука `utm_link_id` — host-only
+   first-party: `/go/{slug}` и api-чекаут на одном домене, кука доходит до заказа
+   без доп. настроек. Параметры в `config/utm.php`; в проде задать
+   `UTM_COOKIE_SECURE=true` (HTTPS), `UTM_COOKIE_DOMAIN` НЕ задавать (host-only),
+   `UTM_COOKIE_SAMESITE=lax`, `UTM_TRACKING_BASE_URL` НЕ задавать (= APP_URL).
+   Условие работы: nginx на `sub.againdev.ru` маршрутит `/go` в laravel (как и
+   `/api`) — см. `docs/deploy-runbook.md`. Кросс-доменная схема
+   (`UTM_COOKIE_DOMAIN=.example.com`, `SameSite=none`) больше не нужна, оставлена
+   в env только на случай отката.
 2. ✅ **Ограничение host целевой ссылки — реализовано.** Правило
    `App\Rules\AllowedTargetHost` + `config('utm.allowed_target_hosts')`
    (env `UTM_ALLOWED_TARGET_HOSTS=example.com,www.example.com`). Пусто → любой

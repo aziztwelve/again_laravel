@@ -222,7 +222,7 @@ class BirthdayDiscountCommand extends Command
 
 
 
-        $frontendUrl = env('FRONTEND_URL', 'https://againdev2.ru');
+        $frontendUrl = rtrim((string) config('app.frontend_url'), '/');
         $promoPageUrl = $frontendUrl . '/profile/sales';
 
         // Универсальное текстовое сообщение для Email, VK, WhatsApp
@@ -268,7 +268,7 @@ class BirthdayDiscountCommand extends Command
     {
         $clientName = $client->profile?->first_name ?? $client->email;
 
-        $frontendUrl = env('FRONTEND_URL', 'https://againdev2.ru');
+        $frontendUrl = rtrim((string) config('app.frontend_url'), '/');
         $promoPageUrl = $frontendUrl . '/profile/sales';
 
         $message = "Здравствуйте {$clientName}!\n" .

@@ -8,22 +8,22 @@
 
 ---
 
-## Где что живёт (dev `againdev`)
+## Где что живёт (dev `sub.againdev.ru` — единый домен)
 
 | Кусок | URL | Что внутри |
 |-------|-----|------------|
 | **API (Laravel)** | `https://sub.againdev.ru/api/*` | то, что прогоняет `02-run.sh` |
-| **Витрина (nuxt-shop)** | `https://sub.againdev2.ru/` | Node-процесс на `127.0.0.1:3000` (см. `/etc/nginx/sites-enabled/sub.againdev2.ru`). На dev может быть под Basic/preview-guard от самого Nuxt — спросить креды у автора фичи. |
+| **Витрина (nuxt-shop)** | `https://sub.againdev.ru/` | SSR на `127.0.0.1:3000`, проксируется nginx из `location /`. На dev может быть под Basic/preview-guard от самого Nuxt — спросить креды у автора фичи. |
 | **Админка (vue-admin)** | `https://sub.againdev.ru/admin/` | статика из `/var/www/html/vue-admin/dist`, обращается к `sub.againdev.ru/api/*` |
 
-Внимание: `https://sub.againdev.ru/checkout` — это **бэк**, и он
-отдаст Laravel-овскую 404 страницу. Витрина — на втором поддомене.
+Единый домен: витрина (`/`, `/checkout`, …) обслуживается nuxt-shop, а `/api`
+и `/go` — laravel. Старый домен витрины `sub.againdev2.ru` больше не используется.
 
 ---
 
-## Витрина (nuxt-shop) — `https://sub.againdev2.ru`
+## Витрина (nuxt-shop) — `https://sub.againdev.ru`
 
-* [ ] **U1.** В **инкогнито**: открыть `https://sub.againdev2.ru/checkout`. Блок «Покупатель»
+* [ ] **U1.** В **инкогнито**: открыть `https://sub.againdev.ru/checkout`. Блок «Покупатель»
   показывает приглашение «Оформляете как гость…», ссылку на `/login` и
   опциональное поле email. Корзина видна (она в `localStorage`).
   Заполнить получателя (имя/фамилия/телефон), адрес, способ оплаты,
