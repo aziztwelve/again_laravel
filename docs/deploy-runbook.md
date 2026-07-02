@@ -151,6 +151,12 @@ curl -s -o /dev/null -w "laravel /up -> %{http_code}\n" https://sub.againdev.ru/
 автоматически делает все куки first-party — отдельные обходы (как раньше
 same-origin `/api`) больше не нужны.
 
+Для витрины на `sub.againdev.ru` включена basic auth в Nuxt middleware
+`server/middleware/basic-auth.ts`: логин `dev`, пароль `12345678`. Защита
+срабатывает только на запросах, которые доходят до `nuxt-shop` через `location /`;
+`/api`, `/go` и `/admin/` обслуживаются отдельными nginx location и не закрываются
+этой авторизацией.
+
 **Маршрутизация nginx на `sub.againdev.ru` (server {443}), порядок важен —
 specific ДО `location /`:**
 ```nginx
