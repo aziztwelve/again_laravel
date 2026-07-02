@@ -35,29 +35,47 @@
 
 ## Порядок деплоя
 
-### 0. Предпроверка (read-only)
+### 0. Локальный push всех трёх проектов
+Перед сервером запушить `main` во всех трёх локальных репозиториях. Делать это
+даже если правки были только в одном проекте: команда деплоя всегда работает с
+актуальными `origin/main` всех частей.
+```bash
+git -C lara_admin push origin main
+git -C again_front push origin main
+git -C again_dashboard push origin main
+```
+
+### 1. Предпроверка сервера (read-only)
 ```bash
 ssh -o BatchMode=yes root@186.246.14.59 '
 for p in /var/www/html/laravel /var/www/html/nuxt-shop /var/www/html/vue-admin; do
   echo "== $p =="; git -C "$p" rev-parse --abbrev-ref HEAD;
-  echo "dirty: $(git -C "$p" status --porcelain | wc -l)";
+  echo "dirty tracked: $(git -C "$p" status --porcelain --untracked-files=no | wc -l)";
+  echo "untracked non-env-backup: $(git -C "$p" status --porcelain --untracked-files=all | grep -Ev "^[?][?] \\.env\\.bak" | grep -c "^[?][?] " || true)";
 done'
 ```
-Деревья должны быть чистыми (`dirty: 0`). Если есть незакоммиченные правки на
-сервере — НЕ продолжать, сначала разобраться.
+Деревья должны быть чистыми (`dirty tracked: 0`, `untracked non-env-backup: 0`).
+Untracked `.env.bak*` на сервере допустимы. Если есть другие незакоммиченные
+правки на сервере — НЕ продолжать, сначала разобраться.
 
-### 1. Pull (fast-forward only)
+### 2. Pull всех трёх проектов (fast-forward only)
+Pull выполнять всегда для всех трёх серверных папок, даже если в конкретном
+проекте изменений не было.
 ```bash
 ssh -o BatchMode=yes root@186.246.14.59 '
+set -euo pipefail
 for p in /var/www/html/laravel /var/www/html/nuxt-shop /var/www/html/vue-admin; do
   echo "== $p =="; git -C "$p" pull --ff-only origin main 2>&1 | tail -3;
   echo "head: $(git -C "$p" rev-parse --short HEAD)";
 done'
 ```
 
-### 2. Backend (laravel)
+### 3. Backend (laravel)
+Обычно backend-команды нужны, если менялся Laravel-код, зависимости или миграции.
+Для чисто фронтового/doc-деплоя можно ограничиться pull и smoke-проверкой backend.
 ```bash
 ssh -o BatchMode=yes -o ConnectTimeout=120 root@186.246.14.59 '
+set -euo pipefail
 cd /var/www/html/laravel
 composer install --no-interaction --prefer-dist --no-progress 2>&1 | tail -5
 php artisan migrate --force 2>&1 | tail -40
@@ -66,20 +84,22 @@ pm2 restart laravel-queue laravel-scheduler laravel-reverb
 '
 ```
 
-### 3. Сиды (ОСТОРОЖНО)
+### 4. Сиды (ОСТОРОЖНО)
 - **НЕ запускать** `php artisan db:seed` целиком (`DatabaseSeeder`) — он
   пересоздаёт Users/Products/Clients/Orders/PromoCodes и т.д. и побьёт/задублирует
   данные сервера.
 - Запускать только нужные идемпотентные сидеры точечно, например каналы UTM:
 ```bash
 ssh -o BatchMode=yes root@186.246.14.59 '
+set -euo pipefail
 cd /var/www/html/laravel && php artisan db:seed --class=MarketingChannelSeeder --force'
 ```
   (`MarketingChannelSeeder` использует `updateOrCreate` по `code` — безопасен.)
 
-### 4. Витрина (nuxt-shop)
+### 5. Витрина (nuxt-shop) — пересобирать всегда
 ```bash
 ssh -o BatchMode=yes -o ConnectTimeout=900 root@186.246.14.59 '
+set -euo pipefail
 cd /var/www/html/nuxt-shop
 npm install --no-audit --no-fund 2>&1 | tail -3
 NODE_OPTIONS=--max-old-space-size=2048 npm run build 2>&1 | tail -6
@@ -87,23 +107,25 @@ pm2 restart nuxt-shop --update-env
 '
 ```
 
-### 5. Дашборд (vue-admin) — статика для nginx
+### 6. Дашборд (vue-admin) — пересобирать всегда
 ```bash
 ssh -o BatchMode=yes -o ConnectTimeout=900 root@186.246.14.59 '
+set -euo pipefail
 cd /var/www/html/vue-admin
 npm install --no-audit --no-fund 2>&1 | tail -3   # может ругнуться ERESOLVE — ок, если deps не менялись
 NODE_OPTIONS=--max-old-space-size=2048 npm run build 2>&1 | tail -6
 '
 ```
-> Если `npm install` падает на ERESOLVE, а package.json НЕ менялся — игнорировать,
-> сборка пройдёт на существующих `node_modules`. Если зависимости менялись —
-> `npm install --legacy-peer-deps`.
+> Если `npm install` падает на ERESOLVE, а package.json НЕ менялся — можно
+> отдельно запустить только сборку на существующих `node_modules`. Если
+> зависимости менялись — `npm install --legacy-peer-deps`.
 
-### 6. Проверка (smoke)
+### 7. Проверка (smoke)
 ```bash
 ssh -o BatchMode=yes root@186.246.14.59 '
+set -euo pipefail
 pm2 list | grep -E "laravel|nuxt|whatsapp"
-cd /var/www/html/laravel && echo "pending: $(php artisan migrate:status | grep -ci pending)"
+cd /var/www/html/laravel && echo "pending: $(php artisan migrate:status | grep -ci pending || true)"
 curl -s -o /dev/null -w "laravel /up -> %{http_code}\n" https://sub.againdev.ru/up -k
 '
 ```
@@ -191,10 +213,13 @@ UTM_COOKIE_SECURE=true                     # домен на HTTPS
 curl -sI -X POST https://sub.againdev.ru/api/cart/items/bulk | grep -i 'set-cookie'
 # /go ставит host-only utm_link_id и 302 на target_url
 curl -sI https://sub.againdev.ru/go/<slug> | grep -iE 'location|set-cookie'
+# config должен совпадать с env выше
+cd /var/www/html/laravel && php artisan tinker --execute="echo config('utm.attribution.cookie_secure') ? 'UTM secure: yes' : 'UTM secure: no';"
 # атрибуция реально пишется в заказы
 cd /var/www/html/laravel && php artisan tinker --execute="echo \App\Models\Order::whereNotNull('utm_link_id')->where('created_at','>=',now()->subDay())->count();"
 ```
-Ожидаем: `Set-Cookie` без `Domain=`; `/go` → 302 + `utm_link_id`; счётчик заказов с меткой растёт.
+Ожидаем: `Set-Cookie` без `Domain=` и с `Secure`; `/go` → 302 + `utm_link_id`;
+`UTM secure: yes`; счётчик заказов с меткой растёт.
 
 > Если деплоят на новый сервер/домен — настроить nginx (`/api`, `/go`, `/admin`,
 > `/`) и env (`APP_URL`/`FRONTEND_URL` = один домен), иначе гостевая корзина
