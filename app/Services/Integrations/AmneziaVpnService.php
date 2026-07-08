@@ -58,18 +58,13 @@ class AmneziaVpnService
 
     public function applyProxy(PendingRequest $request): PendingRequest
     {
-        $proxy = $this->proxyUrl();
+        $options = $this->proxyOptions();
 
-        if (!$proxy) {
+        if (!$options) {
             return $request;
         }
 
-        return $request->withOptions([
-            'proxy' => [
-                'http' => $proxy,
-                'https' => $proxy,
-            ],
-        ]);
+        return $request->withOptions($options);
     }
 
     public function test(): array
@@ -77,7 +72,7 @@ class AmneziaVpnService
         $startedAt = now();
         $result = [
             'checked_at' => $startedAt->toIso8601String(),
-            'proxy_configured' => $this->proxyUrl() !== null,
+            'proxy_configured' => $this->proxyOptions() !== null,
             'external_ip' => null,
             'telegram_status' => null,
             'ok' => false,
@@ -108,7 +103,7 @@ class AmneziaVpnService
         return $result;
     }
 
-    private function proxyUrl(): ?string
+    private function proxyOptions(): ?array
     {
         $settings = Setting::getGroup(self::GROUP);
         $scheme = (string) ($settings['scheme'] ?? 'socks5h');
@@ -119,10 +114,25 @@ class AmneziaVpnService
             return null;
         }
 
-        $auth = '';
         $username = trim((string) ($settings['username'] ?? ''));
         $password = $this->decryptPassword($settings['password'] ?? null);
 
+        if (in_array($scheme, ['socks5', 'socks5h'], true)) {
+            $curlOptions = [
+                CURLOPT_PROXY => "{$host}:{$port}",
+                CURLOPT_PROXYTYPE => $scheme === 'socks5h'
+                    ? CURLPROXY_SOCKS5_HOSTNAME
+                    : CURLPROXY_SOCKS5,
+            ];
+
+            if ($username !== '') {
+                $curlOptions[CURLOPT_PROXYUSERPWD] = $username . ':' . ($password ?? '');
+            }
+
+            return ['curl' => $curlOptions];
+        }
+
+        $auth = '';
         if ($username !== '') {
             $auth = rawurlencode($username);
             if ($password !== null && $password !== '') {
@@ -131,7 +141,9 @@ class AmneziaVpnService
             $auth .= '@';
         }
 
-        return "{$scheme}://{$auth}{$host}:{$port}";
+        return [
+            'proxy' => "{$scheme}://{$auth}{$host}:{$port}",
+        ];
     }
 
     private function decryptPassword(?string $encrypted): ?string
