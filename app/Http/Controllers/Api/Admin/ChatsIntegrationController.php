@@ -85,7 +85,7 @@ class ChatsIntegrationController extends Controller
             $telegramHttp = app(AmneziaVpnService::class)->telegramHttp();
 
             $response = $telegramHttp->get("https://api.telegram.org/bot{$telegram_token}/setWebhook", [
-                'url' => config('app.url') . "/telegraph/" . $telegram_token . "/webhook"
+                'url' => config('app.url') . "/api/telegraph/" . $telegram_token . "/webhook"
             ]);
 
 

@@ -91,7 +91,11 @@ use App\Http\Controllers\Api\Public\Promotion\PromotionPublicController;
 use App\Http\Controllers\Api\Public\WhatsApp\WhatsAppWebhookController;
 use App\Http\Controllers\Api\Review\ReviewLikeController;
 use App\Http\Controllers\Api\SearchController;
+use DefStudio\Telegraph\Controllers\WebhookController as TelegraphWebhookController;
 use Illuminate\Support\Facades\Route;
+
+Route::post('/telegraph/{token}/webhook', [TelegraphWebhookController::class, 'handle'])
+    ->name('api.telegraph.webhook');
 
 // auth user
 Route::middleware('guest')->group(function () {
