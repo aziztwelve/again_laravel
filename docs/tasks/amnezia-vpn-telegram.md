@@ -71,6 +71,19 @@ Amnezia устанавливается и управляется официал�
 Админка не должна хранить root-пароль от VPN-сервера и не должна выполнять
 произвольные SSH-команды на нём.
 
+Текущий production-срез:
+
+- На VPS поднят совместимый SOCKS5 egress через `dante-server`.
+- Сервис: `danted.service`, enabled + running.
+- SOCKS5 слушает `85.159.228.227:1080`.
+- Пользователь: `again_socks`.
+- Пароль хранится на production Laravel зашифрованно в `settings`.
+- `/etc/danted.conf` разрешает клиентов только с `186.246.14.59/32`.
+- Backend test показывает `external_ip = 85.159.228.227`, Telegram status `200`.
+
+AmneziaWG можно добавить позже через официальный AmneziaVPN client на тот же VPS.
+Backend-архитектура от этого не меняется: Laravel использует SOCKS5 endpoint.
+
 Порядок:
 
 1. В AmneziaVPN client добавить self-hosted server `85.159.228.227`.
