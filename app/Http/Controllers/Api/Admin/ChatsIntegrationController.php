@@ -13,6 +13,7 @@ use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Http;
+use App\Services\Integrations\AmneziaVpnService;
 
 
 class ChatsIntegrationController extends Controller
@@ -81,7 +82,9 @@ class ChatsIntegrationController extends Controller
             $telegram_token = $this->decryptToken($request->get('token'));
 
 
-            $response = Http::get("https://api.telegram.org/bot{$telegram_token}/setWebhook", [
+            $telegramHttp = app(AmneziaVpnService::class)->telegramHttp();
+
+            $response = $telegramHttp->get("https://api.telegram.org/bot{$telegram_token}/setWebhook", [
                 'url' => config('app.url') . "/telegraph/" . $telegram_token . "/webhook"
             ]);
 
@@ -107,12 +110,21 @@ class ChatsIntegrationController extends Controller
                 $bot->update(['name' => $request->get('bot_name')]);
             }
 
-            $bot->registerCommands([
-                "help" => "Что умеет этот бот",
-                "start" => "Начать использовать наш бот",
-                "orders" => "Заказы",
-                "cancel" => "Отменить авторизацию"
-            ])->send();
+            $commandsResponse = $telegramHttp->post("https://api.telegram.org/bot{$telegram_token}/setMyCommands", [
+                'commands' => [
+                    ['command' => 'help', 'description' => 'Что умеет этот бот'],
+                    ['command' => 'start', 'description' => 'Начать использовать наш бот'],
+                    ['command' => 'orders', 'description' => 'Заказы'],
+                    ['command' => 'cancel', 'description' => 'Отменить авторизацию'],
+                ],
+            ]);
+
+            if (!$commandsResponse->ok()) {
+                Log::warning('Telegram setMyCommands failed', [
+                    'status' => $commandsResponse->status(),
+                    'response' => $commandsResponse->json(),
+                ]);
+            }
 
             return response()->json([
                 'success' => true,

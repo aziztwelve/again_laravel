@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\Admin\ChatsIntegrationController;
 use App\Http\Controllers\Api\Admin\ClientController;
 use App\Http\Controllers\Api\Admin\ColorController;
 use App\Http\Controllers\Api\Admin\ContactRequestController;
+use App\Http\Controllers\Api\Admin\ThirdPartyIntegrations\AmneziaVpnController;
 use App\Http\Controllers\Api\Admin\RestockSubscriptionController as AdminRestockSubscriptionController;
 use App\Http\Controllers\Api\Admin\ConversationController;
 use App\Http\Controllers\Api\Admin\CountriesController;
@@ -965,6 +966,12 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::get('/telegram', [ChatsIntegrationController::class, 'getTelegramSettings']);
             Route::post('/telegram', [ChatsIntegrationController::class, 'telegram_integration']);
             Route::patch('/telegram/name', [ChatsIntegrationController::class, 'updateTelegramBotName']);
+        });
+
+        Route::prefix('/amnezia-vpn')->group(function () {
+            Route::get('/', [AmneziaVpnController::class, 'show']);
+            Route::patch('/', [AmneziaVpnController::class, 'update']);
+            Route::post('/test', [AmneziaVpnController::class, 'test']);
         });
 
         Route::prefix('/vk')->group(function () {

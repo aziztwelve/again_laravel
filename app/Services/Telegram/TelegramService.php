@@ -7,11 +7,11 @@ use App\Models\Client;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\File\FileStorageService;
+use App\Services\Integrations\AmneziaVpnService;
 use App\Services\Messaging\ConversationService;
 use DefStudio\Telegraph\Models\TelegraphChat;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 
 class TelegramService
@@ -227,8 +227,10 @@ class TelegramService
                 'token_prefix' => substr($botToken, 0, 10) . '...'
             ]);
 
+            $telegramHttp = app(AmneziaVpnService::class)->telegramHttp();
+
             // 1. Получаем информацию о файле
-            $fileInfoResponse = Http::get("https://api.telegram.org/bot{$botToken}/getFile", [
+            $fileInfoResponse = $telegramHttp->get("https://api.telegram.org/bot{$botToken}/getFile", [
                 'file_id' => $fileId
             ]);
 
@@ -256,7 +258,7 @@ class TelegramService
 
             // 2. Скачиваем файл
             $fileUrl = "https://api.telegram.org/file/bot{$botToken}/{$filePath}";
-            $fileResponse = Http::get($fileUrl);
+            $fileResponse = $telegramHttp->get($fileUrl);
 
             if (!$fileResponse->successful()) {
                 Log::error('Failed to download Telegram file', [
