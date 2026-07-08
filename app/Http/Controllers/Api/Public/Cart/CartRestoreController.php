@@ -28,6 +28,7 @@ class CartRestoreController extends Controller
     {
         $cart = Cart::with(['items'])
             ->where('recovery_token', $token)
+            ->whereNotNull('client_id')
             ->first();
 
         if (! $cart) {

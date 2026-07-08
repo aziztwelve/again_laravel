@@ -211,7 +211,7 @@ class AbandonedCartTest extends TestCase
         $this->getJson('/api/public/cart/restore/nope')->assertStatus(404);
     }
 
-    // ===================== Универсальная корзина: гости (Фаза 3) =====================
+    // ===================== Гости не участвуют в abandoned-cart =====================
 
     /**
      * Гостевая корзина (без client_id) с непустым составом.
@@ -242,39 +242,25 @@ class AbandonedCartTest extends TestCase
         return $cart->fresh('items');
     }
 
-    public function test_marks_guest_cart_as_abandoned(): void
+    public function test_does_not_mark_guest_cart_as_abandoned(): void
     {
         $cart = $this->guestCart('active', now()->subHours(25));
 
         $marked = $this->service()->markAbandonedCarts();
 
-        $this->assertSame(1, $marked);
+        $this->assertSame(0, $marked);
         $cart->refresh();
-        $this->assertSame('abandoned', $cart->status);
-        $this->assertNotNull($cart->abandoned_at);
-        $this->assertNotNull($cart->recovery_token);
+        $this->assertSame('active', $cart->status);
+        $this->assertNull($cart->abandoned_at);
+        $this->assertNull($cart->recovery_token);
     }
 
-    public function test_guest_with_consent_resolves_email_channel(): void
+    public function test_guest_with_consent_does_not_resolve_channel(): void
     {
         $cart = $this->guestCart('abandoned', now(), [
             'email' => 'guest@example.com',
             'marketing_consent' => true,
             'consent_at' => now(),
-        ]);
-
-        [$channel, $recipient] = $this->service()->resolveChannel($cart);
-
-        $this->assertSame('email', $channel);
-        $this->assertSame('guest@example.com', $recipient);
-    }
-
-    public function test_guest_without_consent_is_not_in_chain(): void
-    {
-        // Контакт есть, но согласия нет → не шлём.
-        $cart = $this->guestCart('abandoned', now(), [
-            'email' => 'guest@example.com',
-            'marketing_consent' => false,
         ]);
 
         [$channel, $recipient] = $this->service()->resolveChannel($cart);
@@ -283,7 +269,7 @@ class AbandonedCartTest extends TestCase
         $this->assertNull($recipient);
     }
 
-    public function test_guest_with_consent_receives_chain_step(): void
+    public function test_guest_with_consent_is_not_in_chain(): void
     {
         Queue::fake();
 
@@ -297,39 +283,13 @@ class AbandonedCartTest extends TestCase
 
         $result = $this->service()->processChain();
 
-        $this->assertSame(1, $result['sent']);
-        Queue::assertPushed(SendNotificationJob::class, 1);
-        $this->assertDatabaseHas('cart_communications', [
-            'cart_id' => $cart->id,
-            'step' => 1,
-            'channel' => 'email',
-            'status' => 'sent',
-        ]);
-    }
-
-    public function test_guest_without_consent_step_failed(): void
-    {
-        Queue::fake();
-
-        $cart = $this->guestCart('abandoned', now()->subHour(), [
-            'abandoned_at' => now()->subHour(),
-            'recovery_token' => 'g-tok-'.uniqid(),
-            'email' => 'guest@example.com',
-            'marketing_consent' => false,
-        ]);
-
-        $result = $this->service()->processChain();
-
         $this->assertSame(0, $result['sent']);
+        $this->assertSame(0, $result['skipped']);
         Queue::assertNothingPushed();
-        $this->assertDatabaseHas('cart_communications', [
-            'cart_id' => $cart->id,
-            'step' => 1,
-            'status' => 'failed',
-        ]);
+        $this->assertDatabaseMissing('cart_communications', ['cart_id' => $cart->id]);
     }
 
-    public function test_recovery_revives_abandoned_cart_to_active(): void
+    public function test_guest_recovery_token_is_not_accepted(): void
     {
         $cart = $this->guestCart('abandoned', now()->subHour(), [
             'abandoned_at' => now()->subHour(),
@@ -337,12 +297,10 @@ class AbandonedCartTest extends TestCase
         ]);
 
         $this->getJson('/api/public/cart/recovery/recover-me-1')
-            ->assertOk()
-            ->assertJson(['success' => true, 'cart_id' => $cart->id]);
+            ->assertStatus(404);
 
         $cart->refresh();
-        $this->assertSame('active', $cart->status);
-        $this->assertNotNull($cart->last_activity_at);
+        $this->assertSame('abandoned', $cart->status);
     }
 
     public function test_update_contact_endpoint_saves_consent(): void
@@ -415,17 +373,17 @@ class AbandonedCartTest extends TestCase
         Queue::assertPushed(SendNotificationJob::class, 1);
     }
 
-    public function test_send_manual_blocked_for_guest_without_consent(): void
+    public function test_send_manual_blocked_for_guest(): void
     {
         $cart = $this->guestCart('abandoned', now(), [
             'email' => 'guest@example.com',
-            'marketing_consent' => false,
+            'marketing_consent' => true,
         ]);
 
         $result = $this->service()->sendManual($cart);
 
         $this->assertFalse($result['ok']);
-        $this->assertSame('no_consent', $result['reason']);
+        $this->assertSame('not_eligible', $result['reason']);
     }
 
     public function test_remind_endpoint_sends(): void

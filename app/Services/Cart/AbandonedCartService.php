@@ -19,8 +19,8 @@ class AbandonedCartService
     /**
      * Пометить активные корзины (status = 'active') брошенными, если последняя
      * активность была раньше порога. Активность = COALESCE(last_activity_at,
-     * updated_at, created_at). Помечаем и клиентов, и гостей (для аналитики);
-     * фильтрация «есть кому/с согласием слать» выполняется в processChain.
+     * updated_at, created_at). Гостевые корзины не участвуют в сценарии
+     * брошенных корзин: без client_id их не помечаем и не отправляем цепочку.
      *
      * @return int кол-во помеченных корзин
      */
@@ -31,6 +31,7 @@ class AbandonedCartService
 
         $carts = Cart::query()
             ->where('status', 'active')
+            ->whereNotNull('client_id')
             ->whereHas('items')
             ->whereRaw('COALESCE(last_activity_at, updated_at, created_at) <= ?', [$threshold])
             ->get();
@@ -69,6 +70,7 @@ class AbandonedCartService
         $carts = Cart::query()
             ->with(['client.profile', 'items.product', 'items.productVariant', 'items.color', 'communications'])
             ->where('status', 'abandoned')
+            ->whereNotNull('client_id')
             ->whereNotNull('abandoned_at')
             ->whereHas('items')
             ->get();
@@ -133,10 +135,8 @@ class AbandonedCartService
 
     /**
      * Выбрать первый доступный канал по приоритету и контакт под него.
-     * Источник контактов: профиль клиента, иначе — контакты из самой корзины
-     * (гостевой email/phone). Для гостя отправка разрешена только при наличии
-     * явного согласия (marketing_consent). Сервис уведомлений не должен знать,
-     * авторизован ли владелец. См. docs/tasks/universal-cart.md.
+     * Источник контактов: профиль/аккаунт клиента. Гостевые корзины не
+     * участвуют в abandoned-cart цепочке.
      *
      * @return array{0:?string,1:?string} [channel, recipientId]
      */
@@ -145,16 +145,15 @@ class AbandonedCartService
         $client = $cart->client;
         $profile = $client?->profile;
 
-        // Гость без явного согласия на рассылку — не шлём (анти-спам, 152-ФЗ).
-        if (! $client && ! $cart->marketing_consent) {
+        if (! $client) {
             return [null, null];
         }
 
         foreach (config('abandoned_cart.channel_priority', []) as $channel) {
             $recipient = match ($channel) {
                 'telegram' => $profile?->telegram_chat_id ?: $profile?->telegram_user_id,
-                'email' => $client?->email ?: $cart->email,
-                'whatsapp' => $profile?->phone ?: $cart->phone,
+                'email' => $client->email,
+                'whatsapp' => $profile?->phone,
                 'vk' => $profile?->vk_user_id,
                 default => null,
             };
@@ -169,16 +168,20 @@ class AbandonedCartService
 
     /**
      * Контакт под конкретный канал (для ручной отправки с явным выбором канала).
-     * Профиль клиента имеет приоритет, иначе — контакты из корзины (гость).
+     * Профиль/аккаунт клиента. Для гостевых корзин контакты не используются.
      */
     public function recipientForChannel(Cart $cart, string $channel): ?string
     {
+        if (! $cart->client) {
+            return null;
+        }
+
         $profile = $cart->client?->profile;
 
         $recipient = match ($channel) {
             'telegram' => $profile?->telegram_chat_id ?: $profile?->telegram_user_id,
-            'email' => $cart->client?->email ?: $cart->email,
-            'whatsapp' => $profile?->phone ?: $cart->phone,
+            'email' => $cart->client->email,
+            'whatsapp' => $profile?->phone,
             'vk' => $profile?->vk_user_id,
             default => null,
         };
@@ -189,20 +192,15 @@ class AbandonedCartService
     /**
      * Ручная отправка напоминания из админки (шаг F, см. docs/tasks/abandoned-cart.md).
      * Вне триггерной цепочки: пишет cart_communications с type='manual', step=NULL.
-     * Уважает согласие гостя (marketing_consent) и троттлинг.
+     * Доступна только для клиентских корзин и уважает троттлинг.
      *
      * @return array{ok:bool, reason?:string, communication?:CartCommunication}
      */
     public function sendManual(Cart $cart, ?string $channel = null): array
     {
-        // Нельзя слать по оформленной или пустой корзине.
-        if ($cart->status === 'ordered' || ! $cart->items()->exists()) {
+        // Нельзя слать гостю, по оформленной или пустой корзине.
+        if (! $cart->client_id || $cart->status === 'ordered' || ! $cart->items()->exists()) {
             return ['ok' => false, 'reason' => 'not_eligible'];
-        }
-
-        // Гость без явного согласия — не шлём (анти-спам, 152-ФЗ).
-        if (! $cart->client_id && ! $cart->marketing_consent) {
-            return ['ok' => false, 'reason' => 'no_consent'];
         }
 
         // Троттлинг: не чаще, чем раз в N минут на корзину.
@@ -339,7 +337,8 @@ class AbandonedCartService
             'max_uses' => 1,
             'times_used' => 0,
             'is_active' => true,
-            // Доступен всем (в т.ч. гостю без client_id) и ко всем товарам.
+            // Промокод доступен ко всем товарам; abandoned-cart сценарий
+            // запускается только для клиентских корзин.
             'applies_to_all_products' => true,
             'applies_to_all_clients' => true,
             'type' => 'all',

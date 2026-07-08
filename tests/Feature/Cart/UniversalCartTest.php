@@ -292,7 +292,7 @@ class UniversalCartTest extends TestCase
         $this->assertNotNull(Cart::find($orderedGuest->id));
     }
 
-    public function test_analytics_returns_guest_registered_segments(): void
+    public function test_abandoned_cart_analytics_excludes_guest_carts(): void
     {
         $client = $this->client();
 
@@ -320,12 +320,9 @@ class UniversalCartTest extends TestCase
         $response = $this->actingAs($client, 'sanctum')->getJson('/api/carts/analytics');
         $response->assertOk();
 
-        $segments = $response->json('data.segments');
-
-        $this->assertSame(1, $segments['guest']['abandoned']);
-        $this->assertSame(1, $segments['guest']['ordered']);
-        $this->assertEquals(50.0, $segments['guest']['rate']);
-        $this->assertSame(1, $segments['registered']['abandoned']);
-        $this->assertSame(0, $segments['registered']['ordered']);
+        $response->assertJsonMissingPath('data.segments');
+        $this->assertSame(1, $response->json('data.abandoned_count'));
+        $this->assertSame(0, $response->json('data.ordered_carts'));
+        $this->assertSame(1000, (int) $response->json('data.lost_revenue'));
     }
 }

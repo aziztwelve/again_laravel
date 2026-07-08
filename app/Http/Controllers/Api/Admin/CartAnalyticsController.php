@@ -26,6 +26,7 @@ class CartAnalyticsController extends Controller
         [$from, $to] = $this->resolvePeriod($request);
 
         $allCarts = Cart::query()
+            ->whereNotNull('client_id')
             ->whereBetween('created_at', [$from, $to])
             ->get();
 
@@ -52,36 +53,16 @@ class CartAnalyticsController extends Controller
         $conversionBase = $totalOrdered + $totalAbandoned;
         $conversionRate = $conversionBase ? round($totalOrdered / $conversionBase * 100, 1) : 0;
 
-        // Разрез guest / registered (универсальная корзина, см.
-        // docs/tasks/universal-cart.md): гость = client_id IS NULL.
-        $segment = function (callable $predicate) use ($abandonedCarts, $orderedCarts) {
-            $ab = $abandonedCarts->filter($predicate)->count();
-            $or = $orderedCarts->filter($predicate)->count();
-            $base = $ab + $or;
-
-            return [
-                'abandoned' => $ab,
-                'ordered' => $or,
-                'total' => $base,
-                'rate' => $base ? round($or / $base * 100, 1) : 0,
-                'lost_revenue' => (float) $abandonedCarts->filter($predicate)->sum('total'),
-                'revenue' => (float) $orderedCarts->filter($predicate)->sum('total'),
-            ];
-        };
-
-        $segments = [
-            'guest' => $segment(fn ($c) => is_null($c->client_id)),
-            'registered' => $segment(fn ($c) => ! is_null($c->client_id)),
-        ];
-
         $totalItems = CartItem::query()
             ->join('cart', 'cart_items.cart_id', '=', 'cart.id')
+            ->whereNotNull('cart.client_id')
             ->whereBetween('cart.created_at', [$from, $to])
             ->sum('cart_items.quantity');
 
         $topProducts = CartItem::query()
             ->join('products', 'cart_items.product_id', '=', 'products.id')
             ->join('cart', 'cart_items.cart_id', '=', 'cart.id')
+            ->whereNotNull('cart.client_id')
             ->whereBetween('cart.created_at', [$from, $to])
             ->select('products.name', DB::raw('SUM(cart_items.quantity) as total_quantity'))
             ->groupBy('cart_items.product_id', 'products.name')
@@ -106,9 +87,6 @@ class CartAnalyticsController extends Controller
                     'total' => $conversionBase,
                     'rate' => $conversionRate, // %
                 ],
-
-                // --- разрез гость / зарегистрированный ---
-                'segments' => $segments,
 
                 // --- динамика по дням/месяцам ---
                 'chart' => $chart,
@@ -142,8 +120,8 @@ class CartAnalyticsController extends Controller
     protected function resolvePeriod(Request $request): array
     {
         if ($request->query('preset') === 'all' || $request->boolean('all')) {
-            $min = Cart::query()->min('created_at');
-            $max = Cart::query()->max('created_at');
+            $min = Cart::query()->whereNotNull('client_id')->min('created_at');
+            $max = Cart::query()->whereNotNull('client_id')->max('created_at');
             $from = $min ? Carbon::parse($min)->startOfDay() : now()->subDays(29)->startOfDay();
             $to = $max ? Carbon::parse($max)->endOfDay() : now()->endOfDay();
 
@@ -175,6 +153,7 @@ class CartAnalyticsController extends Controller
 
         $raw = Cart::query()
             ->whereBetween('created_at', [$from, $to])
+            ->whereNotNull('client_id')
             ->whereIn('status', ['abandoned', 'ordered'])
             ->select([
                 DB::raw("DATE_FORMAT(created_at, \"$bucketFormat\") as bucket"),

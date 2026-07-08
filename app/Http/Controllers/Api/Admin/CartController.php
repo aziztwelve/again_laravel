@@ -38,14 +38,12 @@ class CartController extends Controller
 
         $carts = Cart::query()
             ->select('cart.*')
-            // «N версий» — число корзин этого покупателя по идентичности
-            // (client_id для клиента, guest_token для гостя). Подзапрос, без N+1.
+            // «N версий» — число корзин этого клиента. Гостевые корзины не
+            // участвуют в разделе «Брошенные корзины».
             ->selectRaw(
-                '(SELECT COUNT(*) FROM cart AS cv WHERE '
-                .'(cart.client_id IS NOT NULL AND cv.client_id = cart.client_id) '
-                .'OR (cart.client_id IS NULL AND cart.guest_token IS NOT NULL AND cv.guest_token = cart.guest_token)'
-                .') AS versions_count'
+                '(SELECT COUNT(*) FROM cart AS cv WHERE cv.client_id = cart.client_id) AS versions_count'
             )
+            ->whereNotNull('cart.client_id')
             ->with([
                 'client.profile',
                 'items',
@@ -86,11 +84,8 @@ class CartController extends Controller
                     'abandoned_at' => $cart->abandoned_at,
                     'customer' => [
                         'name' => $cart->client?->profile?->full_name,
-                        // Для гостя контакт берём из самой корзины (cart.email/phone),
-                        // у клиента — из профиля/аккаунта.
-                        'phone' => $cart->client?->profile?->phone ?: $cart->phone,
-                        'email' => $cart->client?->email ?: $cart->email,
-                        'is_guest' => is_null($cart->client_id),
+                        'phone' => $cart->client?->profile?->phone,
+                        'email' => $cart->client?->email,
                     ],
                     'last_communication' => $lastComm ? [
                         'channel' => $lastComm->channel,   // «Канал»
@@ -121,8 +116,7 @@ class CartController extends Controller
 
         if (! ($result['ok'] ?? false)) {
             $messages = [
-                'not_eligible' => 'Корзина оформлена или пуста — отправка недоступна.',
-                'no_consent' => 'Гость не давал согласия на рассылку.',
+                'not_eligible' => 'Напоминание доступно только для клиентской непустой корзины, которая ещё не оформлена.',
                 'throttled' => 'Слишком частая отправка. Попробуйте позже.',
                 'no_contact' => 'Нет доступного контакта для выбранного канала.',
             ];
@@ -250,7 +244,7 @@ class CartController extends Controller
     {
         $cart = $this->resolver->resolveActive($request);
 
-        if ($cart) {
+        if ($cart && $cart->client_id) {
             $cart->update([
                 'status' => 'abandoned',
                 'updated_at' => now(),
