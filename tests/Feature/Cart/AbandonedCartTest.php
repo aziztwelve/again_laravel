@@ -356,6 +356,30 @@ class AbandonedCartTest extends TestCase
         ]);
     }
 
+    public function test_send_manual_generates_recovery_token_and_link(): void
+    {
+        Queue::fake();
+
+        $client = $this->client(['email' => 'link@example.com']);
+        // active-корзина без recovery_token — как при ручной отправке из админки.
+        $cart = $this->cart($client, 'active', now());
+        $this->assertNull($cart->recovery_token);
+
+        $result = $this->service()->sendManual($cart);
+        $this->assertTrue($result['ok']);
+
+        // Токен выдан лениво и сохранён.
+        $cart->refresh();
+        $this->assertNotNull($cart->recovery_token);
+
+        // Ссылка в письме содержит токен и не оканчивается на «/recovery/» (404).
+        $base = rtrim((string) config('abandoned_cart.recovery_url'), '/');
+        $body = $this->service()->buildMessage($cart, 1)['body'];
+        $this->assertStringContainsString($base.'/'.$cart->recovery_token, $body);
+        $this->assertStringNotContainsString($base."/\n", $body);
+        $this->assertStringNotContainsString($base.'/ ', $body);
+    }
+
     public function test_send_manual_is_throttled(): void
     {
         Queue::fake();

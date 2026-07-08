@@ -389,6 +389,15 @@ class AbandonedCartService
     {
         $base = rtrim((string) config('abandoned_cart.recovery_url'), '/');
 
+        // Токен обязателен: без него ссылка выходит вида «{base}/» и упирается в
+        // 404 на витрине (маршрут существует только как /cart/recovery/{token}).
+        // markAbandoned() уже выдаёт токен, но ручная отправка (sendManual) идёт
+        // по active-корзине без токена — генерируем лениво и сохраняем.
+        if (empty($cart->recovery_token)) {
+            $cart->recovery_token = $this->generateRecoveryToken();
+            $cart->save();
+        }
+
         return $base.'/'.$cart->recovery_token;
     }
 
