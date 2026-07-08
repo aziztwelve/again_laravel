@@ -166,6 +166,55 @@ class UtmTrackingTest extends TestCase
         $this->assertEquals(33.3, $row['cr_purchase']);   // 1/3*100
     }
 
+    public function test_analytics_filters_by_multiple_link_ids(): void
+    {
+        $user = User::factory()->create();
+        $channel = $this->channel();
+
+        $linkA = $this->link($channel, ['name' => 'A', 'slug' => 'slug-a']);
+        $linkB = $this->link($channel, ['name' => 'B', 'slug' => 'slug-b']);
+        $linkC = $this->link($channel, ['name' => 'C', 'slug' => 'slug-c']);
+
+        foreach ([$linkA, $linkB, $linkC] as $l) {
+            UtmVisit::create([
+                'utm_link_id' => $l->id,
+                'visited_at' => now(),
+                'visitor_hash' => 'h'.$l->id,
+            ]);
+        }
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->getJson('/api/analytics/utm?preset=all&link_ids[]='.$linkA->id.'&link_ids[]='.$linkC->id);
+
+        $response->assertOk();
+
+        $ids = collect($response->json('rows'))->pluck('link_id')->sort()->values()->all();
+        $this->assertSame([$linkA->id, $linkC->id], $ids);
+    }
+
+    public function test_analytics_backward_compatible_single_link_id(): void
+    {
+        $user = User::factory()->create();
+        $channel = $this->channel();
+
+        $linkA = $this->link($channel, ['name' => 'A', 'slug' => 'bc-a']);
+        $this->link($channel, ['name' => 'B', 'slug' => 'bc-b']);
+
+        UtmVisit::create([
+            'utm_link_id' => $linkA->id,
+            'visited_at' => now(),
+            'visitor_hash' => 'h',
+        ]);
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->getJson('/api/analytics/utm?preset=all&link_id='.$linkA->id);
+
+        $response->assertOk();
+
+        $ids = collect($response->json('rows'))->pluck('link_id')->all();
+        $this->assertSame([$linkA->id], $ids);
+    }
+
     public function test_analytics_pie_uses_distinct_clients(): void
     {
         $user = User::factory()->create();

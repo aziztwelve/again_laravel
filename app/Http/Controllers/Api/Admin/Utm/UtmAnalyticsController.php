@@ -26,13 +26,20 @@ class UtmAnalyticsController extends Controller
 
             $channelId = $request->integer('channel_id') ?: null;
             $tagId = $request->integer('tag_id') ?: null;
-            $linkId = $request->integer('link_id') ?: null;
+            // Мульти-выбор меток: link_ids[] (новое). link_id (число) — обратная
+            // совместимость со старым single-select. Нормализуем в массив int > 0.
+            $filterLinkIds = collect($request->input('link_ids', []))
+                ->push($request->input('link_id'))
+                ->map(fn ($v) => (int) $v)
+                ->filter()
+                ->unique()
+                ->values();
 
             // Базовый набор меток с учётом фильтров.
             $links = UtmLink::with(['channel', 'tag'])
                 ->when($channelId, fn ($q) => $q->where('marketing_channel_id', $channelId))
                 ->when($tagId, fn ($q) => $q->where('utm_tag_id', $tagId))
-                ->when($linkId, fn ($q) => $q->where('id', $linkId))
+                ->when($filterLinkIds->isNotEmpty(), fn ($q) => $q->whereIn('id', $filterLinkIds))
                 ->orderByDesc('id')
                 ->get();
 
