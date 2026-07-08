@@ -21,7 +21,7 @@ return [
          * Sets the webhook URL that will be exposed by the server,
          * this can be customized or entirely disabled (by setting it to NULL)
          */
-        'url' => '/telegraph/{token}/webhook',
+        'url' => null,
 
         /*
          * Sets the handler to be used when Telegraph

@@ -1,7 +1,13 @@
 <?php
 
 use App\Http\Controllers\Public\UtmRedirectController;
+use DefStudio\Telegraph\Controllers\WebhookController;
+use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Support\Facades\Route;
+
+Route::post('telegraph/{token}/webhook', [WebhookController::class, 'handle'])
+    ->withoutMiddleware([VerifyCsrfToken::class])
+    ->name('telegraph.webhook');
 
 Route::get('telegraph/{token}/webhook', function ($token) {
     return response()->json(['status' => 'ok'], 200);
