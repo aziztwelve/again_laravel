@@ -172,7 +172,7 @@ Route::prefix('/public')->group(function () {
         Route::get('/products', [CatalogController::class, 'products'])
             ->name('products');
 
-        Route::get('/products/{product:slug}', [CatalogController::class, 'getProduct'])
+        Route::get('/products/{slug}', [CatalogController::class, 'getProduct'])
             ->name('products');
     });
 

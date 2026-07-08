@@ -103,8 +103,12 @@ class CatalogController extends Controller
     }
 
 
-    public function getProduct(Product $product): ProductPublicResource
+    public function getProduct(string $slug): ProductPublicResource
     {
+        $product = Product::query()
+            ->where('slug', $slug)
+            ->orWhere('uuid', $slug)
+            ->firstOrFail();
 
         $this->applyDiscountToProduct($product);
 
