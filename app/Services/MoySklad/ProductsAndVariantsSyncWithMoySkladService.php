@@ -175,7 +175,7 @@ class ProductsAndVariantsSyncWithMoySkladService
 
     private function upsertProduct($data, array $stock, array $moyskladUnits): Product
     {
-        $slug = Str::slug($data->id ?? '');
+        $legacyUuidSlug = Str::slug($data->id ?? '');
 
         $stockQty = $this->normalizeIntValue($stock[$data->id]['stock'] ?? 0);
 
@@ -190,8 +190,8 @@ class ProductsAndVariantsSyncWithMoySkladService
 
         if (!$product) {
             $product = Product::withTrashed()
-                ->where(function ($query) use ($slug, $barcode) {
-                    $query->where('slug', $slug)
+                ->where(function ($query) use ($legacyUuidSlug, $barcode) {
+                    $query->where('slug', $legacyUuidSlug)
                         ->orWhere('barcode', $barcode);
                 })
                 ->first();
@@ -202,7 +202,6 @@ class ProductsAndVariantsSyncWithMoySkladService
             'name' => mb_substr($data->name ?? '', 0, 255), // Ограничиваем длину
             'description' => $data->description ?? null,
             'default_unit_id' => $unit?->id,
-            'slug' => $slug,
             'price' => $this->extractPrice($data->salePrices ?? []),
             'cost_price' => $this->extractCostPrice($data->buyPrice ?? (object)['value' => 0]),
             'barcode' => $barcode,

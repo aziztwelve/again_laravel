@@ -185,7 +185,15 @@ class Product extends Model implements HasMedia
     public function generateUniqueSlug($name)
     {
         $slug = $this->slugify($this->transliterate($name));
-        $count = static::whereRaw("slug RLIKE '^{$slug}(-[0-9]+)?$'")->count();
+        $escapedSlug = preg_quote($slug, '/');
+
+        $query = static::whereRaw('slug RLIKE ?', ["^{$escapedSlug}(-[0-9]+)?$"]);
+
+        if ($this->exists) {
+            $query->whereKeyNot($this->getKey());
+        }
+
+        $count = $query->count();
 
         return $count ? "{$slug}-{$count}" : $slug;
     }
