@@ -3,6 +3,7 @@
 namespace App\Services\Utm;
 
 use App\Models\MarketingChannel;
+use App\Models\Product;
 use App\Models\UtmLink;
 use Illuminate\Support\Str;
 
@@ -52,12 +53,75 @@ class UtmLinkService
             'is_active',
         ]));
 
+        if (! empty($payload['target_url'])) {
+            $payload['target_url'] = $this->canonicalizeTargetUrl($payload['target_url']);
+        }
+
         // utm_source по умолчанию = код канала (ig, tg, …).
         if (empty($payload['utm_source'])) {
             $payload['utm_source'] = $existing->utm_source ?? $channel->code;
         }
 
         return $payload;
+    }
+
+    private function canonicalizeTargetUrl(string $url): string
+    {
+        $parts = parse_url($url);
+        if (($parts['host'] ?? null) === 'sub.againdev2.ru') {
+            $parts['host'] = parse_url((string) config('utm.tracking_base_url', config('app.url')), PHP_URL_HOST)
+                ?: 'sub.againdev.ru';
+        }
+
+        $path = $parts['path'] ?? '';
+
+        if (! preg_match('#^/catalog/([^/]+)$#', $path, $matches)) {
+            return $this->buildUrl($parts);
+        }
+
+        $product = Product::query()
+            ->where('uuid', $matches[1])
+            ->whereNotNull('slug')
+            ->first(['slug']);
+
+        if (! $product?->slug) {
+            return $url;
+        }
+
+        $parts['path'] = '/catalog/'.$product->slug;
+
+        return $this->buildUrl($parts);
+    }
+
+    private function buildUrl(array $parts): string
+    {
+        $url = ($parts['scheme'] ?? 'https').'://';
+
+        if (isset($parts['user'])) {
+            $url .= $parts['user'];
+            if (isset($parts['pass'])) {
+                $url .= ':'.$parts['pass'];
+            }
+            $url .= '@';
+        }
+
+        $url .= $parts['host'] ?? '';
+
+        if (isset($parts['port'])) {
+            $url .= ':'.$parts['port'];
+        }
+
+        $url .= $parts['path'] ?? '';
+
+        if (isset($parts['query'])) {
+            $url .= '?'.$parts['query'];
+        }
+
+        if (isset($parts['fragment'])) {
+            $url .= '#'.$parts['fragment'];
+        }
+
+        return $url;
     }
 
     /**

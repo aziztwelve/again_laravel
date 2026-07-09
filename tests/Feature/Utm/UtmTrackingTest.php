@@ -5,10 +5,12 @@ namespace Tests\Feature\Utm;
 use App\Models\MarketingChannel;
 use App\Models\Client;
 use App\Models\Order;
+use App\Models\Product;
 use App\Models\User;
 use App\Models\UtmLink;
 use App\Models\UtmVisit;
 use App\Services\Order\OrderCreationService;
+use App\Services\Utm\UtmLinkService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Tests\TestCase;
 
@@ -88,15 +90,62 @@ class UtmTrackingTest extends TestCase
         $this->assertDatabaseHas('utm_visits', ['utm_link_id' => $link->id]);
     }
 
-    public function test_redirect_tracker_returns_404_for_inactive_or_unknown_slug(): void
+    public function test_redirect_tracker_redirects_inactive_slug_to_home_and_returns_404_for_unknown_slug(): void
     {
+        config(['utm.tracking_base_url' => 'https://example.com']);
+
         $channel = $this->channel();
         $this->link($channel, ['slug' => 'inactive1', 'is_active' => false]);
 
-        $this->get('/go/inactive1')->assertNotFound();
+        $this->get('/go/inactive1')->assertRedirect('https://example.com/');
         $this->get('/go/missing999')->assertNotFound();
 
         $this->assertDatabaseCount('utm_visits', 0);
+    }
+
+    public function test_link_creation_canonicalizes_product_uuid_target_url_to_slug(): void
+    {
+        $channel = $this->channel();
+        $product = Product::create([
+            'name' => 'Body Again',
+            'uuid' => '4faf546a-296c-11ef-0a80-1399003bc2b3',
+            'is_active' => true,
+        ]);
+        $product->update(['slug' => 'menstrualnye-trusy-body-again-1']);
+
+        /** @var UtmLinkService $service */
+        $service = app(UtmLinkService::class);
+
+        $link = $service->create([
+            'name' => 'VK Body',
+            'marketing_channel_id' => $channel->id,
+            'target_url' => 'https://sub.againdev.ru/catalog/'.$product->uuid.'?color=black',
+            'utm_medium' => 'ver1',
+        ]);
+
+        $this->assertSame(
+            'https://sub.againdev.ru/catalog/menstrualnye-trusy-body-again-1?color=black',
+            $link->target_url
+        );
+    }
+
+    public function test_link_creation_replaces_retired_storefront_domain(): void
+    {
+        config(['utm.tracking_base_url' => 'https://sub.againdev.ru']);
+
+        $channel = $this->channel();
+
+        /** @var UtmLinkService $service */
+        $service = app(UtmLinkService::class);
+
+        $link = $service->create([
+            'name' => 'Old domain',
+            'marketing_channel_id' => $channel->id,
+            'target_url' => 'https://sub.againdev2.ru/catalog?foo=bar',
+            'utm_medium' => 'manual',
+        ]);
+
+        $this->assertSame('https://sub.againdev.ru/catalog?foo=bar', $link->target_url);
     }
 
     // === Атрибуция заказа к метке (utm_link_id из orderData → заказ) ===

@@ -14,16 +14,19 @@ class UtmRedirectController extends Controller
     /**
      * Редирект-трекер: GET /go/{slug}.
      *
-     * 1. Находит активную метку по slug (иначе 404).
+     * 1. Находит метку по slug (иначе 404).
+     *    Если метка выключена — редиректит на главную без атрибуции.
      * 2. Пишет посещение в utm_visits.
      * 3. Ставит куку utm_link_id (окно атрибуции, настройки — config/utm.php).
      * 4. 302-redirect на целевой URL с utm-параметрами.
      */
     public function handle(Request $request, string $slug): RedirectResponse
     {
-        $link = UtmLink::where('slug', $slug)
-            ->where('is_active', true)
-            ->firstOrFail();
+        $link = UtmLink::where('slug', $slug)->firstOrFail();
+
+        if (! $link->is_active) {
+            return redirect()->away($this->homeUrl());
+        }
 
         $ip = $request->ip();
         $userAgent = $request->userAgent();
@@ -55,5 +58,10 @@ class UtmRedirectController extends Controller
         );
 
         return redirect()->away($link->target_url_with_params)->withCookie($cookie);
+    }
+
+    private function homeUrl(): string
+    {
+        return rtrim((string) config('utm.tracking_base_url', config('app.url')), '/').'/';
     }
 }
