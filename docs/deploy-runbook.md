@@ -108,17 +108,19 @@ pm2 restart nuxt-shop --update-env
 ```
 
 ### 6. Дашборд (vue-admin) — пересобирать всегда
+`vue-admin` использует Yarn 1 (`packageManager` в `package.json` и `yarn.lock`).
+Не использовать `npm install`: npm строго валидирует peer-зависимости и падает
+на существующем конфликте `vue-chart-3` / `chart.js`, а также может менять
+`package-lock.json` на сервере. Источник правды для зависимостей — `yarn.lock`.
 ```bash
 ssh -o BatchMode=yes -o ConnectTimeout=900 root@186.246.14.59 '
 set -euo pipefail
 cd /var/www/html/vue-admin
-npm install --no-audit --no-fund 2>&1 | tail -3   # может ругнуться ERESOLVE — ок, если deps не менялись
-NODE_OPTIONS=--max-old-space-size=2048 npm run build 2>&1 | tail -6
+corepack enable
+corepack yarn install --frozen-lockfile --non-interactive 2>&1 | tail -8
+NODE_OPTIONS=--max-old-space-size=2048 corepack yarn build 2>&1 | tail -6
 '
 ```
-> Если `npm install` падает на ERESOLVE, а package.json НЕ менялся — можно
-> отдельно запустить только сборку на существующих `node_modules`. Если
-> зависимости менялись — `npm install --legacy-peer-deps`.
 
 ### 7. Проверка (smoke)
 ```bash
