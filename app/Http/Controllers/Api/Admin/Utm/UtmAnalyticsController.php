@@ -26,6 +26,10 @@ class UtmAnalyticsController extends Controller
 
             $channelId = $request->integer('channel_id') ?: null;
             $tagId = $request->integer('tag_id') ?: null;
+            // Тип пользователя: all | authorized | guest. Гость — заказ без client_id.
+            $userType = in_array($request->query('user_type'), ['authorized', 'guest'], true)
+                ? $request->query('user_type')
+                : 'all';
             // Мульти-выбор меток: link_ids[] (новое). link_id (число) — обратная
             // совместимость со старым single-select. Нормализуем в массив int > 0.
             $filterLinkIds = collect($request->input('link_ids', []))
@@ -46,7 +50,7 @@ class UtmAnalyticsController extends Controller
             $linkIds = $links->pluck('id');
 
             $visitsByLink = $this->visitsByLink($linkIds, $from, $to);
-            $ordersByLink = $this->ordersByLink($linkIds, $from, $to);
+            $ordersByLink = $this->ordersByLink($linkIds, $from, $to, $userType);
 
             $rows = [];
             $totals = [
@@ -176,8 +180,9 @@ class UtmAnalyticsController extends Controller
     /**
      * Агрегаты заказов по каждой метке за период.
      * Покупки/сумма покупок — только paid (без refunded), решения #5/#9.
+     * $userType: all | authorized (client_id NOT NULL) | guest (client_id NULL).
      */
-    private function ordersByLink($linkIds, Carbon $from, Carbon $to)
+    private function ordersByLink($linkIds, Carbon $from, Carbon $to, string $userType = 'all')
     {
         if ($linkIds->isEmpty()) {
             return collect();
@@ -189,6 +194,9 @@ class UtmAnalyticsController extends Controller
             ->whereNull('deleted_at')
             ->whereIn('utm_link_id', $linkIds)
             ->whereBetween('created_at', [$from, $to])
+            // Разрез по типу пользователя: гость — без client_id, авторизованный — с client_id.
+            ->when($userType === 'authorized', fn ($q) => $q->whereNotNull('client_id'))
+            ->when($userType === 'guest', fn ($q) => $q->whereNull('client_id'))
             ->select(
                 'utm_link_id',
                 DB::raw('COUNT(*) as orders_count'),
