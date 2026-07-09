@@ -80,8 +80,8 @@ class CatalogService
             ]);
 
 
-        // Категория «Скоро в продаже»: показывать товары без остатка,
-        // подбираемые по флагу (минуя pivot-привязку).
+        // Категория «Скоро в продаже»: показывать выбранные в админке товары
+        // без остатка. Когда остаток появляется, товар уходит из этой категории.
         $isComingSoon = false;
 
         // Фильтр по категории (ID или SLUG)
@@ -101,10 +101,12 @@ class CatalogService
                     // Показываем ВСЕ товары с меткой "новинка"
                     $query->where('is_new', true);
                 } elseif ($category->is_coming_soon) {
-                    // «Скоро в продаже»: только товары без остатка (is_active уже = true).
-                    // Товар автоматически уходит из категории, как только появляется остаток.
                     $isComingSoon = true;
-                    $query->where('stock_quantity', '<=', 0);
+                    $query
+                        ->where('stock_quantity', '<=', 0)
+                        ->whereHas('categories', function ($q) use ($category) {
+                            $q->where('categories.id', $category->id);
+                        });
                 } else {
                     // Обычная логика - товары привязанные к категории
                     $query->whereHas('categories', function ($q) use ($category) {
