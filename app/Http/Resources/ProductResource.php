@@ -2,6 +2,8 @@
 
 namespace App\Http\Resources;
 
+use App\Models\Client;
+use App\Models\Discount;
 use Illuminate\Http\Resources\Json\JsonResource;
 use App\Services\DiscountService;
 use Illuminate\Support\Collection;
@@ -15,7 +17,13 @@ class ProductResource extends JsonResource
             $discountService = app(DiscountService::class);
         }
 
-        $applicableDiscounts = collect($discountService->calculateDiscounts($this->resource));
+        $customerType = $request->user() instanceof Client
+            ? Discount::CUSTOMER_TYPE_AUTHORIZED
+            : Discount::CUSTOMER_TYPE_GUEST;
+
+        $applicableDiscounts = collect(
+            $discountService->calculateDiscountsForCustomerType($this->resource, null, $customerType)
+        );
 
         return [
             'id' => $this->id,
@@ -60,9 +68,11 @@ class ProductResource extends JsonResource
                     'url' => $mainImage->url,
                 ] : null;
             }),
-            'price_range' => $this->whenLoaded('activeVariants', function () use ($discountService) {
-                $prices = $this->activeVariants->map(function ($variant) use ($discountService) {
-                    $variantDiscounts = collect($discountService->calculateDiscounts($this->resource, $variant));
+            'price_range' => $this->whenLoaded('activeVariants', function () use ($discountService, $customerType) {
+                $prices = $this->activeVariants->map(function ($variant) use ($discountService, $customerType) {
+                    $variantDiscounts = collect(
+                        $discountService->calculateDiscountsForCustomerType($this->resource, $variant, $customerType)
+                    );
                     $originalPrice = $variant->price;
                     $finalPrice = $originalPrice;
 
@@ -103,9 +113,11 @@ class ProductResource extends JsonResource
                     'has_discount' => $prices->some(fn($price) => $price['final'] < $price['original'])
                 ];
             }),
-            'variants' => $this->whenLoaded('activeVariants', function () use ($discountService) {
-                return $this->activeVariants->map(function ($variant) use ($discountService) {
-                    $variantDiscounts = collect($discountService->calculateDiscounts($this->resource, $variant));
+            'variants' => $this->whenLoaded('activeVariants', function () use ($discountService, $customerType) {
+                return $this->activeVariants->map(function ($variant) use ($discountService, $customerType) {
+                    $variantDiscounts = collect(
+                        $discountService->calculateDiscountsForCustomerType($this->resource, $variant, $customerType)
+                    );
                     $originalPrice = $variant->price;
                     $finalPrice = $originalPrice;
 

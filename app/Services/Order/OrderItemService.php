@@ -38,7 +38,9 @@ class OrderItemService
             // Валидируем позиции
             $itemsValidation = $this->validationService->validateOrderItems(
                 $items,
-                $order->promoCode
+                $order->promoCode,
+                null,
+                $order->client
             );
 
             if (!$itemsValidation['valid']) {

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Public\Cart;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ImageResource;
 use App\Models\Cart;
+use App\Models\Discount;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Traits\ProductsTrait;
@@ -70,7 +71,7 @@ class CartRestoreController extends Controller
                 continue; // товар больше недоступен — пропускаем
             }
 
-            $this->applyDiscountToProduct($model);
+            $this->applyDiscountToProduct($model, Discount::CUSTOMER_TYPE_AUTHORIZED);
 
             $items[] = [
                 'product_id' => $item->product_id,

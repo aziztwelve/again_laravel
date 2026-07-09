@@ -15,6 +15,10 @@ class PromoCode extends Model
     use HasFactory;
     use SoftDeletes;
 
+    public const CUSTOMER_TYPE_AUTHORIZED = 'authorized';
+    public const CUSTOMER_TYPE_GUEST = 'guest';
+    public const CUSTOMER_TYPE_ALL = 'all';
+
     // Константы для типов применения скидок
     const DISCOUNT_BEHAVIOR_REPLACE = 'replace'; // Заменяет скидку продукта
     const DISCOUNT_BEHAVIOR_STACK = 'stack';     // Добавляется поверх скидки
@@ -32,6 +36,7 @@ class PromoCode extends Model
         'max_uses',
         'times_used',
         'is_active',
+        'customer_type',
         'applies_to_all_products',
         'applies_to_all_clients',
         'type',
@@ -67,6 +72,13 @@ class PromoCode extends Model
             $now->gte($this->starts_at) &&
             $now->lte($this->expires_at) &&
             ($this->max_uses === null || $this->times_used < $this->max_uses);
+    }
+
+    public function isAvailableForCustomerType(?string $customerType): bool
+    {
+        $target = $this->customer_type ?: self::CUSTOMER_TYPE_ALL;
+
+        return $target === self::CUSTOMER_TYPE_ALL || $target === $customerType;
     }
 
     /**

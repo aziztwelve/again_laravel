@@ -39,6 +39,16 @@ class PromoCodeService
             return ['error' => response()->json(['message' => 'Промокод не найден или истёк'], 404)];
         }
 
+        $customerType = $client ? PromoCode::CUSTOMER_TYPE_AUTHORIZED : PromoCode::CUSTOMER_TYPE_GUEST;
+        if (! $promoCode->isAvailableForCustomerType($customerType)) {
+            return ['error' => response()->json([
+                'message' => $client
+                    ? 'Этот промокод доступен только гостевым покупателям'
+                    : 'Этот промокод доступен только авторизованным покупателям',
+                'code' => $client ? 'PROMO_ONLY_FOR_GUESTS' : 'PROMO_REQUIRES_AUTH',
+            ], 400)];
+        }
+
         // Админ открыл предпросмотр без выбранного клиента: разрешаем только публичные купоны.
         if (!$client) {
             if (!$promoCode->applies_to_all_clients) {
@@ -110,8 +120,8 @@ class PromoCodeService
 
 
 
-        $applicableWithPrices = $this->calculateProductsPrices($applicable, $promoCode);
-        $notApplicableWithPrices = $this->calculateProductsPrices($notApplicable, null);
+        $applicableWithPrices = $this->calculateProductsPrices($applicable, $promoCode, $customerType);
+        $notApplicableWithPrices = $this->calculateProductsPrices($notApplicable, null, $customerType);
 
 
 
@@ -126,6 +136,7 @@ class PromoCodeService
                     'discount_amount' => $promoCode->discount_amount,
                     'discount_behavior' => $promoCode->discount_behavior,
                     'description' => $promoCode->description,
+                    'customer_type' => $promoCode->customer_type ?? PromoCode::CUSTOMER_TYPE_ALL,
                 ],
                 'applicable_products' => $applicableWithPrices,
                 'not_applicable_products' => $notApplicableWithPrices,
@@ -142,6 +153,7 @@ class PromoCodeService
                 'discount_amount' => $promoCode->discount_amount,
                 'discount_behavior' => $promoCode->discount_behavior,
                 'description' => $promoCode->description,
+                'customer_type' => $promoCode->customer_type ?? PromoCode::CUSTOMER_TYPE_ALL,
             ],
             'applicable_products' => $applicableWithPrices,
         ];
@@ -172,7 +184,11 @@ class PromoCodeService
     /**
      * Рассчитать цены для списка продуктов с учетом скидок и промокода
      */
-    private function calculateProductsPrices(array $products, ?PromoCode $promoCode = null): array
+    private function calculateProductsPrices(
+        array $products,
+        ?PromoCode $promoCode = null,
+        ?string $customerType = null
+    ): array
     {
         $result = [];
 
@@ -198,7 +214,7 @@ class PromoCodeService
             $originalOldPrice = $model->old_price;
 
             // Шаг 1: Применяем обычную скидку продукта
-            $this->applyDiscountToProduct($model);
+            $this->applyDiscountToProduct($model, $customerType);
 
             $priceAfterDiscount = $model->price;
             $discountInfo = [

@@ -77,6 +77,7 @@ class PromoCodeController extends Controller
 
             'max_uses' => 'nullable|integer|min:1',
             'is_active' => 'boolean',
+            'customer_type' => 'nullable|in:authorized,guest,all',
             'client_ids' => 'nullable|array',
             'client_ids.*' => 'exists:clients,id',
             'applies_to_all_products' => 'boolean',
@@ -153,6 +154,7 @@ class PromoCodeController extends Controller
             'is_unlimited' => 'sometimes|boolean',
             'max_uses' => 'nullable|integer|min:1',
             'is_active' => 'boolean',
+            'customer_type' => 'nullable|in:authorized,guest,all',
             'client_ids' => 'nullable|array',
             'client_ids.*' => 'exists:clients,id',
             'applies_to_all_products' => 'boolean',

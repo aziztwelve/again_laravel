@@ -32,6 +32,10 @@ class UpdateSegmentRequest extends FormRequest
             ],
             'description' => 'nullable|string|max:1000',
             'is_active' => 'boolean',
+            'customer_type' => [
+                'nullable',
+                Rule::in(['authorized', 'guest', 'all'])
+            ],
             'recalculate_frequency' => [
                 'sometimes',
                 Rule::in(['on_view', 'manual'])
@@ -58,6 +62,7 @@ class UpdateSegmentRequest extends FormRequest
             'name.unique' => 'Сегмент с таким названием уже существует',
             'name.max' => 'Название сегмента не должно превышать 255 символов',
             'description.max' => 'Описание не должно превышать 1000 символов',
+            'customer_type.in' => 'Некорректная аудитория сегмента',
             'recalculate_frequency.in' => 'Некорректная частота пересчёта',
             'conditions.period.in' => 'Некорректный период для условий',
             'conditions.min_orders_count.integer' => 'Минимальное количество заказов должно быть целым числом',
@@ -79,6 +84,7 @@ class UpdateSegmentRequest extends FormRequest
             'name' => 'название',
             'description' => 'описание',
             'is_active' => 'активность',
+            'customer_type' => 'аудитория',
             'recalculate_frequency' => 'частота пересчёта',
             'conditions.period' => 'период',
             'conditions.min_orders_count' => 'минимальное количество заказов',

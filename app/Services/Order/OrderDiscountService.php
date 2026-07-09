@@ -74,6 +74,9 @@ class OrderDiscountService
         // промо). Не учитываем такие позиции в applied_amount.
         $promoCode = $order->promo_code_id ? PromoCode::find($order->promo_code_id) : null;
         $promoReplaces = $promoCode && $promoCode->discount_behavior === 'replace';
+        $customerType = $order->client_id
+            ? Discount::CUSTOMER_TYPE_AUTHORIZED
+            : Discount::CUSTOMER_TYPE_GUEST;
 
         foreach ($order->items()->get() as $item) {
             if ($item->is_gift || ! $item->product_id) {
@@ -87,7 +90,7 @@ class OrderDiscountService
                 continue;
             }
 
-            $this->orderValidationService->applyDiscountToProduct($model);
+            $this->orderValidationService->applyDiscountToProduct($model, $customerType);
             $autoPerUnit = (float) ($model->total_discount ?? 0);
             $discountId  = $model->discount_id ?? null;
 
@@ -490,7 +493,10 @@ class OrderDiscountService
                 $map[$item->id] = null;
                 continue;
             }
-            $this->orderValidationService->applyDiscountToProduct($model);
+            $customerType = $item->order?->client_id
+                ? Discount::CUSTOMER_TYPE_AUTHORIZED
+                : Discount::CUSTOMER_TYPE_GUEST;
+            $this->orderValidationService->applyDiscountToProduct($model, $customerType);
             $map[$item->id] = ((float) ($model->total_discount ?? 0)) > 0.001
                 ? ($model->discount_id ?? null)
                 : null;

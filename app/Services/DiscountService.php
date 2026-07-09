@@ -32,9 +32,18 @@ class DiscountService
 
     public function calculateDiscounts($product, $variant = null)
     {
+        return $this->calculateDiscountsForCustomerType($product, $variant);
+    }
+
+    public function calculateDiscountsForCustomerType($product, $variant = null, ?string $customerType = null)
+    {
         $applicableDiscounts = collect();
 
         foreach ($this->activeDiscounts as $discount) {
+            if (! $discount->isAvailableForCustomerType($customerType)) {
+                continue;
+            }
+
             // Проверяем глобальные скидки
             if ($discount->discount_type === 'all') {
                 $applicableDiscounts->push($discount);
@@ -84,4 +93,4 @@ class DiscountService
     }
 
     // Другие вспомогательные методы...
-} 
+}

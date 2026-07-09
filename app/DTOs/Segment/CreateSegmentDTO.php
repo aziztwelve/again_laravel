@@ -9,6 +9,7 @@ class CreateSegmentDTO
         public readonly ?string $description,
         public readonly ?array $conditions,
         public readonly bool $isActive = true,
+        public readonly string $customerType = 'all',
         public readonly string $recalculateFrequency = 'on_view'
     ) {}
 
@@ -22,6 +23,7 @@ class CreateSegmentDTO
             description: $data['description'] ?? null,
             conditions: $data['conditions'] ?? null,
             isActive: $data['is_active'] ?? true,
+            customerType: $data['customer_type'] ?? 'all',
             recalculateFrequency: $data['recalculate_frequency'] ?? 'on_view'
         );
     }
@@ -36,6 +38,7 @@ class CreateSegmentDTO
             'description' => $this->description,
             'conditions' => $this->conditions,
             'is_active' => $this->isActive,
+            'customer_type' => $this->customerType,
             'recalculate_frequency' => $this->recalculateFrequency,
         ];
     }

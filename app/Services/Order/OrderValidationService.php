@@ -2,6 +2,8 @@
 
 namespace App\Services\Order;
 
+use App\Models\Client;
+use App\Models\Discount;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\PromoCode;
@@ -18,7 +20,12 @@ class OrderValidationService
         protected PromotionService $promotionService
     ) {}
 
-    public function validateOrderItems(array $items, ?PromoCode $promoCode = null, ?int $promotionId = null): array
+    public function validateOrderItems(
+        array $items,
+        ?PromoCode $promoCode = null,
+        ?int $promotionId = null,
+        ?Client $client = null
+    ): array
     {
         //        Log::info('=== START ORDER VALIDATION ===');
         //        Log::info('Items count: ' . count($items));
@@ -51,7 +58,7 @@ class OrderValidationService
             //            ]);
 
             try {
-                $result = $this->validateSingleItem($item, $index, $promoCode);
+                $result = $this->validateSingleItem($item, $index, $promoCode, $client);
 
                 if ($result['error']) {
                     Log::warning("Item #{$index} validation failed", $result['error']);
@@ -88,7 +95,12 @@ class OrderValidationService
         ];
     }
 
-    private function validateSingleItem(array $item, int $index, ?PromoCode $promoCode = null): array
+    private function validateSingleItem(
+        array $item,
+        int $index,
+        ?PromoCode $promoCode = null,
+        ?Client $client = null
+    ): array
     {
         $productId = $item['product_id'];
         $variantId = $item['product_variant_id'] ?? null;
@@ -156,7 +168,7 @@ class OrderValidationService
         // 6. Расчет цен с учетом скидок и промокода
         //        Log::info("Step 6: Calculating prices");
         try {
-            $priceData = $this->calculateItemPrice($model, $productId, $variantId, $promoCode);
+            $priceData = $this->calculateItemPrice($model, $productId, $variantId, $promoCode, $client);
             Log::info('Price calculated', $priceData);
         } catch (\Exception $e) {
             Log::error('Error calculating price', [
@@ -333,7 +345,13 @@ class OrderValidationService
         return null;
     }
 
-    private function calculateItemPrice($model, int $productId, ?int $variantId, ?PromoCode $promoCode): array
+    private function calculateItemPrice(
+        $model,
+        int $productId,
+        ?int $variantId,
+        ?PromoCode $promoCode,
+        ?Client $client = null
+    ): array
     {
         Log::info('Calculating price', [
             'original_price' => $model->price,
@@ -346,7 +364,8 @@ class OrderValidationService
         // Применяем скидку товара
         Log::info('Applying product discount');
         try {
-            $this->applyDiscountToProduct($model);
+            $customerType = $client ? Discount::CUSTOMER_TYPE_AUTHORIZED : Discount::CUSTOMER_TYPE_GUEST;
+            $this->applyDiscountToProduct($model, $customerType);
         } catch (\Exception $e) {
             Log::error('Error applying discount to product', [
                 'error' => $e->getMessage(),

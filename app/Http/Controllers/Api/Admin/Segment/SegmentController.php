@@ -244,6 +244,17 @@ class SegmentController extends Controller
 
     public function getAvailableClients(FilterSegmentClientsRequest $request, Segment $segment): JsonResponse
     {
+        if (($segment->customer_type ?? Segment::CUSTOMER_TYPE_ALL) === Segment::CUSTOMER_TYPE_GUEST) {
+            return response()->json([
+                'data' => [],
+                'meta' => [
+                    'page' => 1,
+                    'total' => 0,
+                    'per_page' => (int) $request->get('per_page', 15),
+                ],
+            ]);
+        }
+
         $filters = SegmentClientFilterDTO::fromRequest($request->validated());
         $clients = $this->segmentRepository->getAvailableClients($segment, $filters);
 
@@ -259,6 +270,13 @@ class SegmentController extends Controller
     public function attachClients(AttachClientsRequest $request, Segment $segment): JsonResponse
     {
         try {
+            if (($segment->customer_type ?? Segment::CUSTOMER_TYPE_ALL) === Segment::CUSTOMER_TYPE_GUEST) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'В гостевой сегмент нельзя добавлять зарегистрированных клиентов',
+                ], 422);
+            }
+
             $clientIds = $request->validated()['client_ids'];
             $this->attachClientsAction->execute($segment, $clientIds);
 

@@ -12,11 +12,16 @@ class Segment extends Model
 {
     use HasFactory;
 
+    public const CUSTOMER_TYPE_AUTHORIZED = 'authorized';
+    public const CUSTOMER_TYPE_GUEST = 'guest';
+    public const CUSTOMER_TYPE_ALL = 'all';
+
     protected $fillable = [
         'name',
         'description',
         'conditions',
         'is_active',
+        'customer_type',
         'recalculate_frequency',
         'last_recalculated_at',
     ];
@@ -26,6 +31,13 @@ class Segment extends Model
         'is_active' => 'boolean',
         'last_recalculated_at' => 'datetime',
     ];
+
+    public function isAvailableForCustomerType(?string $customerType): bool
+    {
+        $target = $this->customer_type ?: self::CUSTOMER_TYPE_ALL;
+
+        return $target === self::CUSTOMER_TYPE_ALL || $target === $customerType;
+    }
 
     /**
      * Клиенты, входящие в сегмент

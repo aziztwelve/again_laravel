@@ -535,7 +535,10 @@ class OrderUpdateService
 
             // applyDiscountToProduct мутирует модель: model->price становится
             // ценой после авто-скидки, model->total_discount — размер скидки.
-            $this->orderValidationService->applyDiscountToProduct($model);
+            $customerType = $order->client_id
+                ? \App\Models\Discount::CUSTOMER_TYPE_AUTHORIZED
+                : \App\Models\Discount::CUSTOMER_TYPE_GUEST;
+            $this->orderValidationService->applyDiscountToProduct($model, $customerType);
 
             $perUnitDiscount = (float) ($model->total_discount ?? 0);
             $newPrice = (float) $model->price;

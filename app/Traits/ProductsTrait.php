@@ -168,20 +168,20 @@ trait ProductsTrait
 
 
     // FOR SOLVING DISCOUNTS
-    public function applyDiscountsToCollection(Collection $products): void
+    public function applyDiscountsToCollection(Collection $products, ?string $customerType = null): void
     {
         foreach ($products as $product) {
-            $this->applyDiscountToProduct($product);
+            $this->applyDiscountToProduct($product, $customerType);
 
             if ($product->relationLoaded('variants')) {
                 foreach ($product->variants as $variant) {
-                    $this->applyDiscountToProduct($variant);
+                    $this->applyDiscountToProduct($variant, $customerType);
                 }
             }
         }
     }
 
-    public function applyDiscountToProduct($model): void
+    public function applyDiscountToProduct($model, ?string $customerType = null): void
     {
 
 
@@ -214,7 +214,7 @@ trait ProductsTrait
         $percentage = null;
         $totalDiscount = null;
 
-        if ($discount && $discount->is_active) {
+        if ($discount && $discount->is_active && $discount->isAvailableForCustomerType($customerType)) {
             if ($discount->type === 'fixed') {
                 $totalDiscount = $discount->value;
                 $finalPrice = max(0, $price - $totalDiscount);

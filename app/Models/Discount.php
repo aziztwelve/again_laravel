@@ -9,7 +9,9 @@ class Discount extends Model
 {
     use SoftDeletes;
 
-
+    public const CUSTOMER_TYPE_AUTHORIZED = 'authorized';
+    public const CUSTOMER_TYPE_GUEST = 'guest';
+    public const CUSTOMER_TYPE_ALL = 'all';
 
     protected $guarded = ['id'];
 
@@ -20,6 +22,13 @@ class Discount extends Model
         'ends_at' => 'datetime',
         'value' => 'decimal:2'
     ];
+
+    public function isAvailableForCustomerType(?string $customerType): bool
+    {
+        $target = $this->customer_type ?: self::CUSTOMER_TYPE_ALL;
+
+        return $target === self::CUSTOMER_TYPE_ALL || $target === $customerType;
+    }
 
     public function products()
     {

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\ImageResource;
 use App\Models\Cart;
 use App\Models\Color;
+use App\Models\Discount;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Services\Cart\CartResolver;
@@ -314,6 +315,9 @@ class CartController extends Controller
         $found_cart_items = $cart->items()->get();
 
         $found_items = [];
+        $customerType = $cart->client_id
+            ? Discount::CUSTOMER_TYPE_AUTHORIZED
+            : Discount::CUSTOMER_TYPE_GUEST;
 
         foreach ($found_cart_items as $item) {
             if (!is_null($item['product_variant_id'])) {
@@ -347,7 +351,7 @@ class CartController extends Controller
                     // }
 
                     // if ($has_color) {
-                    $found_items[] = $this->get_product_variants_fields($product_variant, $item);
+                    $found_items[] = $this->get_product_variants_fields($product_variant, $item, $customerType);
                     // }
                 }
 
@@ -376,7 +380,7 @@ class CartController extends Controller
                     // }
 
                     // if ($has_color) {
-                    $found_items[] = $this->get_product_fields($product, $item);
+                    $found_items[] = $this->get_product_fields($product, $item, $customerType);
                     // }
                 }
             }
@@ -390,9 +394,9 @@ class CartController extends Controller
         ]);
     }
 
-    protected function get_product_fields($product, $item)
+    protected function get_product_fields($product, $item, ?string $customerType = null)
     {
-        $this->applyDiscountToProduct($product);
+        $this->applyDiscountToProduct($product, $customerType);
 
         return [
             'product_id' => $product->id,
@@ -412,10 +416,10 @@ class CartController extends Controller
         ];
     }
 
-    protected function get_product_variants_fields($product_variant, $item)
+    protected function get_product_variants_fields($product_variant, $item, ?string $customerType = null)
     {
 
-        $this->applyDiscountToProduct($product_variant);
+        $this->applyDiscountToProduct($product_variant, $customerType);
 
         return [
             'product_id' => $product_variant->product_id,

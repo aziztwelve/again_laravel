@@ -143,6 +143,17 @@ class PromoCodeValidationService
      */
     private function checkClientEligibility(PromoCode $promoCode, ?Client $client): array
     {
+        $customerType = $client ? PromoCode::CUSTOMER_TYPE_AUTHORIZED : PromoCode::CUSTOMER_TYPE_GUEST;
+        if (! $promoCode->isAvailableForCustomerType($customerType)) {
+            return [
+                'success' => false,
+                'message' => $client
+                    ? 'Этот промокод доступен только гостевым покупателям'
+                    : 'Этот промокод доступен только авторизованным покупателям',
+                'code' => $client ? 'PROMO_ONLY_FOR_GUESTS' : 'PROMO_REQUIRES_AUTH',
+            ];
+        }
+
         // Если промокод доступен всем клиентам — разрешаем и гостям тоже.
         if ($promoCode->applies_to_all_clients) {
             return ['success' => true];
@@ -267,6 +278,7 @@ class PromoCodeValidationService
             'type' => $promoCode->type,
             'applies_to_all_products' => $promoCode->applies_to_all_products,
             'applies_to_all_clients' => $promoCode->applies_to_all_clients,
+            'customer_type' => $promoCode->customer_type ?? PromoCode::CUSTOMER_TYPE_ALL,
 
             // Даты
             'starts_at' => $promoCode->starts_at?->format('Y-m-d H:i:s'),

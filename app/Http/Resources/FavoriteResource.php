@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Models\Discount;
 use App\Traits\HelperTrait;
 use App\Traits\ProductsTrait;
 use Illuminate\Http\Request;
@@ -18,11 +19,11 @@ class FavoriteResource extends JsonResource
     public function toArray(Request $request): array
     {
         if ($this->product)
-            $this->applyDiscountToProduct($this->product);
+            $this->applyDiscountToProduct($this->product, Discount::CUSTOMER_TYPE_AUTHORIZED);
 
 
         if ($this->productVariant)
-            $this->applyDiscountToProduct($this->productVariant);
+            $this->applyDiscountToProduct($this->productVariant, Discount::CUSTOMER_TYPE_AUTHORIZED);
 
         return [
             'id' => $this->id,

@@ -20,6 +20,7 @@ class SegmentListResource extends JsonResource
             'description' => $this->description,
             'recalculate_frequency' => $this->recalculate_frequency,
             'is_active' => $this->is_active,
+            'customer_type' => $this->customer_type ?? 'all',
             'clients_count' => $this->clients_count ?? 0,
             'promo_codes_count' => $this->promo_codes_count ?? 0,
             'created_at' => $this->created_at?->format('d.m.Y'),

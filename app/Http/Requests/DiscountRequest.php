@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class DiscountRequest extends FormRequest
 {
@@ -14,6 +15,7 @@ class DiscountRequest extends FormRequest
             'type' => 'required|in:percentage,fixed,special_price',
             'value' => 'required|numeric|min:0',
             'is_active' => 'boolean',
+            'customer_type' => ['nullable', Rule::in(['authorized', 'guest', 'all'])],
             'starts_at' => 'nullable|date',
             'ends_at' => [
                 'nullable',

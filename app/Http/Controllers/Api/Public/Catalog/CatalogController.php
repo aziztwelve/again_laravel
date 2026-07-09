@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api\Public\Catalog;
 use App\Helpers\PaginationHelper;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Public\ProductPublicResource;
+use App\Models\Client;
+use App\Models\Discount;
 use App\Models\Product;
 use App\Services\Catalog\CatalogService;
 use App\Traits\ProductsTrait;
@@ -79,8 +81,12 @@ class CatalogController extends Controller
         $perPage = $request->get('per_page', 9);
         $products = $query->paginate($perPage);
 
+        $customerType = $request->user() instanceof Client
+            ? Discount::CUSTOMER_TYPE_AUTHORIZED
+            : Discount::CUSTOMER_TYPE_GUEST;
+
         // Применяем скидки (используем существующий trait)
-        $this->applyDiscountsToCollection($products->getCollection());
+        $this->applyDiscountsToCollection($products->getCollection(), $customerType);
 
         $category = null;
         if (!empty($filters['category_slug'])) {
@@ -110,12 +116,16 @@ class CatalogController extends Controller
             ->orWhere('uuid', $slug)
             ->firstOrFail();
 
-        $this->applyDiscountToProduct($product);
+        $customerType = request()->user() instanceof Client
+            ? Discount::CUSTOMER_TYPE_AUTHORIZED
+            : Discount::CUSTOMER_TYPE_GUEST;
+
+        $this->applyDiscountToProduct($product, $customerType);
 
         $product->load('variants');
         if ($product->relationLoaded('variants')) {
             foreach ($product->variants as $variant) {
-                $this->applyDiscountToProduct($variant);
+                $this->applyDiscountToProduct($variant, $customerType);
             }
         }
 

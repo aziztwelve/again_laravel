@@ -125,7 +125,8 @@ class PublicCheckoutController extends Controller
             $itemsValidation = $this->orderValidationService->validateOrderItems(
                 $validated['items'],
                 $promoCode,
-                $primaryPromotionId
+                $primaryPromotionId,
+                $orderClient
             );
 
             if (! $itemsValidation['valid']) {

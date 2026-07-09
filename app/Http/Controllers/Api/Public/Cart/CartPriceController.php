@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api\Public\Cart;
 
 use App\Http\Controllers\Controller;
+use App\Models\Client;
+use App\Models\Discount;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Traits\ProductsTrait;
@@ -40,6 +42,9 @@ class CartPriceController extends Controller
         ]);
 
         $items = [];
+        $customerType = $request->user() instanceof Client
+            ? Discount::CUSTOMER_TYPE_AUTHORIZED
+            : Discount::CUSTOMER_TYPE_GUEST;
 
         foreach ($validated['items'] as $item) {
             $productId = (int) $item['product_id'];
@@ -79,7 +84,7 @@ class CartPriceController extends Controller
 
             // applyDiscountToProduct мутирует $model->price → актуальная цена со скидкой,
             // и выставляет old_price/discount_id/discount_percentage/total_discount.
-            $this->applyDiscountToProduct($model);
+            $this->applyDiscountToProduct($model, $customerType);
 
             $items[] = [
                 'product_id' => $productId,
