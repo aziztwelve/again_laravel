@@ -97,11 +97,14 @@ cd /var/www/html/laravel && php artisan db:seed --class=MarketingChannelSeeder -
   (`MarketingChannelSeeder` использует `updateOrCreate` по `code` — безопасен.)
 
 ### 5. Витрина (nuxt-shop) — пересобирать всегда
+`nuxt-shop` использует npm и `package-lock.json`. Для деплоя использовать
+`npm ci`, а не `npm install`: так зависимости ставятся строго по lockfile и
+`package-lock.json` не меняется на сервере.
 ```bash
 ssh -o BatchMode=yes -o ConnectTimeout=900 root@186.246.14.59 '
 set -euo pipefail
 cd /var/www/html/nuxt-shop
-npm install --no-audit --no-fund 2>&1 | tail -3
+npm ci --no-audit --no-fund 2>&1 | tail -8
 NODE_OPTIONS=--max-old-space-size=2048 npm run build 2>&1 | tail -6
 pm2 restart nuxt-shop --update-env
 '
