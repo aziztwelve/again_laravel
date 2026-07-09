@@ -51,6 +51,9 @@ class UtmAnalyticsController extends Controller
 
             $visitsByLink = $this->visitsByLink($linkIds, $from, $to);
             $ordersByLink = $this->ordersByLink($linkIds, $from, $to, $userType);
+            // Полная разбивка гость/клиент по метке — НЕ зависит от фильтра user_type,
+            // нужна для тултипа графика (показываем всё сразу).
+            $breakdownByLink = $this->breakdownByLink($linkIds, $from, $to);
 
             $rows = [];
             $totals = [
@@ -72,6 +75,8 @@ class UtmAnalyticsController extends Controller
                 $purchasesAmount = (float) ($agg->purchases_amount ?? 0);
                 $clients = (int) ($agg->clients_count ?? 0);
 
+                $bd = $breakdownByLink[$link->id] ?? null;
+
                 $rows[] = [
                     'link_id' => $link->id,
                     'name' => $link->name,
@@ -91,6 +96,18 @@ class UtmAnalyticsController extends Controller
                     'cr_order' => $visits > 0 ? round($orders / $visits * 100, 1) : 0.0,
                     // Конверсия в покупку = покупки / заказы * 100 (решение #6).
                     'cr_purchase' => $orders > 0 ? round($purchases / $orders * 100, 1) : 0.0,
+                    // Полная разбивка гость/клиент (для тултипа графика, не зависит от фильтра).
+                    'breakdown' => [
+                        'orders_total' => (int) ($bd->orders_total ?? 0),
+                        'orders_guest' => (int) ($bd->orders_guest ?? 0),
+                        'orders_client' => (int) ($bd->orders_client ?? 0),
+                        'purchases_total' => (int) ($bd->purchases_total ?? 0),
+                        'purchases_guest' => (int) ($bd->purchases_guest ?? 0),
+                        'purchases_client' => (int) ($bd->purchases_client ?? 0),
+                        'amount_total' => round((float) ($bd->amount_total ?? 0), 2),
+                        'amount_guest' => round((float) ($bd->amount_guest ?? 0), 2),
+                        'amount_client' => round((float) ($bd->amount_client ?? 0), 2),
+                    ],
                 ];
 
                 $totals['visits'] += $visits;
@@ -204,6 +221,40 @@ class UtmAnalyticsController extends Controller
                 DB::raw("SUM(CASE WHEN payment_status = '{$paid}' THEN 1 ELSE 0 END) as purchases_count"),
                 DB::raw("COALESCE(SUM(CASE WHEN payment_status = '{$paid}' THEN total_amount ELSE 0 END), 0) as purchases_amount"),
                 DB::raw('COUNT(DISTINCT client_id) as clients_count')
+            )
+            ->groupBy('utm_link_id')
+            ->get()
+            ->keyBy('utm_link_id');
+    }
+
+    /**
+     * Полная разбивка заказов по метке на гостевые (client_id IS NULL) и
+     * клиентские (client_id IS NOT NULL). НЕ зависит от фильтра user_type —
+     * используется в тултипе графика, чтобы показать всю картину сразу.
+     */
+    private function breakdownByLink($linkIds, Carbon $from, Carbon $to)
+    {
+        if ($linkIds->isEmpty()) {
+            return collect();
+        }
+
+        $paid = PaymentStatus::PAID->value;
+
+        return DB::table('orders')
+            ->whereNull('deleted_at')
+            ->whereIn('utm_link_id', $linkIds)
+            ->whereBetween('created_at', [$from, $to])
+            ->select(
+                'utm_link_id',
+                DB::raw('COUNT(*) as orders_total'),
+                DB::raw('SUM(CASE WHEN client_id IS NULL THEN 1 ELSE 0 END) as orders_guest'),
+                DB::raw('SUM(CASE WHEN client_id IS NOT NULL THEN 1 ELSE 0 END) as orders_client'),
+                DB::raw("SUM(CASE WHEN payment_status = '{$paid}' THEN 1 ELSE 0 END) as purchases_total"),
+                DB::raw("SUM(CASE WHEN payment_status = '{$paid}' AND client_id IS NULL THEN 1 ELSE 0 END) as purchases_guest"),
+                DB::raw("SUM(CASE WHEN payment_status = '{$paid}' AND client_id IS NOT NULL THEN 1 ELSE 0 END) as purchases_client"),
+                DB::raw('COALESCE(SUM(total_amount), 0) as amount_total'),
+                DB::raw('COALESCE(SUM(CASE WHEN client_id IS NULL THEN total_amount ELSE 0 END), 0) as amount_guest'),
+                DB::raw('COALESCE(SUM(CASE WHEN client_id IS NOT NULL THEN total_amount ELSE 0 END), 0) as amount_client')
             )
             ->groupBy('utm_link_id')
             ->get()
