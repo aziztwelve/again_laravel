@@ -605,6 +605,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // email / телефону (если внешний ID источника содержит контакты).
         Route::get('/by-client/{client}', [ConversationController::class, 'byClient']);
 
+        // Получить все диалоги заказа, включая гостевые заказы без client_id.
+        Route::get('/by-order/{order}', [ConversationController::class, 'byOrder']);
+
         // Получить подробную информацию о конкретном разговоре по его ID, включая сообщения и участников
         Route::get('/{conversation}', [ConversationController::class, 'show']);
 

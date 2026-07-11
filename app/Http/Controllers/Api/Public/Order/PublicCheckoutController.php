@@ -9,7 +9,7 @@ use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
 use App\Services\GiftCard\GiftCardService;
-use App\Services\Notifications\Jobs\SendNotificationJob;
+use App\Services\Notifications\OrderNotificationService;
 use App\Services\Order\OrderCreationService;
 use App\Services\Order\OrderValidationService;
 use App\Services\PromoCode\PromoCodeValidationService;
@@ -35,6 +35,7 @@ class PublicCheckoutController extends Controller
         protected OrderCreationService $orderCreationService,
         protected PromoCodeValidationService $promoValidationService,
         protected GiftCardService $giftCardService,
+        protected OrderNotificationService $orderNotificationService,
     ) {}
 
     public function store(CreateOrderRequest $request): JsonResponse
@@ -244,24 +245,7 @@ class PublicCheckoutController extends Controller
     private function sendNotifications(Order $order, ?Client $client): void
     {
         try {
-            $message = "Ваш заказ #{$order->id} принят! Сумма: {$order->total_amount} руб.";
-
-            $email = $client?->email ?? $order->email;
-            if ($email) {
-                SendNotificationJob::dispatch('email', $email, $message, [
-                    'order_id' => $order->id,
-                    'view_token' => $order->view_token,
-                ]);
-            }
-
-            if ($client?->profile?->telegram_user_id) {
-                SendNotificationJob::dispatch(
-                    'telegram',
-                    $client->profile->telegram_user_id,
-                    $message,
-                    ['order_id' => $order->id]
-                );
-            }
+            $this->orderNotificationService->notifyOrderCreated($order, $client);
 
             Log::info('Order notifications queued', [
                 'order_id' => $order->id,

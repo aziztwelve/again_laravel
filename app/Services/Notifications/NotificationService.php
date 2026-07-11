@@ -2,7 +2,9 @@
 
 namespace App\Services\Notifications;
 
+use App\Enums\CommunicationChannel;
 use App\Services\Notifications\Channels\EmailNotificationChannel;
+use App\Services\Notifications\Channels\MaxNotificationChannel;
 use App\Services\Notifications\Channels\TelegramNotificationChannel;
 use App\Services\Notifications\Channels\WhatsAppNotificationChannel;
 use App\Services\Notifications\Channels\VKNotificationChannel;
@@ -28,11 +30,12 @@ class NotificationService
     protected function registerChannels(): void
     {
         $this->channels = [
-            'email' => new EmailNotificationChannel(),
-            'telegram' => new TelegramNotificationChannel(),
-            'whatsapp' => new WhatsAppNotificationChannel(),
-            'vk' => new VKNotificationChannel(),
-            'web_chat' => new WebChatNotificationChannel(),
+            CommunicationChannel::EMAIL->value => new EmailNotificationChannel(),
+            CommunicationChannel::TELEGRAM->value => new TelegramNotificationChannel(),
+            CommunicationChannel::MAX->value => new MaxNotificationChannel(),
+            CommunicationChannel::WHATSAPP->value => new WhatsAppNotificationChannel(),
+            CommunicationChannel::VK->value => new VKNotificationChannel(),
+            CommunicationChannel::WEB_CHAT->value => new WebChatNotificationChannel(),
         ];
     }
 

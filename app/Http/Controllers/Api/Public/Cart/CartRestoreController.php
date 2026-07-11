@@ -50,6 +50,9 @@ class CartRestoreController extends Controller
         $cart->forceFill($revive)->save();
 
         $items = [];
+        $customerType = $cart->client_id
+            ? Discount::CUSTOMER_TYPE_AUTHORIZED
+            : Discount::CUSTOMER_TYPE_GUEST;
 
         foreach ($cart->items as $item) {
             if (! is_null($item->product_variant_id)) {
@@ -71,7 +74,7 @@ class CartRestoreController extends Controller
                 continue; // товар больше недоступен — пропускаем
             }
 
-            $this->applyDiscountToProduct($model, Discount::CUSTOMER_TYPE_AUTHORIZED);
+            $this->applyDiscountToProduct($model, $customerType);
 
             $items[] = [
                 'product_id' => $item->product_id,

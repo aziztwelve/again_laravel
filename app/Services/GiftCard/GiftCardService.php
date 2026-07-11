@@ -7,6 +7,7 @@ use App\Jobs\GiftCard\SendGiftCardJob;
 use App\Models\GiftCard\GiftCard;
 use App\Models\GiftCard\GiftCardTransaction;
 use App\Models\Order;
+use App\Services\Notifications\OrderNotificationService;
 use Carbon\Carbon;
 use Exception;
 use Illuminate\Support\Facades\DB;
@@ -15,7 +16,8 @@ use Illuminate\Support\Facades\Log;
 class GiftCardService
 {
     public function __construct(
-        protected GiftCardCodeGenerator $codeGenerator
+        protected GiftCardCodeGenerator $codeGenerator,
+        protected OrderNotificationService $orderNotificationService
     ) {}
 
     /**
@@ -72,6 +74,8 @@ class GiftCardService
             GiftCardTransaction::createPurchase($giftCard, $order);
 
             DB::commit();
+
+            $this->orderNotificationService->notifyGiftCardIssued($giftCard);
 
 //            Log::info('Gift card created', [
 //                'gift_card_id' => $giftCard->id,

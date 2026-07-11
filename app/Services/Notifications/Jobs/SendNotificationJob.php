@@ -3,6 +3,7 @@
 namespace App\Services\Notifications\Jobs;
 
 use App\Services\Notifications\NotificationService;
+use App\Services\Notifications\NotificationConversationMirrorService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -23,7 +24,10 @@ class SendNotificationJob implements ShouldQueue
         //
     }
 
-    public function handle(NotificationService $notificationService): void
+    public function handle(
+        NotificationService $notificationService,
+        NotificationConversationMirrorService $mirrorService
+    ): void
     {
         try {
             $success = $notificationService->sendViaChannel(
@@ -37,6 +41,8 @@ class SendNotificationJob implements ShouldQueue
                 Log::warning("SendNotificationJob: Failed to send via {$this->channel}", [
                     'recipient_id' => $this->recipientId,
                 ]);
+            } else {
+                $mirrorService->mirror($this->data, $this->message);
             }
 
         } catch (\Exception $e) {

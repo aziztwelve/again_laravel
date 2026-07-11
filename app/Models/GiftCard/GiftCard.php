@@ -56,6 +56,8 @@ class GiftCard extends Model
     public const CHANNEL_EMAIL = 'email';
     public const CHANNEL_WHATSAPP = 'whatsapp';
     public const CHANNEL_SMS = 'sms';
+    public const CHANNEL_TELEGRAM = 'telegram';
+    public const CHANNEL_MAX = 'max';
 
     /**
      * Заказ, в котором была куплена карта

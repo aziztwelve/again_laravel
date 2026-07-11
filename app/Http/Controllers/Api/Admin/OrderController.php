@@ -15,7 +15,7 @@ use App\Models\GiftCard\GiftCard;
 use App\Models\Order;
 use App\Models\User;
 use App\Services\GiftCard\GiftCardService;
-use App\Services\Notifications\Jobs\SendNotificationJob;
+use App\Services\Notifications\OrderNotificationService;
 use App\Services\Order\OrderAuthorizationService;
 use App\Services\Order\OrderCreationService;
 use App\Services\Order\OrderDeletionService;
@@ -45,7 +45,8 @@ class OrderController extends Controller
         protected OrderItemService $orderItemService,
         protected OrderAuthorizationService $orderAuthorizationService,
         protected PromoCodeValidationService $promoValidationService,
-        protected OrderFilterService $orderFilterService
+        protected OrderFilterService $orderFilterService,
+        protected OrderNotificationService $orderNotificationService
     ) {}
 
     /**
@@ -947,17 +948,7 @@ class OrderController extends Controller
     private function sendNotifications($client, Order $order): void
     {
         try {
-            $message = "Ваш заказ #{$order->id} принят! Сумма: {$order->total_amount} руб.";
-
-            // Отправить через все доступные каналы асинхронно
-            if ($client->email) {
-                SendNotificationJob::dispatch('email', $client->email, $message, ['order_id' => $order->id]);
-            }
-            if ($client->profile?->telegram_user_id) {
-                SendNotificationJob::dispatch('telegram', $client->profile->telegram_user_id, $message, ['order_id' => $order->id]);
-            }
-
-            // и т.д. для других каналов
+            $this->orderNotificationService->notifyOrderCreated($order, $client);
 
             Log::info('Order notifications queued', ['order_id' => $order->id]);
 

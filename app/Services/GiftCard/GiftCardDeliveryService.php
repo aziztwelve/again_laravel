@@ -2,13 +2,19 @@
 
 namespace App\Services\GiftCard;
 
+use App\Enums\CommunicationChannel;
 use App\Models\GiftCard\GiftCard;
 use App\Services\Notifications\Jobs\SendNotificationJob;
+use App\Services\Notifications\OrderNotificationService;
 use Illuminate\Support\Facades\Log;
 use Exception;
 
 class GiftCardDeliveryService
 {
+    public function __construct(
+        protected OrderNotificationService $orderNotificationService
+    ) {}
+
     /**
      * Отправить подарочную карту получателю
      */
@@ -43,10 +49,12 @@ class GiftCardDeliveryService
     protected function resolveChannel(string $deliveryChannel): string
     {
         return match ($deliveryChannel) {
-            GiftCard::CHANNEL_EMAIL => 'email',
-            GiftCard::CHANNEL_WHATSAPP => 'whatsapp',
+            GiftCard::CHANNEL_EMAIL => CommunicationChannel::EMAIL->value,
+            GiftCard::CHANNEL_WHATSAPP => CommunicationChannel::WHATSAPP->value,
             GiftCard::CHANNEL_SMS => 'sms',
-            default => 'email',
+            GiftCard::CHANNEL_TELEGRAM => CommunicationChannel::TELEGRAM->value,
+            GiftCard::CHANNEL_MAX => CommunicationChannel::MAX->value,
+            default => CommunicationChannel::EMAIL->value,
         };
     }
 
@@ -59,6 +67,8 @@ class GiftCardDeliveryService
             GiftCard::CHANNEL_EMAIL => $giftCard->recipient_email,
             GiftCard::CHANNEL_WHATSAPP => $giftCard->recipient_phone,
             GiftCard::CHANNEL_SMS => $giftCard->recipient_phone,
+            GiftCard::CHANNEL_TELEGRAM => $giftCard->recipient_phone,
+            GiftCard::CHANNEL_MAX => $giftCard->recipient_phone,
             default => $giftCard->recipient_email,
         };
     }
@@ -123,45 +133,15 @@ MSG;
     public function sendDeliveryConfirmation(GiftCard $giftCard): void
     {
         try {
-            $purchaseOrder = $giftCard->purchaseOrder;
-
-            if (!$purchaseOrder || !$purchaseOrder->client) {
+            if (!$giftCard->purchaseOrder) {
                 return;
             }
 
-            $client = $purchaseOrder->client;
-            $message = $this->buildDeliveryConfirmationMessage($giftCard);
-
-            // Отправляем email покупателю
-            if ($client->email) {
-                SendNotificationJob::dispatch(
-                    'email',
-                    $client->email,
-                    $message,
-                    [
-                        'type' => 'gift_card_delivered',
-                        'gift_card_id' => $giftCard->id,
-                        'order_id' => $purchaseOrder->id,
-                    ]
-                );
-            }
-
-            // Отправляем в Telegram если есть
-            if ($client->profile?->telegram_user_id) {
-                SendNotificationJob::dispatch(
-                    'telegram',
-                    $client->profile->telegram_user_id,
-                    $message,
-                    [
-                        'type' => 'gift_card_delivered',
-                        'gift_card_id' => $giftCard->id,
-                    ]
-                );
-            }
+            $this->orderNotificationService->notifyGiftCardDelivered($giftCard);
 
             Log::info('Gift card delivery confirmation sent', [
                 'gift_card_id' => $giftCard->id,
-                'client_id' => $client->id,
+                'order_id' => $giftCard->purchase_order_id,
             ]);
 
         } catch (Exception $e) {

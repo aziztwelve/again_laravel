@@ -105,7 +105,7 @@ class SendGiftCardJob implements ShouldQueue
         }
 
         // Проверяем канал доставки
-        if (!in_array($giftCard->delivery_channel, ['email', 'telegram', 'sms'])) {
+        if (!in_array($giftCard->delivery_channel, ['email', 'whatsapp', 'sms', 'telegram', 'max'])) {
             Log::error('Invalid delivery channel', [
                 'id' => $giftCard->id,
                 'channel' => $giftCard->delivery_channel

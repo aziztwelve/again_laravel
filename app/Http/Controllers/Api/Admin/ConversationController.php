@@ -8,6 +8,7 @@ use App\Http\Resources\Conversation\ConversationResource;
 use App\Models\Client;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Models\Order;
 use App\Models\User;
 use App\Services\File\FileStorageService;
 use App\Services\Messaging\ConversationService;
@@ -132,21 +133,29 @@ class ConversationController extends Controller
         if ($email || $phoneDigits) {
             $matched = Conversation::query()
                 ->whereNull('client_id')
-                ->where(function ($q) use ($email, $phoneDigits) {
+                ->where(function ($q) use ($email, $phoneDigits, $client) {
                     if ($email) {
                         $q->orWhere(function ($qq) use ($email) {
                             $qq->where('source', 'email')
                                 ->whereRaw('LOWER(external_id) = ?', [$email]);
                         });
                     }
+
+                    foreach ($this->profileExternalIds($client) as $source => $externalIds) {
+                        $q->orWhere(function ($qq) use ($source, $externalIds) {
+                            $qq->where('source', $source)
+                                ->whereIn('external_id', $externalIds);
+                        });
+                    }
+
                     if ($phoneDigits) {
-                        // Для whatsapp/vk/telegram/max external_id содержит цифры номера
-                        // (whatsapp: '79991234567@c.us', vk/telegram/max: '79991234567').
+                        // Для WhatsApp external_id обычно содержит номер
+                        // ('79991234567@c.us'). Telegram/VK/MAX матчим по *_user_id выше.
                         // Сравниваем по «хвосту» цифр — 10 последних разрядов российского номера.
                         $tail = substr($phoneDigits, -10);
                         if (strlen($tail) >= 7) {
                             $q->orWhere(function ($qq) use ($tail) {
-                                $qq->whereIn('source', ['whatsapp', 'vk', 'telegram', 'max'])
+                                $qq->where('source', 'whatsapp')
                                     ->where('external_id', 'like', "%{$tail}%");
                             });
                         }
@@ -178,6 +187,79 @@ class ConversationController extends Controller
 
         return response()->json([
             'data' => $conversations,
+        ]);
+    }
+
+    /**
+     * Все диалоги по заказу. Для обычного заказа используем клиента; для
+     * гостевого — email/телефон из самого заказа и адреса доставки.
+     */
+    public function byOrder(Order $order)
+    {
+        $order->loadMissing(['client.profile', 'address']);
+
+        if ($order->client) {
+            return $this->byClient($order->client);
+        }
+
+        $email = $order->email ? mb_strtolower(trim($order->email)) : null;
+        $phoneDigits = $order->address?->recipient_phone
+            ? preg_replace('/\D+/', '', $order->address->recipient_phone)
+            : null;
+
+        if ($phoneDigits === '') {
+            $phoneDigits = null;
+        }
+
+        $conversations = Conversation::query()
+            ->whereNull('client_id')
+            ->where(function ($q) use ($email, $phoneDigits) {
+                if ($email) {
+                    $q->orWhere(function ($qq) use ($email) {
+                        $qq->where('source', 'email')
+                            ->whereRaw('LOWER(external_id) = ?', [$email]);
+                    });
+                }
+
+                if ($phoneDigits) {
+                    $tail = substr($phoneDigits, -10);
+                    if (strlen($tail) >= 7) {
+                        $q->orWhere(function ($qq) use ($tail) {
+                            $qq->where('source', 'whatsapp')
+                                ->where('external_id', 'like', "%{$tail}%");
+                        });
+                    }
+                }
+            })
+            ->with([
+                'lastMessage',
+                'client.profile',
+                'assignedUser',
+            ])
+            ->orderByDesc('last_message_at')
+            ->orderByDesc('id')
+            ->get();
+
+        return response()->json([
+            'data' => $conversations,
+        ]);
+    }
+
+    private function profileExternalIds(Client $client): array
+    {
+        $profile = $client->profile;
+
+        return array_filter([
+            'telegram' => array_values(array_filter([
+                isset($profile?->telegram_chat_id) ? (string) $profile->telegram_chat_id : null,
+                isset($profile?->telegram_user_id) ? (string) $profile->telegram_user_id : null,
+            ])),
+            'vk' => array_values(array_filter([
+                isset($profile?->vk_user_id) ? (string) $profile->vk_user_id : null,
+            ])),
+            'max' => array_values(array_filter([
+                isset($profile?->max_user_id) ? (string) $profile->max_user_id : null,
+            ])),
         ]);
     }
 
