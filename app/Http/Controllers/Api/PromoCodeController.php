@@ -78,10 +78,25 @@ class PromoCodeController extends Controller
             'max_uses' => 'nullable|integer|min:1',
             'is_active' => 'boolean',
             'customer_type' => 'nullable|in:authorized,guest,all',
-            'client_ids' => 'nullable|array',
+            'client_ids' => [
+                'nullable',
+                'array',
+                \Illuminate\Validation\Rule::prohibitedIf(
+                    fn () => $request->input('customer_type') === PromoCode::CUSTOMER_TYPE_GUEST
+                ),
+            ],
             'client_ids.*' => 'exists:clients,id',
             'applies_to_all_products' => 'boolean',
-            'applies_to_all_clients' => 'boolean',
+            'applies_to_all_clients' => [
+                'boolean',
+                \Illuminate\Validation\Rule::requiredIf(
+                    fn () => $request->input('customer_type') === PromoCode::CUSTOMER_TYPE_GUEST
+                ),
+                \Illuminate\Validation\Rule::when(
+                    $request->input('customer_type') === PromoCode::CUSTOMER_TYPE_GUEST,
+                    ['accepted']
+                ),
+            ],
 
             'products_with_variants' => 'nullable',
 
@@ -155,10 +170,25 @@ class PromoCodeController extends Controller
             'max_uses' => 'nullable|integer|min:1',
             'is_active' => 'boolean',
             'customer_type' => 'nullable|in:authorized,guest,all',
-            'client_ids' => 'nullable|array',
+            'client_ids' => [
+                'nullable',
+                'array',
+                \Illuminate\Validation\Rule::prohibitedIf(
+                    fn () => $request->input('customer_type', $promoCode->customer_type) === PromoCode::CUSTOMER_TYPE_GUEST
+                ),
+            ],
             'client_ids.*' => 'exists:clients,id',
             'applies_to_all_products' => 'boolean',
-            'applies_to_all_clients' => 'boolean',
+            'applies_to_all_clients' => [
+                'boolean',
+                \Illuminate\Validation\Rule::requiredIf(
+                    fn () => $request->input('customer_type', $promoCode->customer_type) === PromoCode::CUSTOMER_TYPE_GUEST
+                ),
+                \Illuminate\Validation\Rule::when(
+                    $request->input('customer_type', $promoCode->customer_type) === PromoCode::CUSTOMER_TYPE_GUEST,
+                    ['accepted']
+                ),
+            ],
 
             'products_with_variants' => 'nullable',
             'template_type' => 'nullable|in:regular,birthday',

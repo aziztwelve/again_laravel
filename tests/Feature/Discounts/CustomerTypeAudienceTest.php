@@ -9,6 +9,7 @@ use App\Models\PromoCode;
 use App\Services\PromoCode\PromoCodeValidationService;
 use App\Traits\ProductsTrait;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 class CustomerTypeAudienceTest extends TestCase
@@ -97,6 +98,56 @@ class CustomerTypeAudienceTest extends TestCase
         $this->assertTrue($authorizedResult['success']);
     }
 
+    public function test_public_checkout_rejects_authorized_promo_code_for_guest(): void
+    {
+        $product = $this->product();
+        $promoCode = $this->promoCode(PromoCode::CUSTOMER_TYPE_AUTHORIZED);
+
+        $response = $this->postJson('/api/public/orders', $this->checkoutPayload($product, $promoCode));
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('details.code', 'PROMO_REQUIRES_AUTH');
+    }
+
+    public function test_public_checkout_rejects_authorized_discount_price_for_guest(): void
+    {
+        $product = $this->product();
+        $discount = $this->discount(Discount::CUSTOMER_TYPE_AUTHORIZED);
+        $product->discounts()->attach($discount->id);
+
+        $response = $this->postJson('/api/public/orders', $this->checkoutPayload($product, null, 90));
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('errors.0.code', 'PRICE_MISMATCH')
+            ->assertJsonPath('errors.0.actual_price', 100);
+    }
+
+    public function test_public_checkout_rejects_guest_promo_code_for_authorized_client(): void
+    {
+        $product = $this->product();
+        $promoCode = $this->promoCode(PromoCode::CUSTOMER_TYPE_GUEST);
+        Sanctum::actingAs($this->client());
+
+        $response = $this->postJson('/api/public/orders', $this->checkoutPayload($product, $promoCode));
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('details.code', 'PROMO_ONLY_FOR_GUESTS');
+    }
+
+    public function test_public_checkout_rejects_guest_discount_price_for_authorized_client(): void
+    {
+        $product = $this->product();
+        $discount = $this->discount(Discount::CUSTOMER_TYPE_GUEST);
+        $product->discounts()->attach($discount->id);
+        Sanctum::actingAs($this->client());
+
+        $response = $this->postJson('/api/public/orders', $this->checkoutPayload($product, null, 90));
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('errors.0.code', 'PRICE_MISMATCH')
+            ->assertJsonPath('errors.0.actual_price', 100);
+    }
+
     private function product(): Product
     {
         return Product::create([
@@ -144,6 +195,38 @@ class CustomerTypeAudienceTest extends TestCase
             'email' => 'audience-'.uniqid().'@example.com',
             'password' => bcrypt('secret'),
         ]);
+    }
+
+    private function checkoutPayload(Product $product, ?PromoCode $promoCode = null, float $price = 100): array
+    {
+        $payload = [
+            'delivery_address' => [
+                'country' => 'Россия',
+                'city' => 'Москва',
+                'address' => 'Тестовая улица, 1',
+            ],
+            'user' => [
+                'first_name' => 'Тест',
+                'last_name' => 'Покупатель',
+                'phone' => '+79990000000',
+            ],
+            'recipient' => [
+                'first_name' => 'Тест',
+                'last_name' => 'Покупатель',
+                'phone' => '+79990000000',
+            ],
+            'items' => [[
+                'product_id' => $product->id,
+                'quantity' => 1,
+                'price' => $price,
+            ]],
+        ];
+
+        if ($promoCode) {
+            $payload['promo_code'] = $promoCode->code;
+        }
+
+        return $payload;
     }
 
     private function discountApplier(): object
