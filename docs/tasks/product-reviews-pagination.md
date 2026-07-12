@@ -59,6 +59,15 @@
    расчистки project-wide baseline.
 5. Финальный production build `bc667a8` собран и запущен; `nuxt-shop` online,
    серверное frontend-дерево чистое, повторный SSR headers/load-more smoke OK.
+6. Расширен frontend suite (`c19b185`, `cc8d146`): 10/10 Vitest проходят;
+   headless Chromium загрузил все 91 отзыв, подтвердил сетку 4/2/1 на
+   1440/991/575/320, отсутствие overflow внутри review-grid, раскрытие длинного
+   текста и 0 browser console warnings/errors.
+7. Добавлен query-count regression test backend (`0fb964b`): полный review suite
+   16 tests / 74 assertions. Реальный API: `per_page=1` 111 ms, `per_page=20`
+   105 ms. `EXPLAIN` товара #252 использует составной reviewable index; likes
+   subquery использует `review_likes_review_id_foreign`; при 91 строке отдельная
+   индексная миграция не требуется.
 
 ---
 
@@ -1383,16 +1392,16 @@ generation/abort/retry. В рамках задачи подключается м
 
 ### Данные и API
 
-- [ ] Новый `GET /api/public/catalog/products/{product}/reviews` работает без
+- [x] Новый `GET /api/public/catalog/products/{product}/reviews` работает без
       авторизации и принимает валидные `page/per_page`.
-- [ ] Endpoint отдаёт только опубликованные, проверенные, не spam и не удалённые
+- [x] Endpoint отдаёт только опубликованные, проверенные, не spam и не удалённые
       отзывы точного товара.
-- [ ] Неактивный, soft-deleted или отсутствующий Product возвращает `404`.
-- [ ] Ответ содержит безопасные `data` и `meta` без email/служебных полей.
-- [ ] `total/current_page/last_page/has_more` соответствуют фактическим данным.
-- [ ] Порядок стабилен: явный `NULLS LAST`, затем
+- [x] Неактивный, soft-deleted или отсутствующий Product возвращает `404`.
+- [x] Ответ содержит безопасные `data` и `meta` без email/служебных полей.
+- [x] `total/current_page/last_page/has_more` соответствуют фактическим данным.
+- [x] Порядок стабилен: явный `NULLS LAST`, затем
       `published_at DESC, id DESC`.
-- [ ] Верхний лимит `per_page=20` enforced backend-валидацией.
+- [x] Верхний лимит `per_page=20` enforced backend-валидацией.
 - [ ] `admin=true`: без токена `401`, Client `403`, User `200`; скрытые отзывы и
       PII анонимно не раскрываются.
 - [ ] Client не может выполнить `publish/unpublish/destroy`; dual-actor
@@ -1400,29 +1409,29 @@ generation/abort/retry. В рамках задачи подключается м
 - [ ] Like/unlike принимает только Client и только видимый отзыв.
 - [ ] POST review сохраняет UX/response, но принимает только Client и активный
       Product; внутренние exception details наружу не выходят.
-- [ ] Все public review-ответы имеют `Cache-Control: private, no-store`;
+- [x] Все public review-ответы имеют `Cache-Control: private, no-store`;
       inactive Product недоступен через legacy/home/like обходы.
-- [ ] Нет lazy loading; query-count `per_page=20` отличается от `per_page=1` не
+- [x] Нет lazy loading; query-count `per_page=20` отличается от `per_page=1` не
       более чем на один запрос.
-- [ ] Для worst-case Product сохранены `EXPLAIN`, фактическая latency и решение
+- [x] Для worst-case Product сохранены `EXPLAIN`, фактическая latency и решение
       «существующего индекса достаточно» либо отдельная проверенная миграция.
 
 ### UI и поведение
 
-- [ ] Первый SSR-экран загружает не более 8 отзывов.
-- [ ] Пользователь может кнопкой дойти до последнего доступного отзыва.
-- [ ] Новые порции добавляются, а не заменяют предыдущие.
-- [ ] Повторный клик не запускает параллельные запросы и не создаёт дубли.
-- [ ] Ошибка следующей страницы не удаляет уже показанные отзывы и допускает
+- [x] Первый SSR-экран загружает не более 8 отзывов.
+- [x] Пользователь может кнопкой дойти до последнего доступного отзыва.
+- [x] Новые порции добавляются, а не заменяют предыдущие.
+- [x] Повторный клик не запускает параллельные запросы и не создаёт дубли.
+- [x] Ошибка следующей страницы не удаляет уже показанные отзывы и допускает
       retry той же страницы только для network/408/429/5xx; `404/422` не зациклены.
-- [ ] При смене товара список/page/error полностью сбрасываются; stale response
+- [x] При смене товара список/page/error полностью сбрасываются; stale response
       не смешивается с новым товаром.
 - [ ] Loading, empty, initial error, load-more error и end-state визуально
       различимы.
-- [ ] Изменение total между страницами включает `isOutOfSync` и предлагает
+- [x] Изменение total между страницами включает `isOutOfSync` и предлагает
       явное обновление без счётчика вида «8 из 7».
-- [ ] Сетка 4/2/1 работает без скрытого контента и horizontal overflow.
-- [ ] Длинный текст действительно раскрывается полностью и выводится без
+- [x] Сетка 4/2/1 работает без скрытого контента и horizontal overflow.
+- [x] Длинный текст действительно раскрывается полностью и выводится без
       небезопасного `v-html`.
 - [ ] Клавиатурный focus, `aria-live`, `aria-expanded`, disabled/loading работают.
 - [ ] Итоговые Nuxt product/home SSR responses private/no-store; smoke двух
@@ -1436,10 +1445,10 @@ generation/abort/retry. В рамках задачи подключается м
 - [ ] Главная сохраняет текущий slider; общая card корректно принимает ISO/legacy
       даты и безопасный plain text.
 - [ ] Административный список отзывов работает у авторизованного сотрудника.
-- [ ] Backend feature-тесты зелёные.
-- [ ] Frontend pagination unit-тесты зелёные.
-- [ ] `again_front`: `npm run build` проходит без ошибок.
-- [ ] Отдельный runtime SSR/client smoke не показывает hydration/Vue warnings в
+- [x] Backend feature-тесты зелёные.
+- [x] Frontend pagination unit-тесты зелёные.
+- [x] `again_front`: `npm run build` проходит без ошибок.
+- [x] Отдельный runtime SSR/client smoke не показывает hydration/Vue warnings в
       браузерной консоли.
 
 ---
