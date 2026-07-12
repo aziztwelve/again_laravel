@@ -3,15 +3,20 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\Public\ProductReviewResource;
 use App\Http\Resources\ReviewResource;
+use App\Models\Client;
 use App\Models\Product;
 use App\Models\Review\Review;
 use App\Models\Review\ReviewAttribute;
+use App\Models\User;
 use App\Traits\HelperTrait;
 use App\Traits\ReviewTrait;
 use DB;
 use Exception;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 
 class ReviewController extends Controller
@@ -24,17 +29,42 @@ class ReviewController extends Controller
 
     public function index(Request $request)
     {
+        $actor = Auth::guard('sanctum')->user();
+        $adminRequested = $request->boolean('admin', false);
 
-        // it's not in middleware that is why better to send parameter
-        $admin_role = $request->boolean('admin', false);
+        if ($adminRequested && !$actor) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated.'], 401);
+        }
 
+        if ($adminRequested && !$actor instanceof User) {
+            return response()->json(['success' => false, 'message' => 'Forbidden.'], 403);
+        }
 
-        if (!$admin_role && !$request->get('product_id')) {
+        if (!$adminRequested && !$request->get('product_id')) {
             return response()->json([
                 'success' => false,
                 'message' => "Пожалуйста, укажите ID товара"
             ]);
         }
+
+        if (!$adminRequested) {
+            $validated = $request->validate([
+                'page' => ['sometimes', 'integer', 'min:1'],
+                'per_page' => ['sometimes', 'integer', 'min:1', 'max:20'],
+                'product_id' => ['required', 'integer'],
+            ]);
+            $product = Product::query()->where('is_active', true)->findOrFail($validated['product_id']);
+            $reviews = $this->storefrontReviewsQuery($product, $actor)
+                ->orderByRaw('CASE WHEN published_at IS NULL THEN 1 ELSE 0 END ASC')
+                ->orderByDesc('published_at')
+                ->orderByDesc('id')
+                ->paginate((int) ($validated['per_page'] ?? 8));
+
+            return $this->legacyPaginatedResponse($reviews);
+        }
+
+        $request->validate(['per_page' => ['sometimes', 'integer', 'min:1', 'max:100']]);
+        $admin_role = true;
 
         $reviewableMorphMap = $this->reviewable_morph_review_map($request);
 
@@ -81,27 +111,30 @@ class ReviewController extends Controller
 
     public function getMainPageReviews(Request $request)
     {
-        // Загружаем последние 10 отзывов с нужными связями
-        $reviews = Review::with([
-            'attributes',
-            'responses' => function ($query) {
-                $query->with('user')
-                    ->orderBy('created_at', 'asc')
-                    ->whereNull('deleted_at');
-            },
-            'reviewable',
-            'images',
-            'client.profile',
-        ])
-            ->where('status', 'published')
-            ->orderByDesc('created_at') // ⬅️ показываем самые новые
-            ->take(10) // ⬅️ максимум 10
+        $actor = Auth::guard('sanctum')->user();
+        $clientId = $actor instanceof Client ? $actor->id : null;
+        $reviews = Review::query()
+            ->visibleOnStorefront()
+            ->where('reviewable_type', Product::class)
+            ->whereHas('reviewable', fn ($query) => $query->where('is_active', true))
+            ->with('client.profile')
+            ->withCount('likes')
+            ->when($clientId, fn ($query) => $query->withExists([
+                'likes as is_liked' => fn ($likes) => $likes->where('client_id', $clientId),
+            ]))
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->take(10)
             ->get();
+
+        if (!$clientId) {
+            $reviews->each->setAttribute('is_liked', false);
+        }
 
         return response()->json([
             'success' => true,
-            'data' => ReviewResource::collection($reviews),
-        ]);
+            'data' => ProductReviewResource::collection($reviews),
+        ])->withHeaders(['Cache-Control' => 'private, no-store']);
     }
 
 
@@ -115,9 +148,11 @@ class ReviewController extends Controller
 
     public function store(Request $request)
     {
+        abort_unless($request->user() instanceof Client, 403);
+
         $validated = $request->validate([
             'reviewable_id' => 'required|integer',
-            'reviewable_type' => 'required|string',
+            'reviewable_type' => 'required|string|in:Product',
             'content' => 'required|string|min:10|max:200',
             'rating' => 'required|integer|between:1,5',
             'attributes' => 'array',
@@ -127,12 +162,14 @@ class ReviewController extends Controller
             // 'images.*' => 'image|max:5120', // 5MB max
         ]);
 
-        $get_type_by_model = $this->get_model_by_type($request->get('reviewable_type'));
+        $product = Product::query()
+            ->where('is_active', true)
+            ->findOrFail($validated['reviewable_id']);
 
         $review = Review::create([
             'client_id' => $request->user()->id,
-            'reviewable_id' => $validated['reviewable_id'],
-            'reviewable_type' => $get_type_by_model,
+            'reviewable_id' => $product->id,
+            'reviewable_type' => Product::class,
             'content' => $validated['content'],
             'rating' => $validated['rating'],
         ]);
@@ -180,19 +217,23 @@ class ReviewController extends Controller
         ], 201);
     }
 
-    public function productReviews(Product $product)
+    public function productReviews(Product $product, Request $request)
     {
-        $reviews = Review::where('reviewable_id', $product->id)
-            ->where('reviewable_type', Product::class)
-            ->published()
-            ->verified()
+        abort_unless($product->is_active, 404);
+        $reviews = $this->storefrontReviewsQuery($product, Auth::guard('sanctum')->user())
+            ->orderByRaw('CASE WHEN published_at IS NULL THEN 1 ELSE 0 END ASC')
+            ->orderByDesc('published_at')
+            ->orderByDesc('id')
             ->get();
 
-        return response()->json($reviews);
+        return response()->json(ProductReviewResource::collection($reviews)->resolve($request))
+            ->withHeaders(['Cache-Control' => 'private, no-store']);
     }
 
     public function publish(Review $review, Request $request)
     {
+        abort_unless($request->user() instanceof User, 403);
+
         $review->update([
             'is_published' => true,
             'is_verified' => true,
@@ -208,6 +249,8 @@ class ReviewController extends Controller
 
     public function unpublish(Request $request, Review $review)
     {
+        abort_unless($request->user() instanceof User, 403);
+
         $review->update([
             'is_published' => false,
             'is_verified' => false,
@@ -223,6 +266,8 @@ class ReviewController extends Controller
 
     public function destroy(Request $request, Review $review)
     {
+        abort_unless($request->user() instanceof User, 403);
+
         $review->delete();
 
         return response()->json([
@@ -293,11 +338,39 @@ class ReviewController extends Controller
             ], 201);
         } catch (Exception $e) {
             DB::rollBack();
-            return response()->json([
-                'message' => $e->getMessage(),
-                "line" => $e->getLine(),
-                "stack_trace" => $e->getTraceAsString()
+            Log::error('Failed to create review response', ['exception' => $e]);
+            return response()->json(['message' => 'Не удалось сохранить ответ.'], 500);
+        }
+    }
+
+    private function storefrontReviewsQuery(Product $product, mixed $actor)
+    {
+        $clientId = $actor instanceof Client ? $actor->id : null;
+        $query = $product->reviews()
+            ->visibleOnStorefront()
+            ->with('client.profile')
+            ->withCount('likes');
+
+        if ($clientId) {
+            $query->withExists([
+                'likes as is_liked' => fn ($likes) => $likes->where('client_id', $clientId),
             ]);
         }
+
+        return $query;
+    }
+
+    private function legacyPaginatedResponse($reviews): \Illuminate\Http\JsonResponse
+    {
+        return response()->json([
+            'success' => true,
+            'data' => ProductReviewResource::collection($reviews->items()),
+            'current_page' => $reviews->currentPage(),
+            'per_page' => $reviews->perPage(),
+            'total' => $reviews->total(),
+            'last_page' => $reviews->lastPage(),
+            'next_page_url' => $reviews->nextPageUrl(),
+            'prev_page_url' => $reviews->previousPageUrl(),
+        ])->withHeaders(['Cache-Control' => 'private, no-store']);
     }
 }

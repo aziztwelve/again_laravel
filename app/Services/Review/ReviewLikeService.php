@@ -21,20 +21,7 @@ class ReviewLikeService
             DB::beginTransaction();
 
             // Проверяем, не лайкнул ли уже клиент этот отзыв
-            $existingLike = ReviewLike::where('review_id', $review->id)
-                ->where('client_id', $clientId)
-                ->first();
-
-            if ($existingLike) {
-                DB::rollBack();
-                return [
-                    'success' => false,
-                    'message' => 'Вы уже поставили лайк этому отзыву',
-                ];
-            }
-
-            // Создаём лайк
-            ReviewLike::create([
+            ReviewLike::firstOrCreate([
                 'review_id' => $review->id,
                 'client_id' => $clientId,
             ]);
@@ -46,11 +33,12 @@ class ReviewLikeService
                 'message' => 'Лайк успешно добавлен',
                 'likes_count' => $review->likesCount(),
             ];
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             DB::rollBack();
+            report($e);
             return [
                 'success' => false,
-                'message' => 'Ошибка при добавлении лайка: ' . $e->getMessage(),
+                'message' => 'Не удалось обновить отметку.',
             ];
         }
     }
@@ -67,19 +55,9 @@ class ReviewLikeService
         try {
             DB::beginTransaction();
 
-            $like = ReviewLike::where('review_id', $review->id)
+            ReviewLike::where('review_id', $review->id)
                 ->where('client_id', $clientId)
-                ->first();
-
-            if (!$like) {
-                DB::rollBack();
-                return [
-                    'success' => false,
-                    'message' => 'Вы не ставили лайк этому отзыву',
-                ];
-            }
-
-            $like->delete();
+                ->delete();
 
             DB::commit();
 
@@ -88,11 +66,12 @@ class ReviewLikeService
                 'message' => 'Лайк успешно убран',
                 'likes_count' => $review->likesCount(),
             ];
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             DB::rollBack();
+            report($e);
             return [
                 'success' => false,
-                'message' => 'Ошибка при удалении лайка: ' . $e->getMessage(),
+                'message' => 'Не удалось обновить отметку.',
             ];
         }
     }

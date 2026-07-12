@@ -88,6 +88,7 @@ use App\Http\Controllers\Api\Public\Conversation\PublicConversationController;
 use App\Http\Controllers\Api\Public\GiftCard\GiftCardPublicController;
 use App\Http\Controllers\Api\Public\OtoBanner\PublicOtoBannerController;
 use App\Http\Controllers\Api\Public\Promotion\PromotionPublicController;
+use App\Http\Controllers\Api\Public\Review\ProductReviewController;
 use App\Http\Controllers\Api\Public\WhatsApp\WhatsAppWebhookController;
 use App\Http\Controllers\Api\Review\ReviewLikeController;
 use App\Http\Controllers\Api\SearchController;
@@ -176,6 +177,10 @@ Route::prefix('/public')->group(function () {
         // Товары каталога с фильтрами
         Route::get('/products', [CatalogController::class, 'products'])
             ->name('products');
+
+        Route::get('/products/{product}/reviews', ProductReviewController::class)
+            ->whereNumber('product')
+            ->name('products.reviews');
 
         Route::get('/products/{slug}', [CatalogController::class, 'getProduct'])
             ->name('products');

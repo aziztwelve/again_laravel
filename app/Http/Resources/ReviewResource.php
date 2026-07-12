@@ -10,8 +10,6 @@ class ReviewResource extends JsonResource
     public function toArray(Request $request): array
     {
 
-        $isAdmin = $request->get('admin', false);
-
         $currentClientId = $request->user()?->id;
 
         return [
@@ -35,8 +33,7 @@ class ReviewResource extends JsonResource
                     'avatar' => $this->client->avatar_url,
                 ];
             }, null),
-            $this->mergeWhen($isAdmin, [
-                'reviewable' => $this->when($this->reviewable, function () {
+            'reviewable' => $this->when($this->reviewable, function () {
                     return [
                         'id' => $this->reviewable->id,
                         'type' => class_basename($this->reviewable_type),
@@ -44,7 +41,6 @@ class ReviewResource extends JsonResource
                         'slug' => $this->reviewable?->slug ?? null,
                     ];
                 }, null),
-            ]),
             'attributes' => ReviewAttributeResource::collection($this->whenLoaded('attributes')),
             'responses' => ReviewResponseResource::collection($this->whenLoaded('responses')),
 

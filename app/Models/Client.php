@@ -7,6 +7,8 @@ use App\Models\Tag\Tag;
 use App\Notifications\ResetPasswordNotification;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -65,9 +67,21 @@ class Client extends Authenticatable
     }
 
 
-    public function profile()
+    public function user(): BelongsTo
     {
-        return $this->hasOne(UserProfile::class);
+        return $this->belongsTo(User::class);
+    }
+
+    public function profile(): HasOneThrough
+    {
+        return $this->hasOneThrough(
+            UserProfile::class,
+            User::class,
+            'id',
+            'user_id',
+            'user_id',
+            'id',
+        );
     }
 
 

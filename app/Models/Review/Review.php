@@ -84,6 +84,14 @@ class Review extends Model
         return $query->where('is_verified', true);
     }
 
+    public function scopeVisibleOnStorefront($query)
+    {
+        return $query
+            ->where('is_published', true)
+            ->where('is_verified', true)
+            ->where('is_spam', false);
+    }
+
 
 
 

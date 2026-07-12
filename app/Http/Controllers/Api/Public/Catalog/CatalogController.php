@@ -112,8 +112,11 @@ class CatalogController extends Controller
     public function getProduct(string $slug): ProductPublicResource
     {
         $product = Product::query()
-            ->where('slug', $slug)
-            ->orWhere('uuid', $slug)
+            ->where('is_active', true)
+            ->where(function ($query) use ($slug) {
+                $query->where('slug', $slug)
+                    ->orWhere('uuid', $slug);
+            })
             ->firstOrFail();
 
         $customerType = request()->user() instanceof Client
