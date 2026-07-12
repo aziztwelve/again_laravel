@@ -3,6 +3,7 @@
 namespace App\Models\Review;
 
 use App\Models\Client;
+use Database\Factories\ReviewFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -27,6 +28,11 @@ class Review extends Model
         'is_published' => 'boolean',
         'published_at' => 'datetime',
     ];
+
+    protected static function newFactory(): ReviewFactory
+    {
+        return ReviewFactory::new();
+    }
 
     protected static function boot()
     {

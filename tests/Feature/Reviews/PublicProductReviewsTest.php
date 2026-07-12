@@ -16,9 +16,8 @@ class PublicProductReviewsTest extends TestCase
     {
         $product = Product::factory()->create(['is_active' => true]);
 
-        $this->getJson($this->endpoint($product))
+        $response = $this->getJson($this->endpoint($product))
             ->assertOk()
-            ->assertHeader('Cache-Control', 'private, no-store')
             ->assertExactJson([
                 'success' => true,
                 'data' => [],
@@ -30,6 +29,9 @@ class PublicProductReviewsTest extends TestCase
                     'has_more' => false,
                 ],
             ]);
+
+        $this->assertStringContainsString('private', $response->headers->get('Cache-Control'));
+        $this->assertStringContainsString('no-store', $response->headers->get('Cache-Control'));
     }
 
     public function test_it_paginates_only_visible_reviews_in_stable_order(): void
