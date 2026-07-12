@@ -1,6 +1,6 @@
 # Задача: Все отзывы в карточке товара — пагинация, состояния и безопасный публичный API
 
-**Статус:** Реализация выполнена частично; автоматизированные DB/typecheck gates требуют окружения (см. журнал)
+**Статус:** Реализация и выкладка завершены; общий frontend typecheck заблокирован существующим baseline (см. журнал)
 
 **Дата:** 2026-07-11
 
@@ -23,7 +23,7 @@
 | 2. Backend public API и security hardening (§12.3) | DONE | 2026-07-12: canonical route/controller/request/resource, storefront scope, active detail, safe legacy/home, admin/moderation/like/create hardening; PHP syntax и route:list — успешно |
 | 3. Backend feature-тесты | DONE (server) | 2026-07-12: normalizer 4 tests/8 assertions; import suite 8 tests/36 assertions; canonical public API 3 tests/26 assertions — всё OK на dev-сервере |
 | 4. Основной frontend: paginator/grid/card | DONE | 2026-07-12: SSR first page, imperative load-more, dedupe/retry/stale/out-of-sync, grid 4/2/1, safe card, local likes, private SSR headers; `npm run build` — успешно |
-| 5. Frontend unit-тесты и итоговые проверки | PAUSED | 2026-07-12: server `npm ci` и production build OK; API page 1/page 2 и SSR load-more smoke OK. Smoke обнаружил отсутствие SSR private headers; fix `fd21ea6` запушен, но ЕЩЁ НЕ pulled/built/restarted на сервере. Vitest/typecheck остаются TODO |
+| 5. Frontend unit-тесты и итоговые проверки | DONE (с baseline note) | 2026-07-12: `fd21ea6` и frontend tests выложены; server `npm ci`, 7/7 Vitest и production build OK; review-scope type errors 0; Nuxt PM2 online; home/product SSR headers и load-more smoke OK. Полный `nuxi typecheck` остаётся красным из-за существующих ошибок вне review-scope |
 
 ### Точка продолжения после паузы — 2026-07-12
 
@@ -41,6 +41,24 @@
    `Cache-Control: private, no-store` и `Vary: Authorization, Cookie`.
 7. После этого добавить/запустить frontend pagination Vitest + typecheck на
    сервере и продолжить оставшуюся acceptance matrix.
+
+### Продолжение после паузы — 2026-07-12
+
+1. Frontend fix `fd21ea6` подтянут на сервер, `npm ci`, production build и
+   `pm2 restart nuxt-shop --update-env` выполнены успешно.
+2. Проверены Nuxt upstream responses для `/` и карточки товара `#252`: оба
+   возвращают `200`, `Cache-Control: private, no-store` и
+   `Vary: Authorization, Cookie`; SSR карточки содержит load-more CTA.
+3. Добавлен Vitest state-machine suite (`d5f7241`), синхронизирован lockfile
+   (`e1ee480`), добавлена защита от пустого SSR payload (`bc667a8`). Все 7 unit
+   tests проходят на сервере без Vue warnings.
+4. Полный `nuxi typecheck` впервые запущен и выявил большой существующий baseline
+   ошибок в старых компонентах. После исправления nullable SSR payload ошибок в
+   review-scope (`useProductReviews`, Product/Reviews, Reviews/Card, review types,
+   formatReviewDate) — 0. Общий typecheck не считается зелёным до отдельной
+   расчистки project-wide baseline.
+5. Финальный production build `bc667a8` собран и запущен; `nuxt-shop` online,
+   серверное frontend-дерево чистое, повторный SSR headers/load-more smoke OK.
 
 ---
 
