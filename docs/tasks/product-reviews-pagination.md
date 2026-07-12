@@ -100,6 +100,24 @@
 6. После этого остаются три gates, требующие отдельной авторизованной UI-сессии:
    два Client SSR, like карточки page 2+ и административный reviews UI.
 
+### Продолжение acceptance — 2026-07-12
+
+1. Timing assertion loading-state стабилизирован (`8c96331`, `0b2ee9c`,
+   `538aac4`): smoke ждёт `disabled=true` и завершение Vue render-state,
+   не пытаясь поймать краткоживущий text-node.
+2. Offline smoke выявил runtime edge case: browser fetch error с `status: 0`
+   или служебным нечисловым status считался terminal. В `da4e11e` /
+   `ae5d868` network-status нормализован в `null`, retry восстановлен;
+   добавлены unit-регрессии для обоих форм.
+3. Server unit suite: 22/22. Production build успешен, `nuxt-shop`
+   перезапущен и online.
+4. Финальный Chromium smoke зелёный: 91 cards, responsive 4/2/1,
+   delayed loading, offline error/retry, empty product, ISO/legacy/invalid dates,
+   long-text, review modal, home slider, keyboard focus и 0 console issues.
+5. Visual states и date compatibility acceptance закрыты. Остаются
+   три авторизованных UI-gates: два Client SSR, like карточки
+   page 2+ и административный reviews UI.
+
 ---
 
 ## 1. Цель
