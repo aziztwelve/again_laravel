@@ -21,7 +21,7 @@
 |---|---|---|
 | 1. Frontend compatibility slice дат (§12.2) | DONE | 2026-07-12: добавлен `formatReviewDate` для ISO/legacy; Home использует `published_at ?? created_at` и немутирующий reverse; `npm run build` — успешно (только существующие warnings) |
 | 2. Backend public API и security hardening (§12.3) | DONE | 2026-07-12: canonical route/controller/request/resource, storefront scope, active detail, safe legacy/home, admin/moderation/like/create hardening; PHP syntax и route:list — успешно |
-| 3. Backend feature-тесты | BLOCKED (infra) | 2026-07-12: normalizer unit — 4 tests/8 assertions OK; DB-suite не стартует (`mysql` DNS unavailable), SQLite PDO отсутствует; canonical feature matrix ещё требуется прогнать в DB-enabled окружении |
+| 3. Backend feature-тесты | IN PROGRESS (server) | 2026-07-12: server normalizer unit — 4 tests/8 assertions OK; review feature suite дошёл до DB и выявил obsolete `ProductFactory::is_available`, factory исправляется; canonical feature matrix ещё требуется |
 | 4. Основной frontend: paginator/grid/card | DONE | 2026-07-12: SSR first page, imperative load-more, dedupe/retry/stale/out-of-sync, grid 4/2/1, safe card, local likes, private SSR headers; `npm run build` — успешно |
 | 5. Frontend unit-тесты и итоговые проверки | BLOCKED (infra) | 2026-07-12: `npm run build` OK; `nuxi typecheck` не стартует без direct `typescript`, установка dev-зависимостей зависла и отменена; pagination Vitest tests ещё не добавлены |
 

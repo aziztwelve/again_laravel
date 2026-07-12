@@ -17,7 +17,9 @@ class ProductFactory extends Factory
         return [
             'name' => $this->faker->words(3, true),
             'description' => $this->faker->paragraph,
-            'is_available' => $this->faker->boolean,
+            'is_active' => true,
+            'type' => 'simple',
+            'has_variants' => false,
         ];
     }
 }
