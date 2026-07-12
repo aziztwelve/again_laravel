@@ -21,9 +21,26 @@
 |---|---|---|
 | 1. Frontend compatibility slice дат (§12.2) | DONE | 2026-07-12: добавлен `formatReviewDate` для ISO/legacy; Home использует `published_at ?? created_at` и немутирующий reverse; `npm run build` — успешно (только существующие warnings) |
 | 2. Backend public API и security hardening (§12.3) | DONE | 2026-07-12: canonical route/controller/request/resource, storefront scope, active detail, safe legacy/home, admin/moderation/like/create hardening; PHP syntax и route:list — успешно |
-| 3. Backend feature-тесты | IN PROGRESS (server) | 2026-07-12: server normalizer unit — 4 tests/8 assertions OK; review feature suite дошёл до DB и выявил obsolete `ProductFactory::is_available`, factory исправляется; canonical feature matrix ещё требуется |
+| 3. Backend feature-тесты | DONE (server) | 2026-07-12: normalizer 4 tests/8 assertions; import suite 8 tests/36 assertions; canonical public API 3 tests/26 assertions — всё OK на dev-сервере |
 | 4. Основной frontend: paginator/grid/card | DONE | 2026-07-12: SSR first page, imperative load-more, dedupe/retry/stale/out-of-sync, grid 4/2/1, safe card, local likes, private SSR headers; `npm run build` — успешно |
-| 5. Frontend unit-тесты и итоговые проверки | BLOCKED (infra) | 2026-07-12: `npm run build` OK; `nuxi typecheck` не стартует без direct `typescript`, установка dev-зависимостей зависла и отменена; pagination Vitest tests ещё не добавлены |
+| 5. Frontend unit-тесты и итоговые проверки | PAUSED | 2026-07-12: server `npm ci` и production build OK; API page 1/page 2 и SSR load-more smoke OK. Smoke обнаружил отсутствие SSR private headers; fix `fd21ea6` запушен, но ЕЩЁ НЕ pulled/built/restarted на сервере. Vitest/typecheck остаются TODO |
+
+### Точка продолжения после паузы — 2026-07-12
+
+1. На сервере backend уже на `11738ad`, migrations pending `0`, Laravel PM2 online.
+2. Backend server tests зелёные: суммарно 15 tests / 70 assertions с unit.
+3. Реальный API товара `#252`: page 1 = 8, page 2 = 8, total = 91,
+   `last_page = 12`, email отсутствует, API `Cache-Control: no-store, private`.
+4. Frontend build `4483940` уже работает на сервере; SSR содержит 8 отзывов,
+   `Отзывы (91)` и кнопку «Показать ещё отзывы».
+5. Последний frontend commit `fd21ea6` переносит private/no-store policy в
+   `server/middleware/private-review-pages.ts`. Он находится в `origin/main`,
+   но сервер `/var/www/html/nuxt-shop` ещё на `4483940`.
+6. Следующий обязательный шаг: server `git pull --ff-only`, `npm ci`, Nuxt build,
+   `pm2 restart nuxt-shop --update-env`, затем проверить headers product/home:
+   `Cache-Control: private, no-store` и `Vary: Authorization, Cookie`.
+7. После этого добавить/запустить frontend pagination Vitest + typecheck на
+   сервере и продолжить оставшуюся acceptance matrix.
 
 ---
 
