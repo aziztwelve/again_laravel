@@ -16,14 +16,17 @@ class VKService
 {
     protected ConversationService $conversationService;
     protected FileStorageService $fileStorage;
+    protected \App\Services\Messaging\ChatBindingService $chatBindingService;
 
     public function __construct(
         ConversationService $conversationService,
-        FileStorageService  $fileStorage
+        FileStorageService  $fileStorage,
+        \App\Services\Messaging\ChatBindingService $chatBindingService
     )
     {
         $this->conversationService = $conversationService;
         $this->fileStorage = $fileStorage;
+        $this->chatBindingService = $chatBindingService;
     }
 
     /**
@@ -101,18 +104,38 @@ class VKService
 
             $client = $this->findClient($userId);
 
+            // Deeplink-привязка: при переходе по vk.me/...?ref=<TOKEN> VK передаёт
+            // ref в первом сообщении. См. docs/tasks/messenger-deeplink-binding.md
+            if (!$client) {
+                $ref = $message['ref']
+                    ?? $message['payload']
+                    ?? ($messageObject['ref'] ?? null);
+
+                if ($ref) {
+                    $bound = $this->chatBindingService->resolveBinding($ref, 'vk', (string)$userId);
+                    if ($bound) {
+                        $client = $bound;
+                    }
+                }
+            }
+
             $conversation = Conversation::firstOrCreate(
                 [
                     'source' => 'vk',
                     'external_id' => (string)$userId,
-                    'client_id' => $client?->id ?? null,
                 ],
                 [
+                    'client_id' => $client?->id ?? null,
                     'status' => 'active',
                     'last_message_at' => now(),
                     'unread_messages_count' => 0,
                 ]
             );
+
+            // Если клиент появился позже — обновляем привязку
+            if ($client && $conversation->client_id === null) {
+                $conversation->update(['client_id' => $client->id]);
+            }
 
             $messageData = [
                 'direction' => 'incoming',

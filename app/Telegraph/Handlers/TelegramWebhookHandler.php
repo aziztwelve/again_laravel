@@ -9,6 +9,7 @@ use App\Models\Order;
 use App\Models\OrderPayment;
 use App\Models\User;
 use App\Models\UserProfile;
+use App\Services\Messaging\ChatBindingService;
 use App\Services\Messaging\ConversationService;
 use App\Services\Telegram\TelegramService;
 use App\Traits\ClientControllerTrait;
@@ -30,18 +31,42 @@ class TelegramWebhookHandler extends WebhookHandler
 
     private TelegramService $telegramService;
 
-    public function __construct(TelegramService $telegramService)
+    private ChatBindingService $chatBindingService;
+
+    public function __construct(TelegramService $telegramService, ChatBindingService $chatBindingService)
     {
         $this->telegramService = $telegramService;
+        $this->chatBindingService = $chatBindingService;
     }
 
 
-    public function start()
+    /**
+     * Обработка /start [<TOKEN>].
+     *
+     * Если пришёл deeplink-токен привязки (start=<TOKEN>) — по нему находим
+     * клиента и привязываем переписку (см. docs/tasks/messenger-deeplink-binding.md).
+     * Иначе — прежний сценарий: поиск профиля по telegram_user_id / ввод email.
+     */
+    public function start(?string $parameter = null)
     {
 
         $chat = $this->getChat();
 
         $chat->chatAction(ChatActions::TYPING)->send();
+
+        // Привязка по deeplink-токену (приоритетный путь).
+        if ($parameter) {
+            $telegramId = (string) $this->getUserId();
+            $client = $this->chatBindingService->resolveBinding($parameter, 'telegram', $telegramId);
+
+            if ($client) {
+                cache()->forget("awaiting_email_$telegramId");
+                $name = $client->profile?->full_name ?: $client->email;
+                $chat->message("Привет, {$name}! Мы успешно привязали ваш аккаунт. Напишите команду */orders*, чтобы посмотреть свои Заказы.")->send();
+
+                return;
+            }
+        }
 
         $client_profile = $this->user_profile(true);
 

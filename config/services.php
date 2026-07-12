@@ -53,4 +53,23 @@ return [
         'webhook_url' => env('MAX_WEBHOOK_URL') ?: env('APP_URL'),
         'webhook_secret' => env('MAX_WEBHOOK_SECRET'),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Публичные имена ботов/сообществ для deeplink-привязки чата
+    |--------------------------------------------------------------------------
+    |
+    | Используются при построении диплинков (start/ref) для привязки переписки
+    | из мессенджеров к клиенту/заказу. См. docs/tasks/messenger-deeplink-binding.md
+    | и App\Services\Messaging\ChatBindingService::buildLinks().
+    |
+    */
+    'messenger_deeplinks' => [
+        // Telegram: https://t.me/<username>?start=<TOKEN>
+        'telegram_bot' => env('TELEGRAM_BOT_USERNAME', 'againdev_test_bot'),
+        // MAX: https://max.ru/<public_name>?start=<TOKEN>
+        'max_bot' => env('MAX_BOT_PUBLIC_NAME', 'id4707052811_bot'),
+        // VK: https://vk.me/<screen_name>?ref=<TOKEN> (по умолчанию public<community_id>)
+        'vk_screen_name' => env('VK_SCREEN_NAME'),
+    ],
 ];

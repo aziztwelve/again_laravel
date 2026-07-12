@@ -84,6 +84,7 @@ use App\Http\Controllers\Api\Public\Cart\CartPriceController;
 use App\Http\Controllers\Api\Public\Cart\CartRestoreController;
 use App\Http\Controllers\Api\Public\Catalog\CatalogController;
 use App\Http\Controllers\Api\Public\Catalog\RestockSubscriptionController;
+use App\Http\Controllers\Api\Public\Chat\ChatBindingController;
 use App\Http\Controllers\Api\Public\Conversation\PublicConversationController;
 use App\Http\Controllers\Api\Public\GiftCard\GiftCardPublicController;
 use App\Http\Controllers\Api\Public\OtoBanner\PublicOtoBannerController;
@@ -205,6 +206,10 @@ Route::prefix('/public')->group(function () {
         Route::post('/{conversation}/reply', [PublicConversationController::class, 'reply']);
         Route::post('/{conversation}/read', [PublicConversationController::class, 'read']);
     });
+
+    // Deeplink-ссылки мессенджеров с токеном привязки для виджета чата витрины.
+    // См. docs/tasks/messenger-deeplink-binding.md
+    Route::get('/chat/messenger-links', [ChatBindingController::class, 'messengerLinks']);
 
     Route::prefix('delivery')->name('delivery.')->group(function () {
 

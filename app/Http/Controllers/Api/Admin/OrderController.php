@@ -893,9 +893,10 @@ class OrderController extends Controller
 
         $messengerLinks = [];
         if ($order->view_token) {
+            $telegramBot = config('services.messenger_deeplinks.telegram_bot');
             $messengerLinks[] = [
                 'label' => 'Telegram',
-                'url' => 'tg://resolve?domain=again8help_bot&start='.$order->view_token,
+                'url' => 'tg://resolve?domain='.$telegramBot.'&start='.$order->view_token,
             ];
         }
 

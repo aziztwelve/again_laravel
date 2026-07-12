@@ -6,6 +6,7 @@ use App\Models\Client;
 use App\Models\Conversation;
 use App\Models\MaxSettings;
 use App\Services\File\FileStorageService;
+use App\Services\Messaging\ChatBindingService;
 use App\Services\Messaging\ConversationService;
 use BushlanovDev\MaxMessengerBot\Api;
 use Illuminate\Support\Facades\DB;
@@ -19,14 +20,18 @@ class MaxService
 
     protected FileStorageService $fileStorage;
 
+    protected ChatBindingService $chatBindingService;
+
     protected ?Api $apiClient = null;
 
     public function __construct(
         ConversationService $conversationService,
-        FileStorageService $fileStorage
+        FileStorageService $fileStorage,
+        ChatBindingService $chatBindingService
     ) {
         $this->conversationService = $conversationService;
         $this->fileStorage = $fileStorage;
+        $this->chatBindingService = $chatBindingService;
     }
 
     /**
@@ -736,13 +741,36 @@ class MaxService
     }
 
     /**
-     * Обработка запуска бота
+     * Обработка запуска бота.
+     *
+     * Если при старте пришёл deeplink-payload (start=<TOKEN>) — привязываем
+     * переписку к клиенту по токену. См. docs/tasks/messenger-deeplink-binding.md
      */
     protected function handleBotStarted(array $update): array
     {
         Log::info('MaxService: Bot started', ['update' => $update]);
 
-        // TODO: Implement bot started logic if needed
+        // ID пользователя, запустившего бота (совпадает с external_id диалога MAX).
+        $userId = $update['user']['user_id']
+            ?? $update['user_id']
+            ?? ($update['message']['sender']['user_id'] ?? null);
+
+        // Стартовый параметр (deeplink-токен). MAX кладёт его в payload/start_payload.
+        $token = $update['payload']
+            ?? $update['start_payload']
+            ?? ($update['message']['body']['text'] ?? null);
+
+        if ($userId && $token) {
+            $client = $this->chatBindingService->resolveBinding($token, 'max', (string) $userId);
+
+            if ($client) {
+                Log::info('MaxService: bot_started bound to client', [
+                    'user_id' => $userId,
+                    'client_id' => $client->id,
+                ]);
+            }
+        }
+
         return ['ok' => true];
     }
 
