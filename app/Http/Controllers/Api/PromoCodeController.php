@@ -103,7 +103,7 @@ class PromoCodeController extends Controller
 
             'template_type' => 'nullable|in:regular,birthday',
             'type' => 'nullable|in:all,specific',
-        ]);
+        ], $this->validationMessages(), $this->validationAttributes());
 
         // Обработка загрузки изображения
         if ($request->hasFile('image')) {
@@ -194,7 +194,7 @@ class PromoCodeController extends Controller
             'template_type' => 'nullable|in:regular,birthday',
 
             'type' => 'nullable|in:all,specific',
-        ]);
+        ], $this->validationMessages(), $this->validationAttributes());
 
         // Обработка загрузки изображения
         if ($request->hasFile('image')) {
@@ -347,7 +347,7 @@ class PromoCodeController extends Controller
             'code' => 'required|string',
             'client_id' => 'nullable|exists:clients,id',
             'product_ids' => 'nullable|array',
-        ]);
+        ], $this->validationMessages(), $this->validationAttributes());
 
         $result = $this->promoCodeService->validatePromo($request);
 
@@ -377,6 +377,72 @@ class PromoCodeController extends Controller
         }
 
         return response()->file($filePath);
+    }
+
+    private function validationMessages(): array
+    {
+        return [
+            'code.required' => 'Укажите промокод.',
+            'code.string' => 'Промокод должен быть строкой.',
+            'code.unique' => 'Такой промокод уже существует.',
+            'description.string' => 'Описание должно быть строкой.',
+            'description.max' => 'Описание не должно превышать 500 символов.',
+            'image.image' => 'Файл должен быть изображением.',
+            'image.mimes' => 'Изображение должно быть в формате jpeg, png, jpg или gif.',
+            'image.max' => 'Размер изображения не должен превышать 2 МБ.',
+            'discount_amount.required' => 'Укажите размер скидки.',
+            'discount_amount.numeric' => 'Размер скидки должен быть числом.',
+            'discount_amount.min' => 'Размер скидки не может быть меньше 0.',
+            'discount_type.required' => 'Выберите тип скидки.',
+            'discount_type.in' => 'Некорректный тип скидки.',
+            'discount_behavior.required' => 'Выберите поведение промокода.',
+            'discount_behavior.in' => 'Некорректное поведение промокода.',
+            'starts_at.date' => 'Дата начала должна быть корректной датой.',
+            'expires_at.required' => 'Укажите дату окончания или включите бессрочный промокод.',
+            'expires_at.date' => 'Дата окончания должна быть корректной датой.',
+            'expires_at.after_or_equal' => 'Дата окончания должна быть не раньше даты начала.',
+            'is_unlimited.boolean' => 'Поле бессрочного промокода должно быть да или нет.',
+            'max_uses.integer' => 'Максимальное количество использований должно быть целым числом.',
+            'max_uses.min' => 'Максимальное количество использований должно быть не меньше 1.',
+            'is_active.boolean' => 'Поле активности должно быть да или нет.',
+            'customer_type.in' => 'Некорректная аудитория промокода.',
+            'client_ids.array' => 'Клиенты должны быть массивом.',
+            'client_ids.prohibited' => 'Для гостевого промокода нельзя выбирать конкретных клиентов.',
+            'client_ids.*.exists' => 'Выбран несуществующий клиент.',
+            'client_id.exists' => 'Выбран несуществующий клиент.',
+            'product_ids.array' => 'Товары должны быть массивом.',
+            'applies_to_all_products.boolean' => 'Поле применения ко всем товарам должно быть да или нет.',
+            'applies_to_all_clients.required' => 'Для гостевого промокода нужно включить доступность для всех клиентов.',
+            'applies_to_all_clients.boolean' => 'Поле доступности всем клиентам должно быть да или нет.',
+            'applies_to_all_clients.accepted' => 'Гостевой промокод должен быть доступен всем клиентам.',
+            'template_type.in' => 'Некорректный тип шаблона.',
+            'type.in' => 'Некорректный тип применения промокода.',
+        ];
+    }
+
+    private function validationAttributes(): array
+    {
+        return [
+            'code' => 'промокод',
+            'description' => 'описание',
+            'image' => 'изображение',
+            'discount_amount' => 'размер скидки',
+            'discount_type' => 'тип скидки',
+            'discount_behavior' => 'поведение промокода',
+            'starts_at' => 'дата начала',
+            'expires_at' => 'дата окончания',
+            'is_unlimited' => 'бессрочный промокод',
+            'max_uses' => 'максимальное количество использований',
+            'is_active' => 'активность',
+            'customer_type' => 'аудитория',
+            'client_ids' => 'клиенты',
+            'client_id' => 'клиент',
+            'product_ids' => 'товары',
+            'applies_to_all_products' => 'применение ко всем товарам',
+            'applies_to_all_clients' => 'доступность всем клиентам',
+            'template_type' => 'тип шаблона',
+            'type' => 'тип применения',
+        ];
     }
 
 

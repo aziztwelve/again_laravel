@@ -84,7 +84,7 @@ class PromotionController extends Controller
             'gift_products' => 'required|array|min:1',
             'gift_products.*.product_id' => 'required|exists:products,id',
             'gift_products.*.quantity' => 'required|integer|min:1',
-        ]);
+        ], $this->validationMessages(), $this->validationAttributes());
 
         if ($validator->fails()) {
             return response()->json([
@@ -165,7 +165,7 @@ class PromotionController extends Controller
             'gift_products' => 'array',
             'gift_products.*.product_id' => 'required|exists:products,id',
             'gift_products.*.quantity' => 'required|integer|min:1',
-        ]);
+        ], $this->validationMessages(), $this->validationAttributes());
 
         if ($validator->fails()) {
             return response()->json([
@@ -319,5 +319,59 @@ class PromotionController extends Controller
             'message' => $promotion->is_active ? 'Акция активирована' : 'Акция деактивирована',
             'data' => $promotion,
         ]);
+    }
+
+    private function validationMessages(): array
+    {
+        return [
+            'name.required' => 'Укажите название акции.',
+            'name.string' => 'Название акции должно быть строкой.',
+            'name.max' => 'Название акции не должно превышать 255 символов.',
+            'description.string' => 'Описание должно быть строкой.',
+            'starts_at.date' => 'Дата начала должна быть корректной датой.',
+            'ends_at.date' => 'Дата окончания должна быть корректной датой.',
+            'ends_at.after' => 'Дата окончания должна быть позже даты начала.',
+            'min_purchase_amount.required' => 'Укажите минимальную сумму покупки.',
+            'min_purchase_amount.numeric' => 'Минимальная сумма покупки должна быть числом.',
+            'min_purchase_amount.min' => 'Минимальная сумма покупки не может быть меньше 0.',
+            'allow_promo_codes.required' => 'Укажите, разрешены ли промокоды.',
+            'allow_promo_codes.boolean' => 'Поле разрешения промокодов должно быть да или нет.',
+            'is_stackable.boolean' => 'Поле суммирования акции должно быть да или нет.',
+            'is_active.boolean' => 'Поле активности должно быть да или нет.',
+            'priority.integer' => 'Приоритет должен быть целым числом.',
+            'priority.min' => 'Приоритет не может быть меньше 0.',
+            'max_uses.integer' => 'Максимальное количество использований должно быть целым числом.',
+            'max_uses.min' => 'Максимальное количество использований должно быть не меньше 1.',
+            'trigger_product_ids.required' => 'Выберите хотя бы один товар-триггер.',
+            'trigger_product_ids.array' => 'Товары-триггеры должны быть массивом.',
+            'trigger_product_ids.min' => 'Выберите хотя бы один товар-триггер.',
+            'trigger_product_ids.*.exists' => 'Выбран несуществующий товар-триггер.',
+            'gift_products.required' => 'Выберите хотя бы один товар-подарок.',
+            'gift_products.array' => 'Товары-подарки должны быть массивом.',
+            'gift_products.min' => 'Выберите хотя бы один товар-подарок.',
+            'gift_products.*.product_id.required' => 'Укажите товар-подарок.',
+            'gift_products.*.product_id.exists' => 'Выбран несуществующий товар-подарок.',
+            'gift_products.*.quantity.required' => 'Укажите количество товара-подарка.',
+            'gift_products.*.quantity.integer' => 'Количество товара-подарка должно быть целым числом.',
+            'gift_products.*.quantity.min' => 'Количество товара-подарка должно быть не меньше 1.',
+        ];
+    }
+
+    private function validationAttributes(): array
+    {
+        return [
+            'name' => 'название акции',
+            'description' => 'описание',
+            'starts_at' => 'дата начала',
+            'ends_at' => 'дата окончания',
+            'min_purchase_amount' => 'минимальная сумма покупки',
+            'allow_promo_codes' => 'разрешение промокодов',
+            'is_stackable' => 'суммирование акции',
+            'is_active' => 'активность',
+            'priority' => 'приоритет',
+            'max_uses' => 'максимальное количество использований',
+            'trigger_product_ids' => 'товары-триггеры',
+            'gift_products' => 'товары-подарки',
+        ];
     }
 }
