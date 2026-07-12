@@ -6,6 +6,7 @@ use App\Models\Client;
 use App\Models\Product;
 use App\Models\Review\Review;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class PublicProductReviewsTest extends TestCase
@@ -88,6 +89,33 @@ class PublicProductReviewsTest extends TestCase
         $this->getJson($this->endpoint($inactive))->assertNotFound();
         $this->getJson('/api/public/catalog/products/'.$deleted->id.'/reviews')->assertNotFound();
         $this->getJson('/api/public/catalog/products/999999999/reviews')->assertNotFound();
+    }
+
+    public function test_query_count_does_not_scale_with_page_size(): void
+    {
+        $product = Product::factory()->create(['is_active' => true]);
+        $client = Client::factory()->create();
+        $client->profile()->create(['first_name' => 'Query', 'last_name' => 'Count']);
+
+        foreach (range(1, 20) as $number) {
+            $this->visibleReview($product, $client, ['content' => "Отзыв {$number}"]);
+        }
+
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+        $this->getJson($this->endpoint($product).'?per_page=1')->assertOk();
+        $singleReviewQueries = count(DB::getQueryLog());
+
+        DB::flushQueryLog();
+        $this->getJson($this->endpoint($product).'?per_page=20')->assertOk();
+        $twentyReviewQueries = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        $this->assertLessThanOrEqual(
+            $singleReviewQueries + 1,
+            $twentyReviewQueries,
+            "Query count grew from {$singleReviewQueries} to {$twentyReviewQueries}",
+        );
     }
 
     private function endpoint(Product $product): string
