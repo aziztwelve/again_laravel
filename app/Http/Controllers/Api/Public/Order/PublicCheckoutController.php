@@ -77,12 +77,21 @@ class PublicCheckoutController extends Controller
                 $validated['guest_token'] = $request->cookie(config('cart.cookie.name', 'guest_token'));
 
                 // Наполняем базу «Клиенты → Все клиенты»: находим/создаём клиента
-                // по email или телефону гостя. Заказ при этом ОСТАЁТСЯ гостевым
-                // (client_id = NULL) — связь клиент↔заказ только по совпадению
-                // контактов. Клиент создаётся «без ЛК» (verified_at = NULL) и
-                // получит признак «есть ЛК» после первого OTP-входа.
+                // по email или телефону гостя и ПРИВЯЗЫВАЕМ заказ к нему
+                // (orders.client_id). Заказ попадает в историю клиента и перестаёт
+                // считаться «гостевым».
+                //
+                // ВАЖНО: $orderClient намеренно остаётся null для валидации
+                // промокодов ниже — промокоды проверяются по «гостевым» правилам.
+                // Иначе, введя чужой email/телефон, гость мог бы получить доступ
+                // к персональным промокодам этого клиента (подделка личности).
+                // Привязка заказа к client_id безопасна (это лишь атрибуция),
+                // а доступ к персональным скидкам — нет.
                 // См. docs/tasks/guest-client-auto-create.md.
-                $this->guestClientService->findOrCreateFromOrderData($validated);
+                $guestClient = $this->guestClientService->findOrCreateFromOrderData($validated);
+                if ($guestClient !== null) {
+                    $validated['client_id'] = $guestClient->id;
+                }
             } else {
                 $validated['client_id'] = $orderClient->id;
             }

@@ -122,10 +122,17 @@ class OrderCreationService
         // Связываем заказ с корзиной клиента и помечаем её оформленной
         // (фича «Брошенная корзина» — см. docs/tasks/abandoned-cart.md, решение #1).
         // Останавливает триггерную цепочку напоминаний и наполняет «Заказы»/«Конверсию».
+        //
+        // Порядок важен: у гостя корзина привязана к guest_token, а не к client_id
+        // (даже если заказ привязан к автоматически созданному клиенту — см.
+        // docs/tasks/guest-client-auto-create.md). Поэтому сначала пробуем найти
+        // корзину по client_id, а если её нет — по guest_token.
+        $cartLinked = false;
         if ($resolvedClientId) {
-            $this->linkCartToOrder($order, (int) $resolvedClientId);
-        } elseif (! empty($orderData['guest_token'])) {
-            // Гостевой заказ: ищем корзину по guest_token (универсальная корзина).
+            $cartLinked = $this->linkCartToOrder($order, (int) $resolvedClientId);
+        }
+        if (! $cartLinked && ! empty($orderData['guest_token'])) {
+            // Гостевая корзина по guest_token (универсальная корзина).
             // См. docs/tasks/universal-cart.md.
             $this->linkGuestCartToOrder($order, (string) $orderData['guest_token']);
         }
@@ -139,7 +146,7 @@ class OrderCreationService
      * orders.cart_id. Приоритет — активная корзина; при её отсутствии берём
      * самую свежую брошенную (клиент мог вернуться по ссылке восстановления).
      */
-    protected function linkCartToOrder(Order $order, int $clientId): void
+    protected function linkCartToOrder(Order $order, int $clientId): bool
     {
         $cart = Cart::where('client_id', $clientId)
             ->whereIn('status', ['active', 'abandoned'])
@@ -149,7 +156,7 @@ class OrderCreationService
             ->first();
 
         if (! $cart) {
-            return;
+            return false;
         }
 
         $cart->update([
@@ -159,6 +166,8 @@ class OrderCreationService
         ]);
 
         $order->forceFill(['cart_id' => $cart->id])->save();
+
+        return true;
     }
 
     /**
@@ -166,7 +175,7 @@ class OrderCreationService
      * оформленной. Приоритет — активная корзина, затем брошенная (гость мог
      * вернуться по ссылке восстановления). См. docs/tasks/universal-cart.md.
      */
-    protected function linkGuestCartToOrder(Order $order, string $guestToken): void
+    protected function linkGuestCartToOrder(Order $order, string $guestToken): bool
     {
         $cart = Cart::where('guest_token', $guestToken)
             ->whereIn('status', ['active', 'abandoned'])
@@ -175,7 +184,7 @@ class OrderCreationService
             ->first();
 
         if (! $cart) {
-            return;
+            return false;
         }
 
         $cart->update([
@@ -185,6 +194,8 @@ class OrderCreationService
         ]);
 
         $order->forceFill(['cart_id' => $cart->id])->save();
+
+        return true;
     }
 
     /**
