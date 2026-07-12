@@ -68,6 +68,14 @@
    105 ms. `EXPLAIN` товара #252 использует составной reviewable index; likes
    subquery использует `review_likes_review_id_foreign`; при 91 строке отдельная
    индексная миграция не требуется.
+8. Авторизованный backend acceptance suite (`745c3e8`) проходит: 8 tests / 62
+   assertions для guest/Client/User, admin mode, create/moderation permissions,
+   active/inactive Product, idempotent like/unlike, hidden review и изоляция
+   `is_liked` между двумя Client.
+9. Browser smoke расширен до review modal, keyboard focus и home slider
+   (`0f4bbce`): итог — 91 cards, responsive 4/2/1, long-text toggle, modal и
+   slider OK, JavaScript/Vue/hydration console issues 0. Сторонняя OTO-картинка
+   `againdev.ru` недоступна из headless-среды и исключена только из review gate.
 
 ---
 
@@ -1402,12 +1410,12 @@ generation/abort/retry. В рамках задачи подключается м
 - [x] Порядок стабилен: явный `NULLS LAST`, затем
       `published_at DESC, id DESC`.
 - [x] Верхний лимит `per_page=20` enforced backend-валидацией.
-- [ ] `admin=true`: без токена `401`, Client `403`, User `200`; скрытые отзывы и
+- [x] `admin=true`: без токена `401`, Client `403`, User `200`; скрытые отзывы и
       PII анонимно не раскрываются.
-- [ ] Client не может выполнить `publish/unpublish/destroy`; dual-actor
+- [x] Client не может выполнить `publish/unpublish/destroy`; dual-actor
       `respond` этим релизом не меняется.
-- [ ] Like/unlike принимает только Client и только видимый отзыв.
-- [ ] POST review сохраняет UX/response, но принимает только Client и активный
+- [x] Like/unlike принимает только Client и только видимый отзыв.
+- [x] POST review сохраняет UX/response, но принимает только Client и активный
       Product; внутренние exception details наружу не выходят.
 - [x] Все public review-ответы имеют `Cache-Control: private, no-store`;
       inactive Product недоступен через legacy/home/like обходы.
@@ -1433,13 +1441,13 @@ generation/abort/retry. В рамках задачи подключается м
 - [x] Сетка 4/2/1 работает без скрытого контента и horizontal overflow.
 - [x] Длинный текст действительно раскрывается полностью и выводится без
       небезопасного `v-html`.
-- [ ] Клавиатурный focus, `aria-live`, `aria-expanded`, disabled/loading работают.
+- [x] Клавиатурный focus, `aria-live`, `aria-expanded`, disabled/loading работают.
 - [ ] Итоговые Nuxt product/home SSR responses private/no-store; smoke двух
       клиентов не обнаруживает смешивания персонального `is_liked`.
 
 ### Регрессии и сборка
 
-- [ ] Форма «Написать отзыв» открывается и после отправки сохраняет сценарий
+- [x] Форма «Написать отзыв» открывается и после отправки сохраняет сценарий
       модерации.
 - [ ] Like/unlike работает у карточек любой загруженной страницы.
 - [ ] Главная сохраняет текущий slider; общая card корректно принимает ISO/legacy
