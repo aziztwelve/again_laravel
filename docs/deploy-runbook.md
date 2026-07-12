@@ -240,6 +240,16 @@ cd /var/www/html/laravel && php artisan tinker --execute="echo \App\Models\Order
 
 ## История деплоев
 
+- **2026-07-12** — deeplink-привязка переписки из мессенджеров к клиенту/заказу
+  (см. `docs/tasks/messenger-deeplink-binding.md`): новая таблица/модель
+  `chat_binding_tokens`, `ChatBindingService`, публичный эндпоинт
+  `GET /api/public/chat/messenger-links`, чтение токена в вебхуках TG/MAX/VK.
+  Смена Telegram-бота на `againdev_test_bot` (вынесен в
+  `config/services.php → messenger_deeplinks`), удалён WhatsApp из виджета чата.
+  Отдельным коммитом — привязка гостевого заказа к автосозданному клиенту
+  (`orders.client_id`). Применена 1 миграция. Проверено: эндпоинт отдаёт верные
+  ссылки/боты, идемпотентность токена, `resolveBinding` привязывает клиента по
+  заказу. Heads: laravel `db2cec5`, nuxt-shop `e93336e`, vue-admin `542604e`.
 - **2026-06-29** — переход на **единый домен** `sub.againdev.ru`: витрина,
   дашборд и API на одном origin; домен витрины `sub.againdev2.ru` выведен из
   эксплуатации. nginx маршрутит `/api` и `/go` в laravel, `/admin` — статика
