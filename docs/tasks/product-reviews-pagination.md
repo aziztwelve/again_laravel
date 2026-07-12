@@ -77,6 +77,29 @@
    slider OK, JavaScript/Vue/hydration console issues 0. Сторонняя OTO-картинка
    `againdev.ru` недоступна из headless-среды и исключена только из review gate.
 
+### Точка паузы — 2026-07-12 (лимит сессии)
+
+1. Backend server HEAD включает `745c3e8`: авторизованный suite зелёный,
+   8 tests / 62 assertions; полный review suite ранее был 16 / 74 до добавления
+   этих сценариев. Task-журнал обновлён через `6e11f25`.
+2. Frontend server HEAD `e14dbcd`; unit suite зелёный: 20/20 (10 pagination +
+   10 ISO/legacy/invalid date).
+3. Последний полностью зелёный browser smoke на `0f4bbce`: 91 cards, responsive
+   4/2/1, long-text, review modal, home slider, keyboard focus, 0 JS/Vue/
+   hydration issues.
+4. В `1a1897e` browser smoke дополнен empty product, delayed loading, offline
+   load-more error/retry и date tests. Empty/date/unit проходят. Текущий запуск
+   на `e14dbcd` остановлен только assertion ожидания промежуточного текста
+   `Загрузка…`: `disabled=true` наблюдается, но headless Chromium не успевает
+   увидеть text-node до завершения async handler. Это test-timing issue, не
+   обнаруженный runtime defect.
+5. Следующий шаг: локально убрать ожидание текста `Загрузка…`, оставить строгую
+   проверку `disabled=true`, затем server pull → `npm test` →
+   `CHROMIUM_PATH=/snap/bin/chromium npm run smoke:reviews`. После зелёного
+   результата отметить visual states и ISO/legacy критерии.
+6. После этого остаются три gates, требующие отдельной авторизованной UI-сессии:
+   два Client SSR, like карточки page 2+ и административный reviews UI.
+
 ---
 
 ## 1. Цель
