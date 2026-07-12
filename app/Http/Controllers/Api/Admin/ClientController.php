@@ -91,6 +91,11 @@ class ClientController extends Controller
                     'id' => $client->id,
                     'email' => $client?->email,
                     'verified_at' => $client?->verified_at,
+                    // Признак наличия личного кабинета (ЛК): клиент хотя бы раз
+                    // прошёл OTP-вход (verified_at проставляется в
+                    // AuthenticatedSessionController::check_verification).
+                    // Актуализируется автоматически при следующей загрузке списка.
+                    'has_account' => $client?->verified_at !== null,
                     'full_name' => $client?->profile?->first_name . ' ' . $client->profile?->last_name,
                     'profile' => [
                         'first_name' => $client?->profile?->first_name,

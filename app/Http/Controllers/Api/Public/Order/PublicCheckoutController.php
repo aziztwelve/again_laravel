@@ -8,6 +8,7 @@ use App\Models\Client;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
+use App\Services\Client\GuestClientService;
 use App\Services\GiftCard\GiftCardService;
 use App\Services\Notifications\OrderNotificationService;
 use App\Services\Order\OrderCreationService;
@@ -36,6 +37,7 @@ class PublicCheckoutController extends Controller
         protected PromoCodeValidationService $promoValidationService,
         protected GiftCardService $giftCardService,
         protected OrderNotificationService $orderNotificationService,
+        protected GuestClientService $guestClientService,
     ) {}
 
     public function store(CreateOrderRequest $request): JsonResponse
@@ -73,6 +75,14 @@ class PublicCheckoutController extends Controller
                 // к серверной корзине гостя (универсальная корзина). См.
                 // docs/tasks/universal-cart.md.
                 $validated['guest_token'] = $request->cookie(config('cart.cookie.name', 'guest_token'));
+
+                // Наполняем базу «Клиенты → Все клиенты»: находим/создаём клиента
+                // по email или телефону гостя. Заказ при этом ОСТАЁТСЯ гостевым
+                // (client_id = NULL) — связь клиент↔заказ только по совпадению
+                // контактов. Клиент создаётся «без ЛК» (verified_at = NULL) и
+                // получит признак «есть ЛК» после первого OTP-входа.
+                // См. docs/tasks/guest-client-auto-create.md.
+                $this->guestClientService->findOrCreateFromOrderData($validated);
             } else {
                 $validated['client_id'] = $orderClient->id;
             }
