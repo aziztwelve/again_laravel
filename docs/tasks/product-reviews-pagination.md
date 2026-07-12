@@ -117,6 +117,13 @@
 5. Visual states и date compatibility acceptance закрыты. Остаются
    три авторизованных UI-gates: два Client SSR, like карточки
    page 2+ и административный reviews UI.
+6. Авторизованные UI-gates закрыты (`32c9dcc`): два разных
+   Client получают private/no-store SSR с `Vary: Cookie`; like девятой
+   карточки (page 2) виден только поставившему Client; admin
+   `/admin/products/reviews` открывается и загружает reviews UI. Для
+   прогона выпускались три временных Sanctum-токена; после
+   acceptance токены удалены, тестовый like откачен. Вся
+   product reviews acceptance matrix закрыта.
 
 ---
 
