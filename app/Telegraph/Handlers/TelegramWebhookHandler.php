@@ -66,6 +66,14 @@ class TelegramWebhookHandler extends WebhookHandler
 
                 return;
             }
+
+            // Deeplink из виджета может принадлежать гостю: в нём есть только
+            // external_id веб-чата, без клиента и заказа. Токен уже принят
+            // сервисом, а следующие сообщения создадут обычный диалог. Не
+            // подменяем этот сценарий устаревшим запросом email.
+            cache()->forget("awaiting_email_$telegramId");
+
+            return;
         }
 
         $client_profile = $this->user_profile(true);
