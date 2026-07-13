@@ -43,57 +43,18 @@ class TelegramWebhookHandler extends WebhookHandler
     /**
      * Обработка /start [<TOKEN>].
      *
-     * Если пришёл deeplink-токен привязки (start=<TOKEN>) — по нему находим
-     * клиента и привязываем переписку (см. docs/tasks/messenger-deeplink-binding.md).
-     * Иначе — прежний сценарий: поиск профиля по telegram_user_id / ввод email.
+     * Если пришёл deeplink-токен (start=<TOKEN>), привязываем переписку.
+     * Бот не ведёт сценарий авторизации и не отвечает шаблонными сообщениями:
+     * команда, как и любой другой входящий текст, сохраняется в диалоге.
      */
     public function start(?string $parameter = null)
     {
-
-        $chat = $this->getChat();
-
-        $chat->chatAction(ChatActions::TYPING)->send();
-
-        // Привязка по deeplink-токену (приоритетный путь).
+        $telegramId = (string) $this->getUserId();
         if ($parameter) {
-            $telegramId = (string) $this->getUserId();
-            $client = $this->chatBindingService->resolveBinding($parameter, 'telegram', $telegramId);
-
-            if ($client) {
-                cache()->forget("awaiting_email_$telegramId");
-                $name = $client->profile?->full_name ?: $client->email;
-                $chat->message("Привет, {$name}! Мы успешно привязали ваш аккаунт. Напишите команду */orders*, чтобы посмотреть свои Заказы.")->send();
-
-                return;
-            }
-
-            // Deeplink из виджета может принадлежать гостю: в нём есть только
-            // external_id веб-чата, без клиента и заказа. Токен уже принят
-            // сервисом, а следующие сообщения создадут обычный диалог. Не
-            // подменяем этот сценарий устаревшим запросом email.
-            cache()->forget("awaiting_email_$telegramId");
-
-            return;
+            $this->chatBindingService->resolveBinding($parameter, 'telegram', $telegramId);
         }
 
-        $client_profile = $this->user_profile(true);
-
-        if (!$client_profile)
-            return;
-
-        $user_name = '';
-        if ($client_profile->first_name) {
-            $user_name .= $client_profile->first_name . " ";
-        }
-        if ($client_profile->last_name) {
-            $user_name .= $client_profile->last_name;
-        }
-        if (empty($user_name)) {
-            $client = Client::where('id', $client_profile->client_id)->whereNull('deleted_at')->first();
-            $user_name = $client->email;
-        }
-
-        $chat->message("Привет, {$user_name}! Мы успешно нашли ваш аккаунт. Напишите команду */orders*, чтобы посмотреть свои Заказы.")->send();
+        $this->forwardIncomingMessage((string) ($this->message?->text() ?? '/start'));
     }
 
 
@@ -117,70 +78,20 @@ class TelegramWebhookHandler extends WebhookHandler
 
     public function handleUnknownCommand(Stringable $text): void
     {
-        $this->reply("Извините, я не распознал эту команду. Пожалуйста, используйте одну из доступных команд или напишите /help для получения списка команд.");
+        $this->forwardIncomingMessage((string) $text);
     }
 
     public function handleChatMessage(Stringable $text): void
     {
+        $this->forwardIncomingMessage((string) $text);
+    }
 
+    /** Сохранить входящее сообщение без автоматического ответа бота. */
+    private function forwardIncomingMessage(string $content): void
+    {
         $telegramId = $this->getUserId();
-        $chatId = $this->message->chat()->id();
-        $firstName = $this->message->from()->firstName();
-        $lastName = $this->message->from()->lastName();
-        $content = (string)$text;
         $client_profile = UserProfile::where('telegram_user_id', $telegramId)->first();
-
-        $awaitingEmail = cache("awaiting_email_$telegramId");
-
-        Log::info('TelegramWebhookHandler: User info', [
-            'telegram_id' => $telegramId,
-            'chat_id' => $chatId,
-            'first_name' => $firstName,
-            'last_name' => $lastName,
-            'content' => $content,
-            'client_profile' => $client_profile,
-            '$awaitingEmail' => $awaitingEmail
-        ]);
-
-
-        if ($awaitingEmail) {
-            $email = $this->message->text();
-
-            if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                $this->reply("Пожалуйста, введите корректный email.");
-                return;
-            }
-            // Поиск пользователя по email
-            $client = Client::where('email', $email)->whereNull('deleted_at')->first();
-
-            if ($client) {
-                $client_profile = $this->check_client_with_same_email($client);
-
-                if (!$client_profile) {
-                    $client_profile = UserProfile::create([
-                        'client_id' => $client->id,
-                    ]);
-                } else {
-                    $client_profile->update([
-                        'client_id' => $client->id,
-                    ]);
-                }
-
-                // Сохраняем telegram_user_id в профиль
-                $client_profile->update([
-                    'telegram_user_id' => $telegramId,
-                ]);
-
-                cache()->forget("awaiting_email_$telegramId");
-
-                $this->reply("Спасибо! Ваш аккаунт успешно привязан к Telegram. Напишите команду */orders*, чтобы посмотреть свои Заказы.");
-            } else {
-                cache()->forget("awaiting_email_$telegramId");
-                $this->reply("Пользователь с таким email не найден. Пожалуйста, сначала зарегистрируйтесь на нашем сайте.");
-            }
-
-            return;
-        }
+        cache()->forget("awaiting_email_$telegramId");
 
         $requestData = $this->request->input('message', []);
         $botToken = $this->bot->token;
@@ -197,25 +108,7 @@ class TelegramWebhookHandler extends WebhookHandler
 
     public function orders()
     {
-        $chat = $this->getChat();
-
-        $chat->chatAction(ChatActions::TYPING)->send();
-
-        $client_profile = $this->user_profile();
-
-        if (!$client_profile) {
-            $this->start();
-            return;
-        }
-
-        $client = Client::where('id', $client_profile->client_id)->whereNull('deleted_at')->first();
-
-        if (!$client) {
-            $this->start();
-            return;
-        }
-
-        $this->send_order_data($client, $chat);
+        $this->forwardIncomingMessage((string) ($this->message?->text() ?? '/orders'));
     }
 
     public function send_order_data(
@@ -273,17 +166,7 @@ class TelegramWebhookHandler extends WebhookHandler
 
     public function help()
     {
-        $chat = Telegraph::bot($this->bot)->chat($this->message->from()->id());
-
-        $chat->message("Привет! Вот что я умею делать:")
-            ->keyboard(
-                Keyboard::make()->buttons([
-                    Button::make("Начать работу с ботом")->action('start'),
-                    Button::make("Посмотреть мои заказы")->action('orders'),
-                    Button::make("Перейти на сайт")->url(env("FRONTEND_URL")),
-                ])
-            )
-            ->send();
+        $this->forwardIncomingMessage((string) ($this->message?->text() ?? '/help'));
     }
 
 
@@ -295,20 +178,7 @@ class TelegramWebhookHandler extends WebhookHandler
 
     public function cancel()
     {
-        $chat = $this->getChat();
-
-        $chat->chatAction(ChatActions::TYPING)->send();
-
-        $client_profile = $this->user_profile();
-
-        if ($client_profile) {
-            $client_profile->update([
-                'telegram_user_id' => null,
-            ]);
-        }
-
-        $this->reset();
-        $chat->message("Авторизация отменена. Вы можете писать свои вопросы или использовать /start для повторной авторизации.")->send();
+        $this->forwardIncomingMessage((string) ($this->message?->text() ?? '/cancel'));
     }
 
     protected function getChat(): \DefStudio\Telegraph\Telegraph
