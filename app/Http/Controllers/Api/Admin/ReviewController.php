@@ -124,7 +124,9 @@ class ReviewController extends Controller
             ]))
             ->orderByDesc('created_at')
             ->orderByDesc('id')
-            ->take(10)
+            // Главная показывает 20 последних опубликованных отзывов; слайдер
+            // позволяет пролистать весь этот актуальный набор.
+            ->take(20)
             ->get();
 
         if (!$clientId) {
