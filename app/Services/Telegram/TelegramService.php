@@ -44,7 +44,8 @@ class TelegramService
         UserProfile|null $client_profile,
         string           $content,
         array            $requestData = [],
-        ?string          $botToken = null
+        ?string          $botToken = null,
+        ?int             $orderId = null
     )
     {
         $conversation = null;
@@ -81,7 +82,7 @@ class TelegramService
             'direction' => 'incoming',
             'status' => 'sent',
             'content_type' => 'text',
-            'source_data' => null,
+            'source_data' => $orderId ? ['order_id' => $orderId] : null,
             'attachments' => $attachmentsData
         ];
 

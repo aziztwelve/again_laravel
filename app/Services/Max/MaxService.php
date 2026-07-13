@@ -302,6 +302,10 @@ class MaxService
                 ],
             ];
 
+            if ($orderId = $this->chatBindingService->resolveBoundOrderId('max', (string) $senderId)) {
+                $messageData['source_data']['order_id'] = $orderId;
+            }
+
             // Обрабатываем вложения
             if (! empty($attachments)) {
                 $processedAttachments = $this->processAttachments($attachments);

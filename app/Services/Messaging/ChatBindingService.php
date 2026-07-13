@@ -137,6 +137,17 @@ class ChatBindingService
         // Дозаполняем client_id у диалога этого канала.
         $this->attachClientToConversation($source, $externalId, $client?->id);
 
+        // Следующие сообщения этого мессенджера тоже относятся к заказу, пока
+        // живёт deeplink-сессия. Сам Conversation не привязываем к одному
+        // заказу: у клиента может быть несколько заказов в одном диалоге.
+        if ($binding->order_id) {
+            cache()->put(
+                $this->orderBindingCacheKey($source, $externalId),
+                $binding->order_id,
+                $binding->expires_at
+            );
+        }
+
         // Помечаем токен использованным (не инвалидируем — клиент может писать ещё).
         if (! $binding->used_at) {
             $binding->forceFill(['used_at' => now()])->save();
@@ -158,6 +169,19 @@ class ChatBindingService
             ->where('token', $token)
             ->where('expires_at', '>', now())
             ->value('order_id');
+    }
+
+    /** Заказ, активный для текущей deeplink-сессии мессенджера. */
+    public function resolveBoundOrderId(string $source, string $externalId): ?int
+    {
+        $orderId = cache()->get($this->orderBindingCacheKey($source, $externalId));
+
+        return is_numeric($orderId) ? (int) $orderId : null;
+    }
+
+    protected function orderBindingCacheKey(string $source, string $externalId): string
+    {
+        return 'chat_binding_order:'.$source.':'.$externalId;
     }
 
     protected function saveMessengerId(Client $client, string $source, string $externalId): void

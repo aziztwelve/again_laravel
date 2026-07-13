@@ -150,6 +150,10 @@ class VKService
                 ]
             ];
 
+            if ($orderId = $this->chatBindingService->resolveBoundOrderId('vk', (string) $userId)) {
+                $messageData['source_data']['order_id'] = $orderId;
+            }
+
             if (!empty($message['attachments'])) {
                 $attachments = $this->processAttachments($message['attachments']);
                 if (!empty($attachments)) {

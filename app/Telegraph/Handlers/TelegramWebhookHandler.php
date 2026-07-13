@@ -101,7 +101,8 @@ class TelegramWebhookHandler extends WebhookHandler
             $client_profile,
             $content,
             $requestData,
-            $botToken
+            $botToken,
+            $this->chatBindingService->resolveBoundOrderId('telegram', (string) $telegramId)
         );
 
     }
