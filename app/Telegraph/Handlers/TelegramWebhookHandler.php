@@ -265,7 +265,7 @@ class TelegramWebhookHandler extends WebhookHandler
 
     public function help()
     {
-        $chat = Telegraph::chat($this->message->from()->id());
+        $chat = Telegraph::bot($this->bot)->chat($this->message->from()->id());
 
         $chat->message("Привет! Вот что я умею делать:")
             ->keyboard(
@@ -306,11 +306,11 @@ class TelegramWebhookHandler extends WebhookHandler
     protected function getChat(): \DefStudio\Telegraph\Telegraph
     {
         if ($this->message?->chat()?->id()) {
-            return Telegraph::chat($this->message->chat()->id());
+            return Telegraph::bot($this->bot)->chat($this->message->chat()->id());
         }
 
         if ($this->callbackQuery?->message()?->chat()?->id()) {
-            return Telegraph::chat($this->callbackQuery->message()?->chat()->id());
+            return Telegraph::bot($this->bot)->chat($this->callbackQuery->message()?->chat()->id());
         }
 
         throw new \RuntimeException("Не удалось определить chat ID для ответа.");
