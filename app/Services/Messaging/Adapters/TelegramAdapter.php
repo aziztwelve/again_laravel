@@ -12,7 +12,14 @@ class TelegramAdapter extends AbstractMessageAdapter
     public function sendMessage(string $externalId, ?string $content, array $attachments = []): bool
     {
         try {
-            $chat = TelegraphChat::where('chat_id', $externalId)->first();
+            // Один Telegram chat мог сохраниться несколько раз при смене бота.
+            // Старые записи могут ссылаться на удалённого TelegraphBot и тогда
+            // Telegraph не может определить токен для исходящего сообщения.
+            // Берём наиболее новую запись, у которой бот существует.
+            $chat = TelegraphChat::where('chat_id', $externalId)
+                ->whereHas('bot')
+                ->orderByDesc('telegraph_bot_id')
+                ->first();
 
             if (!$chat) {
                 \Log::error("TelegramAdapter: Chat not found for external_id: {$externalId}");
