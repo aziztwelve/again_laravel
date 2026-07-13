@@ -5,6 +5,7 @@ namespace App\Services\Messaging;
 use App\Models\ChatBindingToken;
 use App\Models\Client;
 use App\Models\Conversation;
+use App\Models\Message;
 use App\Models\Order;
 use App\Models\UserProfile;
 use App\Models\VKSettings;
@@ -42,11 +43,16 @@ class ChatBindingService
                 ->first();
 
             if ($existing) {
+                $orderWasAdded = $orderId && (int) $existing->order_id !== $orderId;
                 $existing->fill([
                     'client_id' => $clientId ?? $existing->client_id,
                     'order_id' => $orderId ?? $existing->order_id,
                     'expires_at' => $expiresAt,
                 ])->save();
+
+                if ($orderWasAdded) {
+                    $this->tagResolvedChannelMessages($existing);
+                }
 
                 return $existing;
             }
@@ -137,6 +143,8 @@ class ChatBindingService
         // Дозаполняем client_id у диалога этого канала.
         $this->attachClientToConversation($source, $externalId, $client?->id);
 
+        $this->rememberResolvedChannel($binding, $source, $externalId);
+
         // Следующие сообщения этого мессенджера тоже относятся к заказу, пока
         // живёт deeplink-сессия. Сам Conversation не привязываем к одному
         // заказу: у клиента может быть несколько заказов в одном диалоге.
@@ -182,6 +190,40 @@ class ChatBindingService
     protected function orderBindingCacheKey(string $source, string $externalId): string
     {
         return 'chat_binding_order:'.$source.':'.$externalId;
+    }
+
+    /** Запомнить канал, реально открытый по токену, для поздней привязки заказа. */
+    protected function rememberResolvedChannel(ChatBindingToken $binding, string $source, string $externalId): void
+    {
+        $channels = $binding->resolved_channels ?? [];
+        $externalIds = $channels[$source] ?? [];
+        $externalIds[] = $externalId;
+        $channels[$source] = array_values(array_unique(array_map('strval', $externalIds)));
+
+        $binding->forceFill(['resolved_channels' => $channels])->save();
+    }
+
+    /**
+     * Пользователь мог написать до оформления заказа. После того как тот же
+     * токен получил order_id, привязываем уже сохранённые сообщения каналов.
+     */
+    protected function tagResolvedChannelMessages(ChatBindingToken $binding): void
+    {
+        foreach ($binding->resolved_channels ?? [] as $source => $externalIds) {
+            $conversationIds = Conversation::query()
+                ->where('source', $source)
+                ->whereIn('external_id', $externalIds)
+                ->pluck('id');
+
+            Message::query()
+                ->whereIn('conversation_id', $conversationIds)
+                ->orderBy('id')
+                ->each(function (Message $message) use ($binding) {
+                    $sourceData = $message->source_data ?? [];
+                    $sourceData['order_id'] = $binding->order_id;
+                    $message->update(['source_data' => $sourceData]);
+                });
+        }
     }
 
     protected function saveMessengerId(Client $client, string $source, string $externalId): void

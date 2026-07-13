@@ -18,11 +18,13 @@ class ChatBindingToken extends Model
         'external_id',
         'expires_at',
         'used_at',
+        'resolved_channels',
     ];
 
     protected $casts = [
         'expires_at' => 'datetime',
         'used_at' => 'datetime',
+        'resolved_channels' => 'array',
     ];
 
     public function client(): BelongsTo
