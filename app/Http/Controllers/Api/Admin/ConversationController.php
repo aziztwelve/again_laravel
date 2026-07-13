@@ -198,8 +198,33 @@ class ConversationController extends Controller
     {
         $order->loadMissing(['client.profile', 'address']);
 
+        // Точная привязка через deeplink: сообщения несут order_id в JSON.
+        // Не теряем эти диалоги, если у заказа уже появился client_id (для
+        // гостевого чекаута клиент часто создаётся уже после первого сообщения).
+        $boundConversationIds = Message::query()
+            ->where('source_data->order_id', $order->id)
+            ->distinct()
+            ->pluck('conversation_id');
+
         if ($order->client) {
-            return $this->byClient($order->client);
+            $conversationIds = Conversation::query()
+                ->where('client_id', $order->client_id)
+                ->pluck('id')
+                ->merge($boundConversationIds)
+                ->unique();
+
+            $conversations = Conversation::query()
+                ->whereIn('id', $conversationIds)
+                ->with([
+                    'lastMessage',
+                    'client.profile',
+                    'assignedUser',
+                ])
+                ->orderByDesc('last_message_at')
+                ->orderByDesc('id')
+                ->get();
+
+            return response()->json(['data' => $conversations]);
         }
 
         $email = $order->email ? mb_strtolower(trim($order->email)) : null;
@@ -212,24 +237,29 @@ class ConversationController extends Controller
         }
 
         $conversations = Conversation::query()
-            ->whereNull('client_id')
-            ->where(function ($q) use ($email, $phoneDigits) {
-                if ($email) {
-                    $q->orWhere(function ($qq) use ($email) {
-                        $qq->where('source', 'email')
-                            ->whereRaw('LOWER(external_id) = ?', [$email]);
-                    });
-                }
+            ->where(function ($query) use ($boundConversationIds, $email, $phoneDigits) {
+                $query->whereIn('id', $boundConversationIds)
+                    ->orWhere(function ($q) use ($email, $phoneDigits) {
+                        $q->whereNull('client_id')
+                            ->where(function ($contactQuery) use ($email, $phoneDigits) {
+                                if ($email) {
+                                    $contactQuery->orWhere(function ($qq) use ($email) {
+                                        $qq->where('source', 'email')
+                                            ->whereRaw('LOWER(external_id) = ?', [$email]);
+                                    });
+                                }
 
-                if ($phoneDigits) {
-                    $tail = substr($phoneDigits, -10);
-                    if (strlen($tail) >= 7) {
-                        $q->orWhere(function ($qq) use ($tail) {
-                            $qq->where('source', 'whatsapp')
-                                ->where('external_id', 'like', "%{$tail}%");
-                        });
-                    }
-                }
+                                if ($phoneDigits) {
+                                    $tail = substr($phoneDigits, -10);
+                                    if (strlen($tail) >= 7) {
+                                        $contactQuery->orWhere(function ($qq) use ($tail) {
+                                            $qq->where('source', 'whatsapp')
+                                                ->where('external_id', 'like', "%{$tail}%");
+                                        });
+                                    }
+                                }
+                            });
+                    });
             })
             ->with([
                 'lastMessage',
