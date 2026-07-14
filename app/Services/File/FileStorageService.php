@@ -4,6 +4,7 @@ namespace App\Services\File;
 
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use RuntimeException;
 
 class FileStorageService
 {
@@ -27,8 +28,13 @@ class FileStorageService
             // Полный путь: chat-attachments/2024/12/a3c4f5e6d7b8a9c0.jpg
             $filePath = $directory . '/' . $fileName;
 
-            // Сохраняем файл
-            Storage::disk('public')->putFileAs($directory, $file, $fileName);
+            // Сохраняем файл. Не создаём запись о вложении, если сам файл
+            // не удалось записать: иначе мессенджер получит только текст, а
+            // клиент увидит несуществующую ссылку на файл.
+            $storedPath = Storage::disk('public')->putFileAs($directory, $file, $fileName);
+            if ($storedPath === false) {
+                throw new RuntimeException("Не удалось сохранить вложение {$file->getClientOriginalName()}");
+            }
 
             // Формируем данные для БД
             $attachmentsData[] = [
