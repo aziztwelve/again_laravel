@@ -24,7 +24,7 @@ class OtoBannerResourceTest extends TestCase
             }
         };
         $banner->setRawAttributes([
-            'id' => 1,
+            'id' => 2,
             'name' => 'Скидка',
             'status' => 'active',
             'device_type' => 'desktop',

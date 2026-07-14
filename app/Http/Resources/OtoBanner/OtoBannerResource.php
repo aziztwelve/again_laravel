@@ -40,12 +40,10 @@ class OtoBannerResource extends JsonResource
                 'id' => $this->mainImage?->id,
                 // Сохраняем путь относительным к текущему origin. В старых
                 // записях url содержит прежний домен againdev.ru, из-за чего
-                // изображение не загружается на sub.againdev.ru.
-                'url' => sprintf(
-                    '/storage/oto-banners/%d/%s',
-                    $this->id,
-                    rawurlencode((string) $this->mainImage?->path),
-                ),
+                // изображение не загружается на sub.againdev.ru. Путь берём
+                // из самой записи изображения: он может вести к изображению
+                // другого баннера, если баннер был создан копированием.
+                'url' => $this->getImagePath(),
                 'path' => $this->mainImage?->path,
             ]),
 
@@ -69,5 +67,20 @@ class OtoBannerResource extends JsonResource
             'created_at' => $this->created_at?->toDateTimeString(),
             'updated_at' => $this->updated_at?->toDateTimeString(),
         ];
+    }
+
+    private function getImagePath(): string
+    {
+        $storedUrlPath = parse_url((string) $this->mainImage?->url, PHP_URL_PATH);
+
+        if (is_string($storedUrlPath) && str_starts_with($storedUrlPath, '/storage/')) {
+            return $storedUrlPath;
+        }
+
+        return sprintf(
+            '/storage/oto-banners/%d/%s',
+            $this->id,
+            rawurlencode((string) $this->mainImage?->path),
+        );
     }
 }
