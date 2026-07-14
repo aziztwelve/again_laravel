@@ -94,6 +94,12 @@ class TelegramAdapter extends AbstractMessageAdapter
                     $response = $chat->audio($fullPath)->send();
                     break;
 
+                case 'video':
+                    // Видео отправляем нативным Telegram-видео, чтобы оно
+                    // проигрывалось прямо в чате, а не скачивалось документом.
+                    $response = $chat->video($fullPath)->send();
+                    break;
+
                 case 'file':
                 default:
                     // Для остальных файлов используем document()

@@ -24,7 +24,7 @@ class SendMessageRequest extends FormRequest
         return [
             'content' => 'nullable|string|max:5000',
             'attachments' => 'nullable|array|max:5',
-            'attachments.*' => 'file|mimes:jpg,jpeg,png,mp3,wav,ogg,m4a|max:10240', // 10MB
+            'attachments.*' => 'file|mimes:jpg,jpeg,png,mp3,wav,ogg,m4a,mp4|max:10240', // 10MB
         ];
     }
 
@@ -60,7 +60,7 @@ class SendMessageRequest extends FormRequest
             'attachments.max' => 'Максимум 5 файлов за раз',
 
             'attachments.*.file' => 'Один из элементов не является файлом',
-            'attachments.*.mimes' => 'Разрешены только файлы: JPG, PNG, MP3, WAV, OGG, M4A',
+            'attachments.*.mimes' => 'Разрешены только файлы: JPG, PNG, MP3, WAV, OGG, M4A, MP4',
             'attachments.*.max' => 'Максимальный размер файла: 10 МБ',
         ];
     }

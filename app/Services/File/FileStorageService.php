@@ -80,6 +80,10 @@ class FileStorageService
             return 'audio';
         }
 
+        if ($extension === 'mp4') {
+            return 'video';
+        }
+
         return 'file';
     }
 }

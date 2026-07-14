@@ -320,7 +320,7 @@ class ConversationController extends Controller
             'external_id' => 'nullable|string',
             'content' => 'required|string',
             'attachments' => 'nullable|array|max:5',
-            'attachments.*' => 'file|mimes:jpg,jpeg,png,mp3,wav,ogg,m4a|max:10240',
+            'attachments.*' => 'file|mimes:jpg,jpeg,png,mp3,wav,ogg,m4a,mp4|max:10240',
         ]);
 
         $attachmentsData = [];
@@ -379,7 +379,7 @@ class ConversationController extends Controller
         $validated = $request->validate([
             'content' => 'nullable|string',
             'attachments' => 'nullable|array|max:5',
-            'attachments.*' => 'file|mimes:jpg,jpeg,png,mp3,wav,ogg,m4a|max:10240',
+            'attachments.*' => 'file|mimes:jpg,jpeg,png,mp3,wav,ogg,m4a,mp4|max:10240',
         ]);
 
         $attachmentsData = [];
@@ -435,7 +435,7 @@ class ConversationController extends Controller
             'source' => 'nullable|in:telegram,whatsapp,web_chat,email,vk,max',
             'content' => 'required|string',
             'attachments' => 'nullable|array|max:5',
-            'attachments.*' => 'file|mimes:jpg,jpeg,png,mp3,wav,ogg,m4a|max:10240',
+            'attachments.*' => 'file|mimes:jpg,jpeg,png,mp3,wav,ogg,m4a,mp4|max:10240',
         ]);
 
         // Ищем разговор
@@ -499,7 +499,7 @@ class ConversationController extends Controller
         $validated = $request->validate([
             'content' => 'required|string',
             'attachments' => 'nullable|array|max:5',
-            'attachments.*' => 'file|mimes:jpg,jpeg,png,mp3,wav,ogg,m4a|max:10240',
+            'attachments.*' => 'file|mimes:jpg,jpeg,png,mp3,wav,ogg,m4a,mp4|max:10240',
         ]);
 
         $attachmentsData = [];
