@@ -105,6 +105,16 @@ class PublicOrderController extends Controller
 
             return [
                 'id'         => $item->id,
+                // Эти поля нужны только для действия «Повторить заказ» на
+                // публичной странице. По ним витрина заново положит товар в
+                // локальную корзину, а актуальность цены и наличия проверит
+                // обычный checkout.
+                'product_id' => $item->product_id,
+                'product_variant_id' => $item->product_variant_id,
+                'color_id' => $item->color_id,
+                'product_name' => $item->product?->name ?? $item->legacy_name ?? null,
+                'variant_name' => $variantName,
+                'color_name' => $colorName,
                 'name'       => $name,
                 'sku'        => $item->product?->sku ?? $item->variant?->sku ?? $item->legacy_sku ?? null,
                 'quantity'   => (int) $item->quantity,
