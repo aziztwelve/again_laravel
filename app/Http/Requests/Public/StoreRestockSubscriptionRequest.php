@@ -18,7 +18,6 @@ class StoreRestockSubscriptionRequest extends FormRequest
             'product_variant_id' => ['nullable', 'integer', 'exists:product_variants,id'],
             'name' => ['nullable', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255'],
-            'phone' => ['nullable', 'string', 'max:30'],
             // Обязательный чекбокс согласия ПДн/маркетинг (#8).
             'consent' => ['required', 'accepted'],
             'meta' => ['nullable', 'array'],

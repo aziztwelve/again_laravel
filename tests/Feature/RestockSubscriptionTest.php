@@ -138,13 +138,12 @@ class RestockSubscriptionTest extends TestCase
         $subscription = ProductRestockSubscription::create([
             'product_id' => $product->id,
             'email' => 'notify@example.com',
-            'phone' => '+79991234567',
             'status' => 'pending',
         ]);
 
         (new NotifyRestockSubscribersJob($product->id))->handle();
 
-        // email + whatsapp
+        // Email — единственный гостевой канал.
         Bus::assertDispatched(SendNotificationJob::class);
 
         $this->assertEquals('notified', $subscription->fresh()->status);

@@ -5,7 +5,6 @@ namespace App\Jobs;
 use App\Models\Product;
 use App\Models\ProductRestockSubscription;
 use App\Services\Notifications\Jobs\SendNotificationJob;
-use App\Traits\PhoneFormatterTrait;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -18,7 +17,7 @@ use Illuminate\Support\Facades\View;
 
 class NotifyRestockSubscribersJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, PhoneFormatterTrait;
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public $tries = 3;
     public $backoff = [60, 300, 900];
@@ -91,14 +90,6 @@ class NotifyRestockSubscribersJob implements ShouldQueue
                 message: $html,
                 data: ['subject' => 'Уже в наличии — Again'],
             );
-        }
-
-        // WhatsApp — если есть телефон.
-        if ($subscription->phone) {
-            $phone = $this->formatPhoneForWhatsApp($subscription->phone);
-            if ($phone) {
-                SendNotificationJob::dispatch('whatsapp', $phone, $textMessage);
-            }
         }
 
         // Telegram / VK — только привязанному клиенту.

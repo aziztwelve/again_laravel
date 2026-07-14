@@ -69,7 +69,6 @@ class RestockSubscriptionController extends Controller
             'client_id' => $clientId,
             'name' => $data['name'] ?? null,
             'email' => $email,
-            'phone' => $data['phone'] ?? null,
             'status' => ProductRestockSubscription::STATUS_PENDING,
             'source' => 'site',
             'meta' => $data['meta'] ?? null,
