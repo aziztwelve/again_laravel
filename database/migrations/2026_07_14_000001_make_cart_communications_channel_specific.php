@@ -9,6 +9,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('cart_communications', function (Blueprint $table) {
+            // Старый UNIQUE(cart_id, step) одновременно служит индексом для FK
+            // cart_id; перед его удалением MySQL нужен отдельный индекс.
+            $table->index('cart_id', 'cart_communications_cart_id_index');
             $table->dropUnique(['cart_id', 'step']);
             $table->unique(['cart_id', 'step', 'channel'], 'cart_communications_cart_step_channel_unique');
         });
@@ -19,6 +22,7 @@ return new class extends Migration
         Schema::table('cart_communications', function (Blueprint $table) {
             $table->dropUnique('cart_communications_cart_step_channel_unique');
             $table->unique(['cart_id', 'step']);
+            $table->dropIndex('cart_communications_cart_id_index');
         });
     }
 };
