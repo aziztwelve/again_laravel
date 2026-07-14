@@ -70,7 +70,8 @@ class GuestClientService
     }
 
     /**
-     * Поиск существующего клиента: сначала по email при совпадении телефона,
+     * Поиск существующего клиента: сначала по email при совпадении или
+     * отсутствии телефона в профиле,
      * затем по нормализованному телефону в user_profiles.
      */
     protected function findExistingClient(?string $email, ?string $phone): ?Client
@@ -80,8 +81,19 @@ class GuestClientService
             // Один email может использоваться несколькими людьми (семья,
             // тестовый адрес, корпоративная почта). Если телефон получателя
             // передан и не совпадает с профилем, не приписываем заказ чужому
-            // клиенту только по совпадению email.
-            if ($client && ($phone === null || $this->phonesMatch($client->profile?->phone, $phone))) {
+            // клиенту только по совпадению email. Если телефон у найденного
+            // профиля ещё не заполнен, это не конфликт: дополняем профиль
+            // телефоном из оформления и сохраняем уже привязанные каналы.
+            $existingPhone = $client?->profile?->phone;
+            if ($client && (
+                $phone === null
+                || $this->phoneDigits($existingPhone) === null
+                || $this->phonesMatch($existingPhone, $phone)
+            )) {
+                if ($phone !== null && $this->phoneDigits($existingPhone) === null && $client->profile) {
+                    $client->profile->update(['phone' => $phone]);
+                }
+
                 return $client;
             }
         }
