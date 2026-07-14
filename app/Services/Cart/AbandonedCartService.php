@@ -122,7 +122,7 @@ class AbandonedCartService
                     $channel,
                     (string) $recipient,
                     $message['body'],
-                    ['subject' => $message['subject']]
+                    ['subject' => $message['subject'], 'html' => $channel === 'email' ? $message['html'] : null]
                 );
 
                 $comm->update(['status' => 'sent', 'sent_at' => now()]);
@@ -231,7 +231,7 @@ class AbandonedCartService
             $channel,
             (string) $recipient,
             $message['body'],
-            ['subject' => $message['subject']]
+            ['subject' => $message['subject'], 'html' => $channel === 'email' ? $message['html'] : null]
         );
 
         $comm = CartCommunication::create([
@@ -284,6 +284,13 @@ class AbandonedCartService
         return [
             'subject' => $subject,
             'body' => $body,
+            'html' => view('emails.abandoned-cart', [
+                'cart' => $cart,
+                'link' => $link,
+                'total' => $total,
+                'intro' => $intro,
+                'promoCode' => $promoCode,
+            ])->render(),
         ];
     }
 

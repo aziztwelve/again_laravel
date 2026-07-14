@@ -12,7 +12,7 @@ class EmailNotificationChannel extends BaseNotificationChannel
     public function send(string $recipientId, string $message, array $data = []): bool
     {
         try {
-            Mail::html($this->formatMessage($message), function (Message $mailMessage) use ($recipientId, $data) {
+            Mail::html($data['html'] ?? $this->formatMessage($message), function (Message $mailMessage) use ($recipientId, $data) {
                 $mailMessage->to($recipientId)
                     ->subject($data['subject'] ?? 'Уведомление');
             });
@@ -63,5 +63,4 @@ class EmailNotificationChannel extends BaseNotificationChannel
 
 
 }
-
 
