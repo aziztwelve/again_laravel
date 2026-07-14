@@ -37,6 +37,7 @@ class OrderHistoryService
         'delivery_method_id' => 'Способ доставки',
         'delivery_cost' => 'Стоимость доставки',
         'notes' => 'Комментарий',
+        'seller_comment' => 'Комментарий продавца',
         'assigned_user_id' => 'Менеджер',
     ];
 

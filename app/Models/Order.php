@@ -46,6 +46,8 @@ class Order extends Model
         'ip_address',
         'user_agent',
         'notes',
+        // Внутренний комментарий продавца/менеджера (не виден покупателю).
+        'seller_comment',
         // Email покупателя (для гостевых заказов, когда нет client_id).
         // Для авторизованных клиентов email берётся из связанной модели Client.
         'email',

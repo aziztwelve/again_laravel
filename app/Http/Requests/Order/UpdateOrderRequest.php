@@ -22,6 +22,7 @@ class UpdateOrderRequest extends FormRequest
     {
         return [
             'notes' => 'nullable|string|max:1000',
+            'seller_comment' => 'nullable|string|max:5000',
             'client_id' => 'nullable|integer|exists:clients,id',
             'payment_method' => 'nullable|string|max:255',
             'delivery_method_id' => 'nullable|integer|exists:delivery_methods,id',

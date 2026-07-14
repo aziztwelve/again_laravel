@@ -35,11 +35,13 @@ class OrderUpdateService
                 'delivery_method_id' => $order->delivery_method_id,
                 'delivery_cost' => $order->delivery_cost,
                 'notes' => $order->notes,
+                'seller_comment' => $order->seller_comment,
                 'assigned_user_id' => $order->assigned_user_id,
             ];
             // Поля напрямую обновляемые в таблице orders
             $allowedFields = [
                 'notes',
+                'seller_comment',
                 'client_id',
                 'status',
                 'payment_status',
@@ -54,6 +56,15 @@ class OrderUpdateService
                 array_filter($data, fn ($value) => $value !== null && $value !== ''),
                 array_flip($allowedFields)
             );
+
+            // Комментарий продавца обрабатываем отдельно: разрешаем пустую строку/null
+            // (очистить комментарий), чего array_filter выше не позволяет.
+            if (array_key_exists('seller_comment', $data)) {
+                $sellerComment = $data['seller_comment'];
+                $filteredData['seller_comment'] = ($sellerComment === '' || $sellerComment === null)
+                    ? null
+                    : (string) $sellerComment;
+            }
 
             // Прикреплённый менеджер обрабатывается отдельно: разрешаем явный null
             // (открепить менеджера от заказа), чего array_filter выше не позволяет.
@@ -170,6 +181,7 @@ class OrderUpdateService
                 'delivery_method_id' => $order->delivery_method_id,
                 'delivery_cost' => $order->delivery_cost,
                 'notes' => $order->notes,
+                'seller_comment' => $order->seller_comment,
                 'assigned_user_id' => $order->assigned_user_id,
             ];
             $this->historyService->logUpdated($order, $originalSnapshot, $updatedSnapshot);
