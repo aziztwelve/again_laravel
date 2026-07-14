@@ -61,7 +61,7 @@ class NotifyRestockSubscribersJob implements ShouldQueue
             ->forProduct($product->id)
             ->pending()
             ->with('client.profile')
-            ->chunkById(100, function ($subscriptions) use ($product, $productUrl) {
+            ->chunkById(100, function ($subscriptions) use ($product, $productUrl, $customerChannelResolver) {
                 foreach ($subscriptions as $subscription) {
                     $this->notifySubscription($subscription, $product, $productUrl, $customerChannelResolver);
                 }
