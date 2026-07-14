@@ -81,8 +81,38 @@ Amnezia устанавливается и управляется официал�
 - `/etc/danted.conf` разрешает клиентов только с `186.246.14.59/32`.
 - Backend test показывает `external_ip = 85.159.228.227`, Telegram status `200`.
 
-AmneziaWG можно добавить позже через официальный AmneziaVPN client на тот же VPS.
-Backend-архитектура от этого не меняется: Laravel использует SOCKS5 endpoint.
+## AmneziaWG для телефона
+
+`2026-07-14` на production-сервере `186.246.14.59` дополнительно развёрнут
+AmneziaWG для одного телефона. Это отдельный сервис от SOCKS5 на
+`85.159.228.227` и он не участвует в Telegram-трафике.
+
+- интерфейс: `awg0`;
+- VPN-подсеть: `10.66.66.0/24`;
+- UDP-порт: `585`;
+- service: `awg-quick@awg0`, должен быть `active`;
+- IPv4 forwarding и NAT через `eth0` включены nftables-правилами;
+- создан один peer `client` с адресом `10.66.66.2/32`;
+- IPv6 для этого туннеля не включён;
+- конфиг и приватный ключ хранятся только на сервере с правами root:
+  `/root/awg0-client-client.conf` и `/root/awg0-client-client.vpn`.
+
+Клиент импортируется в AmneziaVPN как `vpn://`-строка или QR-код. Саму
+строку, QR-код, private key и preshared key не добавлять в репозиторий, тикеты,
+логи или документацию: это полноценный доступ к VPN. При утечке peer нужно
+отозвать и создать заново.
+
+AmneziaWG установлен пакетом `amneziawg`/`amneziawg-tools`; модуль собирается
+через DKMS для текущего ядра. После обновления ядра проверять:
+
+```bash
+systemctl is-active awg-quick@awg0
+awg show awg0
+ss -lun | grep ':585'
+```
+
+Backend-архитектура Telegram от этого не меняется: Laravel по-прежнему
+использует SOCKS5 endpoint.
 
 Порядок:
 
@@ -218,3 +248,5 @@ curl -s -o /dev/null -w "laravel /up -> %{http_code}\n" https://sub.againdev.ru/
 - Не открывать SOCKS5 на весь интернет без firewall.
 - Не логировать proxy password.
 - При утечке SOCKS5 credentials сменить пароль в Amnezia и обновить настройки.
+- `vpn://`-конфиг телефона считать секретом уровня пароля: при утечке отозвать
+  peer и выпустить новый, не переиспользовать его на нескольких устройствах.
