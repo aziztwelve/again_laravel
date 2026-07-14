@@ -5,18 +5,16 @@ namespace App\Console\Commands;
 use App\Models\Client;
 use App\Models\PromoCode;
 use App\Models\UserProfile;
+use App\Services\Notifications\CustomerChannelResolver;
 use App\Services\Notifications\Jobs\SendNotificationJob;
-use App\Traits\PhoneFormatterTrait;
+use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
-use Carbon\Carbon;
 
 class BirthdayDiscountCommand extends Command
 {
-
-    use PhoneFormatterTrait;
-
     protected $signature = 'birthday:process';
+
     protected $description = 'Обработать скидки на день рождения';
 
     public function handle(): int
@@ -34,6 +32,7 @@ class BirthdayDiscountCommand extends Command
             $this->removeBirthdayDiscounts();
 
             $this->info('✅ Обработка завершена успешно');
+
             return Command::SUCCESS;
 
         } catch (\Exception $e) {
@@ -41,7 +40,8 @@ class BirthdayDiscountCommand extends Command
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
-            $this->error('❌ Ошибка при обработке: ' . $e->getMessage());
+            $this->error('❌ Ошибка при обработке: '.$e->getMessage());
+
             return Command::FAILURE;
         }
     }
@@ -60,10 +60,10 @@ class BirthdayDiscountCommand extends Command
 
         $clients = UserProfile::whereRaw("DATE_FORMAT(birthday, '%m-%d') = ?", ["{$birthdayMonth}-{$birthdayDay}"])
             ->whereNotNull('client_id')
-            ->with('client')
+            ->with('client.profile')
             ->get();
 
-        $this->info("📅 Найдено клиентов с ДР через 3 дня: " . $clients->count());
+        $this->info('📅 Найдено клиентов с ДР через 3 дня: '.$clients->count());
 
         foreach ($clients as $profile) {
             try {
@@ -77,6 +77,7 @@ class BirthdayDiscountCommand extends Command
 
                 if ($existingPromo) {
                     $this->info("⏭️  Клиент #{$profile->client_id} уже имеет ДР промокод");
+
                     continue;
                 }
 
@@ -118,14 +119,14 @@ class BirthdayDiscountCommand extends Command
             ->whereDate('notified_at', $fiveDaysAgo)
             ->get();
 
-        $this->info("📢 Найдено промокодов для напоминания: " . $clientPromoCodes->count());
+        $this->info('📢 Найдено промокодов для напоминания: '.$clientPromoCodes->count());
 
         foreach ($clientPromoCodes as $record) {
             try {
-                $client = Client::find($record->client_id);
+                $client = Client::with('profile')->find($record->client_id);
                 $promoCode = PromoCode::find($record->promo_code_id);
 
-                if (!$client || !$promoCode) {
+                if (! $client || ! $promoCode) {
                     continue;
                 }
 
@@ -135,7 +136,7 @@ class BirthdayDiscountCommand extends Command
                     ->where('client_id', $client->id)
                     ->exists();
 
-                if (!$used) {
+                if (! $used) {
                     // Отправляем напоминание
                     $this->sendReminderNotification($client, $promoCode);
                 }
@@ -168,7 +169,7 @@ class BirthdayDiscountCommand extends Command
             ->whereDate('notified_at', $sixDaysAgo)
             ->get();
 
-        $this->info("🗑️  Найдено промокодов для удаления: " . $clientPromoCodes->count());
+        $this->info('🗑️  Найдено промокодов для удаления: '.$clientPromoCodes->count());
 
         foreach ($clientPromoCodes as $record) {
             \DB::table('promo_code_client')
@@ -196,7 +197,7 @@ class BirthdayDiscountCommand extends Command
 
         // Создаём новый промокод на ДР
         return PromoCode::create([
-            'code' => 'BIRTHDAY' . $today->format('Ymd'),
+            'code' => 'BIRTHDAY'.$today->format('Ymd'),
             'description' => 'Скидка на день рождения',
             'discount_amount' => 5, // 10% или 10 рублей (зависит от типа)
             'discount_type' => 'percentage', // или 'fixed'
@@ -219,45 +220,23 @@ class BirthdayDiscountCommand extends Command
     {
         $clientName = $profile->first_name ?? $profile->client->email;
 
-
-
-
         $frontendUrl = rtrim((string) config('app.frontend_url'), '/');
-        $promoPageUrl = $frontendUrl . '/profile/sales';
+        $promoPageUrl = $frontendUrl.'/profile/sales';
 
-        // Универсальное текстовое сообщение для Email, VK, WhatsApp
-        $message = "Здравствуйте {$clientName}, наша команда «Again» от души поздравляет вас с предстоящим днем рождения!\n\n" .
-            "Желаем вам отличного настроения, радости и улыбок! Также от нас — промокод на товары в нашем магазине в честь дня рождения.\n\n" .
-            "Важно: промокод действует за 3 дня до дня рождения и 3 дня после него! Не упустите оформить заказ по выгодной цене!\n\n" .
-            "🎁 Чтобы посмотреть и использовать ваш промокод, перейдите по ссылке:\n" .
-            "{$promoPageUrl}\n\n" .
-            "С уважением, команда «Again»";
+        // Единый текст для всех утверждённых транзакционных каналов.
+        $message = "Здравствуйте {$clientName}, наша команда «Again» от души поздравляет вас с предстоящим днем рождения!\n\n".
+            "Желаем вам отличного настроения, радости и улыбок! Также от нас — промокод на товары в нашем магазине в честь дня рождения.\n\n".
+            "Важно: промокод действует за 3 дня до дня рождения и 3 дня после него! Не упустите оформить заказ по выгодной цене!\n\n".
+            "🎁 Чтобы посмотреть и использовать ваш промокод, перейдите по ссылке:\n".
+            "{$promoPageUrl}\n\n".
+            'С уважением, команда «Again»';
 
-
-        // Email
-        if ($profile->client->email) {
-            SendNotificationJob::dispatch('email', $profile->client->email, $message, [
-                'subject' => 'Поздравляем с днем рождения! 🎂',
-            ]);
-        }
-
-        // Telegram
-        if ($profile->telegram_user_id) {
-            SendNotificationJob::dispatch('telegram', $profile->telegram_user_id, $message);
-        }
-
-        // VK
-        if ($profile->vk_user_id) {
-            SendNotificationJob::dispatch('vk', (string)$profile->vk_user_id, $message);
-        }
-
-        // WhatsApp
-        if ($profile?->phone) {
-
-            $phone = $this->formatPhoneForWhatsApp($profile->phone);
-
-            SendNotificationJob::dispatch('whatsapp', $phone, $message);
-        }
+        $this->dispatchToCustomerChannels(
+            $profile->client,
+            $message,
+            'birthday_discount',
+            'Поздравляем с днем рождения! 🎂'
+        );
 
     }
 
@@ -269,37 +248,42 @@ class BirthdayDiscountCommand extends Command
         $clientName = $client->profile?->first_name ?? $client->email;
 
         $frontendUrl = rtrim((string) config('app.frontend_url'), '/');
-        $promoPageUrl = $frontendUrl . '/profile/sales';
+        $promoPageUrl = $frontendUrl.'/profile/sales';
 
-        $message = "Здравствуйте {$clientName}!\n" .
-            "Напоминаем, что сегодня крайний день, когда вы можете воспользоваться своим промокодом на день рождения!\n" .
-            "Не упустите оформить заказ по выгодной цене!\n" .
-            "Посмотреть ваш промокод можно здесь: {$promoPageUrl}\n\n" .
-            "С уважением, команда «Again»";
+        $message = "Здравствуйте {$clientName}!\n".
+            "Напоминаем, что сегодня крайний день, когда вы можете воспользоваться своим промокодом на день рождения!\n".
+            "Не упустите оформить заказ по выгодной цене!\n".
+            "Посмотреть ваш промокод можно здесь: {$promoPageUrl}\n\n".
+            'С уважением, команда «Again»';
 
-        // Email
-        if ($client->email) {
-            SendNotificationJob::dispatch('email', $client->email, $message, [
-                'subject' => 'Крайний день использования вашей скидки на ДР! ⏰',
-            ]);
+        $this->dispatchToCustomerChannels(
+            $client,
+            $message,
+            'birthday_discount_reminder',
+            'Крайний день использования вашей скидки на ДР! ⏰'
+        );
+
+    }
+
+    private function dispatchToCustomerChannels(Client $client, string $message, string $type, string $subject): void
+    {
+        $resolver = app(CustomerChannelResolver::class);
+
+        foreach ($resolver->resolve($client) as $recipient) {
+            SendNotificationJob::dispatch(
+                $recipient['channel'],
+                $recipient['recipient_id'],
+                $message,
+                [
+                    'type' => $type,
+                    'subject' => $subject,
+                    'mirror_conversation' => [
+                        'source' => $recipient['source'],
+                        'external_id' => $recipient['recipient_id'],
+                        'client_id' => $client->id,
+                    ],
+                ]
+            );
         }
-
-        // Telegram
-        if ($client->profile?->telegram_user_id) {
-            SendNotificationJob::dispatch('telegram', $client->profile->telegram_user_id, $message);
-        }
-
-//        // VK
-//        if ($client->profile?->vk_user_id) {
-//            SendNotificationJob::dispatch('vk', (string)$client->profile->vk_user_id, $message);
-//        }
-//
-//        // WhatsApp
-//        if ($client->profile?->phone) {
-//            $phone = $this->formatPhoneForWhatsApp($client->profile->phone);
-//
-//            SendNotificationJob::dispatch('whatsapp', $phone, $message);
-//        }
-
     }
 }

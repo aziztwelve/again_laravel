@@ -4,8 +4,11 @@ namespace Tests\Feature;
 
 use App\Jobs\NotifyRestockSubscribersJob;
 use App\Models\Category;
+use App\Models\Client;
 use App\Models\Product;
 use App\Models\ProductRestockSubscription;
+use App\Models\UserProfile;
+use App\Services\Notifications\CustomerChannelResolver;
 use App\Services\Notifications\Jobs\SendNotificationJob;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Bus;
@@ -34,7 +37,7 @@ class RestockSubscriptionTest extends TestCase
     private function product(array $attrs = []): Product
     {
         return Product::create(array_merge([
-            'name' => 'Тестовый товар ' . uniqid(),
+            'name' => 'Тестовый товар '.uniqid(),
             'is_active' => true,
             'stock_quantity' => 0,
             'price' => 1000,
@@ -148,7 +151,7 @@ class RestockSubscriptionTest extends TestCase
             'status' => 'pending',
         ]);
 
-        (new NotifyRestockSubscribersJob($product->id))->handle();
+        (new NotifyRestockSubscribersJob($product->id))->handle(app(CustomerChannelResolver::class));
 
         // Email — единственный гостевой канал.
         Bus::assertDispatched(SendNotificationJob::class);
@@ -170,10 +173,35 @@ class RestockSubscriptionTest extends TestCase
             'notified_at' => now(),
         ]);
 
-        (new NotifyRestockSubscribersJob($product->id))->handle();
+        (new NotifyRestockSubscribersJob($product->id))->handle(app(CustomerChannelResolver::class));
 
         // Уже notified — повторно не шлём.
         Bus::assertNotDispatched(SendNotificationJob::class);
+    }
+
+    public function test_job_notifies_linked_subscriber_in_all_transactional_channels(): void
+    {
+        Bus::fake([SendNotificationJob::class]);
+
+        $product = $this->product(['stock_quantity' => 10]);
+        $client = Client::create(['email' => 'all-channels@example.com']);
+        UserProfile::create([
+            'client_id' => $client->id,
+            'telegram_user_id' => 123456,
+            'max_user_id' => 234567,
+            'vk_user_id' => 345678,
+        ]);
+
+        ProductRestockSubscription::create([
+            'product_id' => $product->id,
+            'client_id' => $client->id,
+            'email' => $client->email,
+            'status' => 'pending',
+        ]);
+
+        (new NotifyRestockSubscribersJob($product->id))->handle(app(CustomerChannelResolver::class));
+
+        Bus::assertDispatched(SendNotificationJob::class, 4);
     }
 
     public function test_public_catalog_hides_out_of_stock_products_by_default(): void
@@ -193,7 +221,7 @@ class RestockSubscriptionTest extends TestCase
     public function test_coming_soon_category_shows_only_out_of_stock_products(): void
     {
         $category = Category::create([
-            'name' => 'Скоро в продаже ' . uniqid(),
+            'name' => 'Скоро в продаже '.uniqid(),
             'is_coming_soon' => true,
             'show_in_catalog_menu' => true,
         ]);
@@ -201,7 +229,7 @@ class RestockSubscriptionTest extends TestCase
         $inStock = $this->product(['stock_quantity' => 5]);
         $outOfStock = $this->product(['stock_quantity' => 0]);
 
-        $response = $this->getJson('/api/public/catalog/products?per_page=50&category_slug=' . $category->slug);
+        $response = $this->getJson('/api/public/catalog/products?per_page=50&category_slug='.$category->slug);
 
         $response->assertOk();
 

@@ -55,6 +55,7 @@ class NotificationConversationMirrorService
                         'gift_card_id' => $data['gift_card_id'] ?? null,
                         'cart_id' => $data['cart_id'] ?? null,
                         'cart_step' => $data['cart_step'] ?? null,
+                        'product_id' => $data['product_id'] ?? null,
                     ],
                 ]);
 

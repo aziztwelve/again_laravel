@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\Product;
 use App\Models\ProductRestockSubscription;
+use App\Services\Notifications\CustomerChannelResolver;
 use App\Services\Notifications\Jobs\SendNotificationJob;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -20,12 +21,12 @@ class NotifyRestockSubscribersJob implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public $tries = 3;
+
     public $backoff = [60, 300, 900];
 
     public function __construct(
         protected int $productId
-    ) {
-    }
+    ) {}
 
     /**
      * Не запускать параллельно для одного товара (гонка при массовом синке).
@@ -35,24 +36,25 @@ class NotifyRestockSubscribersJob implements ShouldQueue
         return [(new WithoutOverlapping($this->productId))->expireAfter(180)];
     }
 
-    public function handle(): void
+    public function handle(CustomerChannelResolver $customerChannelResolver): void
     {
         $product = Product::with('main_image')->find($this->productId);
 
-        if (!$product) {
+        if (! $product) {
             Log::warning('NotifyRestockSubscribersJob: product not found', [
                 'product_id' => $this->productId,
             ]);
+
             return;
         }
 
         // Шлём только если товар действительно доступен к покупке.
-        if (!$product->is_active || (float)$product->stock_quantity <= 0) {
+        if (! $product->is_active || (float) $product->stock_quantity <= 0) {
             return;
         }
 
         $frontendUrl = rtrim((string) config('app.frontend_url'), '/');
-        $productUrl = $frontendUrl . '/catalog/' . $product->slug;
+        $productUrl = $frontendUrl.'/catalog/'.$product->slug;
 
         // Идемпотентность (#6): обрабатываем только pending; после рассылки → notified.
         ProductRestockSubscription::query()
@@ -61,7 +63,7 @@ class NotifyRestockSubscribersJob implements ShouldQueue
             ->with('client.profile')
             ->chunkById(100, function ($subscriptions) use ($product, $productUrl) {
                 foreach ($subscriptions as $subscription) {
-                    $this->notifySubscription($subscription, $product, $productUrl);
+                    $this->notifySubscription($subscription, $product, $productUrl, $customerChannelResolver);
                 }
             });
     }
@@ -69,7 +71,8 @@ class NotifyRestockSubscribersJob implements ShouldQueue
     protected function notifySubscription(
         ProductRestockSubscription $subscription,
         Product $product,
-        string $productUrl
+        string $productUrl,
+        CustomerChannelResolver $customerChannelResolver
     ): void {
         $textMessage = sprintf(
             '«%s» уже в наличии! Успейте заказать: %s',
@@ -77,31 +80,28 @@ class NotifyRestockSubscribersJob implements ShouldQueue
             $productUrl
         );
 
-        // Email — всегда (email обязателен).
-        if ($subscription->email) {
-            $html = View::make('emails.product-restock', [
-                'product' => $product,
-                'productUrl' => $productUrl,
-            ])->render();
+        $html = View::make('emails.product-restock', [
+            'product' => $product,
+            'productUrl' => $productUrl,
+        ])->render();
 
+        foreach ($customerChannelResolver->resolve($subscription->client, $subscription->email) as $recipient) {
             SendNotificationJob::dispatch(
-                channel: 'email',
-                recipientId: $subscription->email,
-                message: $html,
-                data: ['subject' => 'Уже в наличии — Again'],
+                $recipient['channel'],
+                $recipient['recipient_id'],
+                $recipient['channel'] === 'email' ? $html : $textMessage,
+                [
+                    'type' => 'product_restock',
+                    'product_id' => $product->id,
+                    'subject' => 'Уже в наличии — Again',
+                    'html' => $recipient['channel'] === 'email' ? $html : null,
+                    'mirror_conversation' => [
+                        'source' => $recipient['source'],
+                        'external_id' => $recipient['recipient_id'],
+                        'client_id' => $subscription->client_id,
+                    ],
+                ]
             );
-        }
-
-        // Telegram / VK — только привязанному клиенту.
-        $profile = $subscription->client?->profile;
-        if ($profile?->telegram_user_id) {
-            SendNotificationJob::dispatch('telegram', (string)$profile->telegram_user_id, $textMessage);
-        }
-        if ($profile?->max_user_id) {
-            SendNotificationJob::dispatch('max', (string)$profile->max_user_id, $textMessage);
-        }
-        if ($profile?->vk_user_id) {
-            SendNotificationJob::dispatch('vk', (string)$profile->vk_user_id, $textMessage);
         }
 
         // Терминальный статус — повторно не уведомляем.
