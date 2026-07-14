@@ -70,14 +70,18 @@ class GuestClientService
     }
 
     /**
-     * Поиск существующего клиента: сначала по email, затем по нормализованному
-     * телефону в user_profiles. Зеркалит ClientImportService::findExistingClient.
+     * Поиск существующего клиента: сначала по email при совпадении телефона,
+     * затем по нормализованному телефону в user_profiles.
      */
     protected function findExistingClient(?string $email, ?string $phone): ?Client
     {
         if ($email !== null) {
-            $client = Client::withTrashed()->where('email', $email)->first();
-            if ($client) {
+            $client = Client::withTrashed()->with('profile')->where('email', $email)->first();
+            // Один email может использоваться несколькими людьми (семья,
+            // тестовый адрес, корпоративная почта). Если телефон получателя
+            // передан и не совпадает с профилем, не приписываем заказ чужому
+            // клиенту только по совпадению email.
+            if ($client && ($phone === null || $this->phonesMatch($client->profile?->phone, $phone))) {
                 return $client;
             }
         }
@@ -102,6 +106,33 @@ class GuestClientService
         }
 
         return null;
+    }
+
+    private function phonesMatch(?string $left, ?string $right): bool
+    {
+        $left = $this->phoneDigits($left);
+        $right = $this->phoneDigits($right);
+
+        return $left !== null && $right !== null && $left === $right;
+    }
+
+    private function phoneDigits(?string $phone): ?string
+    {
+        if ($phone === null) {
+            return null;
+        }
+
+        $digits = preg_replace('/\D+/', '', $phone);
+        if ($digits === '') {
+            return null;
+        }
+
+        // 8XXXXXXXXXX и 7XXXXXXXXXX — один и тот же российский номер.
+        if (strlen($digits) === 11 && $digits[0] === '8') {
+            $digits = '7'.substr($digits, 1);
+        }
+
+        return $digits;
     }
 
     /**

@@ -61,16 +61,27 @@ class GuestClientServiceTest extends TestCase
         $this->assertSame('ул. Тестовая, 1', $profile->address);
     }
 
-    public function test_does_not_duplicate_client_by_email(): void
+    public function test_does_not_duplicate_client_by_email_when_phone_matches(): void
     {
         $email = 'dedup-email-'.uniqid().'@example.com';
 
         $first = $this->service()->findOrCreateFromOrderData($this->payload($email, '+79991112233'));
-        // Другой телефон, тот же email — должен найтись тот же клиент.
-        $second = $this->service()->findOrCreateFromOrderData($this->payload($email, '+70000000000'));
+        $second = $this->service()->findOrCreateFromOrderData($this->payload($email, '+7 (999) 111-22-33'));
 
         $this->assertSame($first->id, $second->id);
         $this->assertSame(1, Client::where('email', $email)->count());
+    }
+
+    public function test_creates_separate_client_when_email_matches_but_recipient_phone_differs(): void
+    {
+        $email = 'shared-email-'.uniqid().'@example.com';
+
+        $first = $this->service()->findOrCreateFromOrderData($this->payload($email, '+79991112233'));
+        $second = $this->service()->findOrCreateFromOrderData($this->payload($email, '+70000000000'));
+
+        $this->assertNotSame($first->id, $second->id);
+        $this->assertSame(2, Client::where('email', $email)->count());
+        $this->assertSame('+70000000000', $second->profile->phone);
     }
 
     public function test_does_not_duplicate_client_by_phone_when_email_absent(): void

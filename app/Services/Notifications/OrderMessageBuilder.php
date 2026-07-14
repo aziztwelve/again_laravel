@@ -49,14 +49,19 @@ class OrderMessageBuilder
         $profile = $order->client?->profile;
         $address = $order->address;
 
-        $name = $profile?->full_name
-            ?: trim(implode(' ', array_filter([
-                $address?->recipient_first_name,
-                $address?->recipient_last_name,
-            ])))
+        // В заказе могут быть данные получателя, отличающиеся от старого
+        // профиля клиента (например, заказ оформляет другой человек). В
+        // уведомлении показываем именно актуального получателя заказа.
+        $recipientName = trim(implode(' ', array_filter([
+            $address?->recipient_first_name,
+            $address?->recipient_last_name,
+        ])));
+
+        $name = $recipientName
+            ?: $profile?->full_name
             ?: 'Клиент';
 
-        $phone = $profile?->phone ?: $address?->recipient_phone;
+        $phone = $address?->recipient_phone ?: $profile?->phone;
 
         return $phone ? "{$name} ({$phone})" : $name;
     }

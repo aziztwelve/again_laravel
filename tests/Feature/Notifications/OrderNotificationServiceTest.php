@@ -5,6 +5,7 @@ namespace Tests\Feature\Notifications;
 use App\Models\Client;
 use App\Models\GiftCard\GiftCard;
 use App\Models\Order;
+use App\Models\OrderAddress;
 use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\UserProfile;
@@ -147,6 +148,26 @@ class OrderNotificationServiceTest extends TestCase
         $this->assertStringContainsString('Способ оплаты: Оплата картой РФ', $message);
         $this->assertStringContainsString('Состав заказа:', $message);
         $this->assertStringContainsString('Подарочный сертификат', $message);
+    }
+
+    public function test_order_message_uses_current_recipient_instead_of_stale_client_profile(): void
+    {
+        $client = $this->clientWithChannels();
+        $order = Order::factory()->create([
+            'client_id' => $client->id,
+            'total_amount' => 1000,
+        ]);
+        OrderAddress::create([
+            'order_id' => $order->id,
+            'recipient_first_name' => 'Азизжон',
+            'recipient_last_name' => 'Каримов',
+            'recipient_phone' => '+7 (895) 236-21-86',
+        ]);
+
+        $message = app(OrderMessageBuilder::class)->buildOrderCreated($order->fresh());
+
+        $this->assertStringContainsString('Клиент: Азизжон Каримов (+7 (895) 236-21-86)', $message);
+        $this->assertStringNotContainsString('Клиент: Иванова Евгения', $message);
     }
 
     public function test_gift_card_delivery_message_matches_reference(): void
