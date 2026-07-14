@@ -97,6 +97,9 @@ class NotifyRestockSubscribersJob implements ShouldQueue
         if ($profile?->telegram_user_id) {
             SendNotificationJob::dispatch('telegram', (string)$profile->telegram_user_id, $textMessage);
         }
+        if ($profile?->max_user_id) {
+            SendNotificationJob::dispatch('max', (string)$profile->max_user_id, $textMessage);
+        }
         if ($profile?->vk_user_id) {
             SendNotificationJob::dispatch('vk', (string)$profile->vk_user_id, $textMessage);
         }

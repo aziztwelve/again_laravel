@@ -47,7 +47,9 @@ class RestockSubscriptionTest extends TestCase
 
         $response = $this->postJson('/api/public/restock-subscriptions', [
             'product_id' => $product->id,
+            'name' => 'Гость',
             'email' => 'guest@example.com',
+            'phone' => '+7 (999) 123-45-67',
             'consent' => true,
         ]);
 
@@ -60,6 +62,11 @@ class RestockSubscriptionTest extends TestCase
             'status' => 'pending',
             'source' => 'site',
         ]);
+
+        $subscription = ProductRestockSubscription::where('product_id', $product->id)->firstOrFail();
+        $this->assertNotNull($subscription->client_id);
+        $this->assertNull($subscription->client->verified_at);
+        $this->assertSame('+7 (999) 123-45-67', $subscription->client->profile->phone);
     }
 
     public function test_consent_is_required(): void

@@ -7,6 +7,7 @@ use App\Http\Requests\Public\StoreRestockSubscriptionRequest;
 use App\Models\Client;
 use App\Models\Product;
 use App\Models\ProductRestockSubscription;
+use App\Services\Client\GuestClientService;
 use Illuminate\Http\JsonResponse;
 
 class RestockSubscriptionController extends Controller
@@ -15,7 +16,10 @@ class RestockSubscriptionController extends Controller
      * Создать подписку «Сообщить о поступлении».
      * POST /api/public/restock-subscriptions
      */
-    public function store(StoreRestockSubscriptionRequest $request): JsonResponse
+    public function store(
+        StoreRestockSubscriptionRequest $request,
+        GuestClientService $guestClientService,
+    ): JsonResponse
     {
         $data = $request->validated();
 
@@ -39,13 +43,21 @@ class RestockSubscriptionController extends Controller
 
         $email = mb_strtolower(trim($data['email']));
 
-        // Привязка к клиенту, если авторизован или найден по email.
-        $clientId = null;
+        // Привязка к клиенту: авторизованный клиент имеет приоритет. Для гостя
+        // используем единый резолвер заказов: поиск по email/телефону и создание
+        // клиента без ЛК (verified_at остаётся null), если совпадения нет.
+        $client = null;
         $user = $request->user();
         if ($user instanceof Client) {
-            $clientId = $user->id;
+            $client = $user;
         } else {
-            $clientId = Client::where('email', $email)->value('id');
+            $client = $guestClientService->findOrCreateFromOrderData([
+                'user' => ['email' => $email],
+                'recipient' => [
+                    'first_name' => $data['name'] ?? null,
+                    'phone' => $data['phone'] ?? null,
+                ],
+            ]);
         }
 
         // Анти-дубль (#5): один и тот же email на один товар среди pending —
@@ -66,9 +78,10 @@ class RestockSubscriptionController extends Controller
         ProductRestockSubscription::create([
             'product_id' => $product->id,
             'product_variant_id' => $data['product_variant_id'] ?? null,
-            'client_id' => $clientId,
+            'client_id' => $client?->id,
             'name' => $data['name'] ?? null,
             'email' => $email,
+            'phone' => $data['phone'] ?? null,
             'status' => ProductRestockSubscription::STATUS_PENDING,
             'source' => 'site',
             'meta' => $data['meta'] ?? null,
