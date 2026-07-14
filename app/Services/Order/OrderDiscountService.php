@@ -24,7 +24,7 @@ use Illuminate\Support\Facades\Log;
  *  1. Восстановить оригиналы по позициям (price = original; discount = 0).
  *  2. Авто-скидка (Product↔Discount): {@see OrderUpdateService::reapplyAutoDiscounts}.
  *  3. Все ручные скидки из pivot order_applied_discounts стекаются СВЕРХУ авто:
- *     каждая % считается от оригинальной цены (аддитивно: 10% + 5% = 15%);
+ *     каждая % считается от цены, оставшейся после предыдущих скидок;
  *     fixed — фиксированная сумма за штуку, ограниченная остатком.
  *     Сумма всех скидок per unit ограничена оригинальной ценой (не уйдём в минус).
  *  4. Промокод (если применён) поверх — inline через {@see PromoCode::calculateFinalPrice},
@@ -506,7 +506,7 @@ class OrderDiscountService
 
     /**
      * Применить все ручные скидки из pivot к позициям заказа стопкой.
-     * % считаются от оригинальной цены, fixed — от остатка.
+     * % и fixed считаются от остатка цены после уже применённых скидок.
      * Возвращает суммарную ручную скидку по заказу (для агрегатов).
      *
      * Предусловия: позиции уже содержат auto-скидку (item.price/discount после auto).
@@ -598,24 +598,23 @@ class OrderDiscountService
 
     /**
      * Считаем дельту скидки за штуку.
-     *  - percentage: всегда от оригинальной цены (аддитивно поверх других %)
-     *  - fixed:      фиксированная сумма, но не больше остатка цены после уже
-     *                накопленных скидок (auto + предыдущие ручные)
+     *  - percentage: от остатка цены после auto и предыдущих ручных скидок;
+     *  - fixed:      фиксированная сумма, но не больше этого же остатка.
      */
     protected function calculateDelta(Discount $discount, float $originalPrice, float $alreadyDiscountedPerUnit): float
     {
+        $remaining = max(0.0, $originalPrice - $alreadyDiscountedPerUnit);
+
         if ($discount->type === 'percentage') {
-            $delta = round($originalPrice * (float) $discount->value / 100, 2);
+            $delta = round($remaining * (float) $discount->value / 100, 2);
         } elseif ($discount->type === 'fixed') {
-            $remaining = max(0.0, $originalPrice - $alreadyDiscountedPerUnit);
             $delta = min((float) $discount->value, $remaining);
         } else {
             return 0.0;
         }
 
         // Защита: суммарная скидка не должна превышать оригинал.
-        $remainingAfterPrev = max(0.0, $originalPrice - $alreadyDiscountedPerUnit);
-        return round(min($delta, $remainingAfterPrev), 2);
+        return round(min($delta, $remaining), 2);
     }
 
     /**
