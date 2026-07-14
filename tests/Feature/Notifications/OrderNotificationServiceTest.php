@@ -84,6 +84,23 @@ class OrderNotificationServiceTest extends TestCase
         Bus::assertDispatched(SendNotificationJob::class, 1);
     }
 
+    public function test_order_created_includes_vk_when_linked(): void
+    {
+        Bus::fake([SendNotificationJob::class]);
+
+        $client = $this->clientWithChannels([
+            'profile' => ['vk_user_id' => 'vk-333333'],
+        ]);
+        $order = Order::factory()->create([
+            'client_id' => $client->id,
+            'total_amount' => 3000,
+        ]);
+
+        app(OrderNotificationService::class)->notifyOrderCreated($order, $client);
+
+        Bus::assertDispatched(SendNotificationJob::class, 4);
+    }
+
     public function test_order_message_matches_reference_format(): void
     {
         $client = $this->clientWithChannels();

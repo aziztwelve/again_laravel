@@ -6,9 +6,9 @@ use App\Helpers\NumberHelper;
 use App\Models\Cart;
 use App\Models\CartCommunication;
 use App\Models\PromoCode;
+use App\Services\Notifications\CustomerChannelResolver;
 use App\Services\Notifications\Jobs\SendNotificationJob;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\Log;
 
 /**
  * Брошенная корзина: детект + триггерная цепочка напоминаний.
@@ -16,6 +16,8 @@ use Illuminate\Support\Facades\Log;
  */
 class AbandonedCartService
 {
+    public function __construct(protected CustomerChannelResolver $customerChannelResolver) {}
+
     /**
      * Пометить активные корзины (status = 'active') брошенными, если последняя
      * активность была раньше порога. Активность = COALESCE(last_activity_at,
@@ -51,8 +53,8 @@ class AbandonedCartService
 
     /**
      * Пройтись по брошенным корзинам и отправить готовые к отправке шаги
-     * цепочки. Идемпотентно: один шаг — максимум одна запись cart_communications
-     * (UNIQUE cart_id+step). Уважает окно отправки.
+     * цепочки. Идемпотентно: один шаг — максимум одна запись на каждый канал
+     * (UNIQUE cart_id+step+channel). Уважает окно отправки.
      *
      * @return array{sent:int, skipped:int, window:bool}
      */
@@ -85,31 +87,10 @@ class AbandonedCartService
                     continue;
                 }
 
-                // Уже отправляли (или в очереди) этот шаг.
-                if ($cart->communications->firstWhere('step', $stepNum)) {
-                    continue;
-                }
-
-                [$channel, $recipient] = $this->resolveChannel($cart);
-
-                // Идемпотентность: создаём запись до диспатча. UNIQUE(cart_id, step)
-                // защищает от гонки параллельных запусков команды.
-                $comm = CartCommunication::firstOrCreate(
-                    ['cart_id' => $cart->id, 'step' => $stepNum],
-                    [
-                        'channel' => $channel ?? 'none',
-                        'type' => 'trigger',
-                        'status' => 'queued',
-                    ]
-                );
-
-                if (! $comm->wasRecentlyCreated) {
-                    continue; // кто-то уже застолбил этот шаг
-                }
-
-                if (! $channel || ! $recipient) {
-                    $comm->update(['status' => 'failed']);
+                $recipients = $this->resolveChannels($cart);
+                if ($recipients === []) {
                     $skipped++;
+
                     continue;
                 }
 
@@ -118,15 +99,26 @@ class AbandonedCartService
 
                 $message = $this->buildMessage($cart, $stepNum, $promoCode);
 
-                SendNotificationJob::dispatch(
-                    $channel,
-                    (string) $recipient,
-                    $message['body'],
-                    ['subject' => $message['subject'], 'html' => $channel === 'email' ? $message['html'] : null]
-                );
+                foreach ($recipients as $recipient) {
+                    // Идемпотентность отдельна для каждого канала, поэтому
+                    // повторный запуск не создаст дубль и не заблокирует остальные.
+                    $comm = CartCommunication::firstOrCreate(
+                        ['cart_id' => $cart->id, 'step' => $stepNum, 'channel' => $recipient['channel']],
+                        ['type' => 'trigger', 'status' => 'queued']
+                    );
 
-                $comm->update(['status' => 'sent', 'sent_at' => now()]);
-                $sent++;
+                    if (! $comm->wasRecentlyCreated) {
+                        continue;
+                    }
+
+                    SendNotificationJob::dispatch(
+                        $recipient['channel'],
+                        $recipient['recipient_id'],
+                        $message['body'],
+                        $this->notificationData($cart, $stepNum, $recipient, $message, $comm)
+                    );
+                    $sent++;
+                }
             }
         }
 
@@ -134,36 +126,24 @@ class AbandonedCartService
     }
 
     /**
-     * Выбрать первый доступный канал по приоритету и контакт под него.
-     * Источник контактов: профиль/аккаунт клиента. Гостевые корзины не
-     * участвуют в abandoned-cart цепочке.
+     * Обратная совместимость для старых вызовов: возвращает первый доступный
+     * канал. Новая цепочка использует resolveChannels().
      *
      * @return array{0:?string,1:?string} [channel, recipientId]
      */
     public function resolveChannel(Cart $cart): array
     {
-        $client = $cart->client;
-        $profile = $client?->profile;
+        $recipient = $this->resolveChannels($cart)[0] ?? null;
 
-        if (! $client) {
-            return [null, null];
-        }
+        return $recipient
+            ? [$recipient['channel'], $recipient['recipient_id']]
+            : [null, null];
+    }
 
-        foreach (config('abandoned_cart.channel_priority', []) as $channel) {
-            $recipient = match ($channel) {
-                'telegram' => $profile?->telegram_chat_id ?: $profile?->telegram_user_id,
-                'email' => $client->email,
-                'whatsapp' => $profile?->phone,
-                'vk' => $profile?->vk_user_id,
-                default => null,
-            };
-
-            if (! empty($recipient)) {
-                return [$channel, (string) $recipient];
-            }
-        }
-
-        return [null, null];
+    /** @return array<int, array{channel:string, source:string, recipient_id:string}> */
+    public function resolveChannels(Cart $cart): array
+    {
+        return $this->customerChannelResolver->resolve($cart->client);
     }
 
     /**
@@ -176,17 +156,7 @@ class AbandonedCartService
             return null;
         }
 
-        $profile = $cart->client?->profile;
-
-        $recipient = match ($channel) {
-            'telegram' => $profile?->telegram_chat_id ?: $profile?->telegram_user_id,
-            'email' => $cart->client->email,
-            'whatsapp' => $profile?->phone,
-            'vk' => $profile?->vk_user_id,
-            default => null,
-        };
-
-        return ! empty($recipient) ? (string) $recipient : null;
+        return $this->customerChannelResolver->recipientFor($cart->client, $channel);
     }
 
     /**
@@ -214,36 +184,60 @@ class AbandonedCartService
             return ['ok' => false, 'reason' => 'throttled'];
         }
 
-        // Канал: явный из запроса или приоритетный.
+        // Явный канал отправляет только в него; без выбора — во все доступные.
         if ($channel) {
             $recipient = $this->recipientForChannel($cart, $channel);
+            $recipients = $recipient ? [[
+                'channel' => $channel,
+                'source' => $channel,
+                'recipient_id' => $recipient,
+            ]] : [];
         } else {
-            [$channel, $recipient] = $this->resolveChannel($cart);
+            $recipients = $this->resolveChannels($cart);
         }
 
-        if (! $channel || ! $recipient) {
+        if ($recipients === []) {
             return ['ok' => false, 'reason' => 'no_contact'];
         }
 
         $message = $this->buildMessage($cart, 1);
+        $communications = [];
+        foreach ($recipients as $recipient) {
+            $comm = CartCommunication::create([
+                'cart_id' => $cart->id,
+                'channel' => $recipient['channel'],
+                'step' => null,
+                'type' => 'manual',
+                'status' => 'queued',
+            ]);
+            $communications[] = $comm;
 
-        SendNotificationJob::dispatch(
-            $channel,
-            (string) $recipient,
-            $message['body'],
-            ['subject' => $message['subject'], 'html' => $channel === 'email' ? $message['html'] : null]
-        );
+            SendNotificationJob::dispatch(
+                $recipient['channel'],
+                $recipient['recipient_id'],
+                $message['body'],
+                $this->notificationData($cart, 1, $recipient, $message, $comm)
+            );
+        }
 
-        $comm = CartCommunication::create([
+        return ['ok' => true, 'communication' => $communications[0], 'communications' => $communications];
+    }
+
+    private function notificationData(Cart $cart, int $step, array $recipient, array $message, CartCommunication $comm): array
+    {
+        return [
+            'type' => 'abandoned_cart',
             'cart_id' => $cart->id,
-            'channel' => $channel,
-            'step' => null,
-            'type' => 'manual',
-            'status' => 'sent',
-            'sent_at' => now(),
-        ]);
-
-        return ['ok' => true, 'communication' => $comm];
+            'cart_step' => $step,
+            'cart_communication_id' => $comm->id,
+            'subject' => $message['subject'],
+            'html' => $recipient['channel'] === 'email' ? $message['html'] : null,
+            'mirror_conversation' => [
+                'source' => $recipient['source'],
+                'external_id' => $recipient['recipient_id'],
+                'client_id' => $cart->client_id,
+            ],
+        ];
     }
 
     /**

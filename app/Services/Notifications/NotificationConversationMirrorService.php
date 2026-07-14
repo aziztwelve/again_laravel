@@ -12,14 +12,14 @@ class NotificationConversationMirrorService
     public function mirror(array $data, string $message): void
     {
         $mirror = $data['mirror_conversation'] ?? null;
-        if (!is_array($mirror)) {
+        if (! is_array($mirror)) {
             return;
         }
 
         $source = $mirror['source'] ?? null;
         $externalId = isset($mirror['external_id']) ? (string) $mirror['external_id'] : null;
 
-        if (!$source || !$externalId) {
+        if (! $source || ! $externalId) {
             return;
         }
 
@@ -38,7 +38,7 @@ class NotificationConversationMirrorService
                     ]
                 );
 
-                if (($mirror['client_id'] ?? null) && !$conversation->client_id) {
+                if (($mirror['client_id'] ?? null) && ! $conversation->client_id) {
                     $conversation->update(['client_id' => $mirror['client_id']]);
                 }
 
@@ -53,6 +53,8 @@ class NotificationConversationMirrorService
                         'notification_type' => $data['type'] ?? null,
                         'order_id' => $data['order_id'] ?? null,
                         'gift_card_id' => $data['gift_card_id'] ?? null,
+                        'cart_id' => $data['cart_id'] ?? null,
+                        'cart_step' => $data['cart_step'] ?? null,
                     ],
                 ]);
 

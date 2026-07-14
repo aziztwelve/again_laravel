@@ -2,7 +2,6 @@
 
 namespace App\Services\Notifications;
 
-use App\Enums\CommunicationChannel;
 use App\Models\Client;
 use App\Models\GiftCard\GiftCard;
 use App\Models\Order;
@@ -13,7 +12,8 @@ class OrderNotificationService
 {
     public function __construct(
         protected OrderMessageBuilder $orderMessageBuilder,
-        protected GiftCardMessageBuilder $giftCardMessageBuilder
+        protected GiftCardMessageBuilder $giftCardMessageBuilder,
+        protected CustomerChannelResolver $customerChannelResolver,
     ) {}
 
     public function notifyOrderCreated(Order $order, ?Client $client = null): void
@@ -25,7 +25,7 @@ class OrderNotificationService
             'type' => 'order_created',
             'order_id' => $order->id,
             'view_token' => $order->view_token,
-            'subject' => 'Заказ № ' . ($order->order_number ?? $order->id),
+            'subject' => 'Заказ № '.($order->order_number ?? $order->id),
         ]);
     }
 
@@ -34,7 +34,7 @@ class OrderNotificationService
         $giftCard->loadMissing('purchaseOrder.client.profile');
         $order = $giftCard->purchaseOrder;
 
-        if (!$order) {
+        if (! $order) {
             return;
         }
 
@@ -51,7 +51,7 @@ class OrderNotificationService
         $giftCard->loadMissing('purchaseOrder.client.profile');
         $order = $giftCard->purchaseOrder;
 
-        if (!$order) {
+        if (! $order) {
             return;
         }
 
@@ -65,7 +65,7 @@ class OrderNotificationService
 
     protected function dispatchToCustomerChannels(Order $order, ?Client $client, string $message, array $data): void
     {
-        foreach ($this->customerRecipients($order, $client) as $recipient) {
+        foreach ($this->customerChannelResolver->resolve($client, $order->email) as $recipient) {
             SendNotificationJob::dispatch(
                 $recipient['channel'],
                 $recipient['recipient_id'],
@@ -85,40 +85,5 @@ class OrderNotificationService
             'type' => $data['type'] ?? null,
             'client_id' => $client?->id,
         ]);
-    }
-
-    protected function customerRecipients(Order $order, ?Client $client): array
-    {
-        $client?->loadMissing('profile');
-        $profile = $client?->profile;
-        $recipients = [];
-
-        $email = $client?->email ?: $order->email;
-        if ($email) {
-            $recipients[] = [
-                'channel' => CommunicationChannel::EMAIL->value,
-                'source' => CommunicationChannel::EMAIL->value,
-                'recipient_id' => (string) $email,
-            ];
-        }
-
-        $telegramId = $profile?->telegram_chat_id ?: $profile?->telegram_user_id;
-        if ($telegramId) {
-            $recipients[] = [
-                'channel' => CommunicationChannel::TELEGRAM->value,
-                'source' => CommunicationChannel::TELEGRAM->value,
-                'recipient_id' => (string) $telegramId,
-            ];
-        }
-
-        if ($profile?->max_user_id) {
-            $recipients[] = [
-                'channel' => CommunicationChannel::MAX->value,
-                'source' => CommunicationChannel::MAX->value,
-                'recipient_id' => (string) $profile->max_user_id,
-            ];
-        }
-
-        return $recipients;
     }
 }

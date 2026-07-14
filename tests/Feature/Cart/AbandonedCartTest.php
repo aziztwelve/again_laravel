@@ -59,6 +59,7 @@ class AbandonedCartTest extends TestCase
             'last_name' => 'Клиент',
             'phone' => $profile['phone'] ?? null,
             'telegram_chat_id' => $profile['telegram_chat_id'] ?? null,
+            'max_user_id' => $profile['max_user_id'] ?? null,
             'vk_user_id' => $profile['vk_user_id'] ?? null,
         ]);
 
@@ -142,7 +143,7 @@ class AbandonedCartTest extends TestCase
             'cart_id' => $cart->id,
             'step' => 1,
             'channel' => 'email',
-            'status' => 'sent',
+            'status' => 'queued',
         ]);
 
         // Повторный прогон не должен слать шаг 1 ещё раз.
@@ -152,22 +153,46 @@ class AbandonedCartTest extends TestCase
         $this->assertSame(1, CartCommunication::where('cart_id', $cart->id)->count());
     }
 
-    public function test_channel_priority_prefers_telegram_over_email(): void
+    public function test_sends_abandoned_cart_to_every_available_channel(): void
+    {
+        Queue::fake();
+
+        $client = $this->client([
+            'email' => 'all@example.com',
+            'telegram_chat_id' => 'tg-123',
+            'max_user_id' => 'max-123',
+            'vk_user_id' => 'vk-123',
+        ]);
+        $cart = $this->cart($client, 'abandoned', now()->subHour(), [
+            'abandoned_at' => now()->subHour(),
+            'recovery_token' => 'tok'.uniqid(),
+        ]);
+
+        $result = $this->service()->processChain();
+
+        $this->assertSame(4, $result['sent']);
+        Queue::assertPushed(SendNotificationJob::class, 4);
+        $this->assertSame(4, CartCommunication::where('cart_id', $cart->id)->where('step', 1)->count());
+    }
+
+    public function test_resolves_all_available_transactional_channels(): void
     {
         $client = $this->client([
             'email' => 'x@example.com',
             'telegram_chat_id' => '123456',
+            'max_user_id' => 'max-123',
+            'vk_user_id' => 'vk-123',
         ]);
 
         $cart = $this->cart($client, 'abandoned', now());
 
-        [$channel, $recipient] = $this->service()->resolveChannel($cart);
+        $recipients = $this->service()->resolveChannels($cart);
 
-        $this->assertSame('telegram', $channel);
-        $this->assertSame('123456', $recipient);
+        $this->assertSame(['email', 'telegram', 'max', 'vk'], array_column($recipients, 'channel'));
+        $this->assertSame(['x@example.com', '123456', 'max-123', 'vk-123'], array_column($recipients, 'recipient_id'));
     }
 
-    public function test_step_marked_failed_when_no_contact(): void
+    public function test_step_is_skipped_when_no_transactional_contact(): void
     {
         Queue::fake();
 
@@ -185,10 +210,9 @@ class AbandonedCartTest extends TestCase
         $this->assertSame(0, $result['sent']);
         $this->assertSame(1, $result['skipped']);
         Queue::assertNothingPushed();
-        $this->assertDatabaseHas('cart_communications', [
+        $this->assertDatabaseMissing('cart_communications', [
             'cart_id' => $cart->id,
             'step' => 1,
-            'status' => 'failed',
         ]);
     }
 
@@ -351,7 +375,7 @@ class AbandonedCartTest extends TestCase
         $this->assertDatabaseHas('cart_communications', [
             'cart_id' => $cart->id,
             'type' => 'manual',
-            'status' => 'sent',
+            'status' => 'queued',
             'step' => null,
         ]);
     }

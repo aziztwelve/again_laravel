@@ -2,8 +2,9 @@
 
 namespace App\Services\Notifications\Jobs;
 
-use App\Services\Notifications\NotificationService;
+use App\Models\CartCommunication;
 use App\Services\Notifications\NotificationConversationMirrorService;
+use App\Services\Notifications\NotificationService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -27,8 +28,7 @@ class SendNotificationJob implements ShouldQueue
     public function handle(
         NotificationService $notificationService,
         NotificationConversationMirrorService $mirrorService
-    ): void
-    {
+    ): void {
         try {
             $success = $notificationService->sendViaChannel(
                 $this->channel,
@@ -37,16 +37,18 @@ class SendNotificationJob implements ShouldQueue
                 $this->data
             );
 
-            if (!$success) {
+            if (! $success) {
                 Log::warning("SendNotificationJob: Failed to send via {$this->channel}", [
                     'recipient_id' => $this->recipientId,
                 ]);
+                $this->updateCartCommunication('failed');
             } else {
                 $mirrorService->mirror($this->data, $this->message);
+                $this->updateCartCommunication('sent');
             }
 
         } catch (\Exception $e) {
-            Log::error("SendNotificationJob: Exception", [
+            Log::error('SendNotificationJob: Exception', [
                 'channel' => $this->channel,
                 'error' => $e->getMessage(),
             ]);
@@ -58,9 +60,23 @@ class SendNotificationJob implements ShouldQueue
 
     public function failed(\Exception $exception): void
     {
-        Log::error("SendNotificationJob: Job failed permanently", [
+        $this->updateCartCommunication('failed');
+        Log::error('SendNotificationJob: Job failed permanently', [
             'channel' => $this->channel,
             'error' => $exception->getMessage(),
+        ]);
+    }
+
+    private function updateCartCommunication(string $status): void
+    {
+        $id = $this->data['cart_communication_id'] ?? null;
+        if (! $id) {
+            return;
+        }
+
+        CartCommunication::whereKey($id)->update([
+            'status' => $status,
+            'sent_at' => $status === 'sent' ? now() : null,
         ]);
     }
 }
