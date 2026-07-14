@@ -38,7 +38,14 @@ class OtoBannerResource extends JsonResource
 
             'image' => $this->when($this->relationLoaded('mainImage') && $this->mainImage, [
                 'id' => $this->mainImage?->id,
-                'url' => $this->mainImage?->url,
+                // Сохраняем путь относительным к текущему origin. В старых
+                // записях url содержит прежний домен againdev.ru, из-за чего
+                // изображение не загружается на sub.againdev.ru.
+                'url' => sprintf(
+                    '/storage/oto-banners/%d/%s',
+                    $this->id,
+                    rawurlencode((string) $this->mainImage?->path),
+                ),
                 'path' => $this->mainImage?->path,
             ]),
 
