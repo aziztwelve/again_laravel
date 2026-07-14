@@ -89,7 +89,7 @@ class OrderNotificationServiceTest extends TestCase
         Bus::fake([SendNotificationJob::class]);
 
         $client = $this->clientWithChannels([
-            'profile' => ['vk_user_id' => 'vk-333333'],
+            'profile' => ['vk_user_id' => '333333'],
         ]);
         $order = Order::factory()->create([
             'client_id' => $client->id,

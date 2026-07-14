@@ -159,9 +159,9 @@ class AbandonedCartTest extends TestCase
 
         $client = $this->client([
             'email' => 'all@example.com',
-            'telegram_chat_id' => 'tg-123',
-            'max_user_id' => 'max-123',
-            'vk_user_id' => 'vk-123',
+            'telegram_chat_id' => '123456',
+            'max_user_id' => '234567',
+            'vk_user_id' => '345678',
         ]);
         $cart = $this->cart($client, 'abandoned', now()->subHour(), [
             'abandoned_at' => now()->subHour(),
@@ -180,8 +180,8 @@ class AbandonedCartTest extends TestCase
         $client = $this->client([
             'email' => 'x@example.com',
             'telegram_chat_id' => '123456',
-            'max_user_id' => 'max-123',
-            'vk_user_id' => 'vk-123',
+            'max_user_id' => '234567',
+            'vk_user_id' => '345678',
         ]);
 
         $cart = $this->cart($client, 'abandoned', now());
@@ -189,7 +189,7 @@ class AbandonedCartTest extends TestCase
         $recipients = $this->service()->resolveChannels($cart);
 
         $this->assertSame(['email', 'telegram', 'max', 'vk'], array_column($recipients, 'channel'));
-        $this->assertSame(['x@example.com', '123456', 'max-123', 'vk-123'], array_column($recipients, 'recipient_id'));
+        $this->assertSame(['x@example.com', '123456', '234567', '345678'], array_column($recipients, 'recipient_id'));
     }
 
     public function test_step_is_skipped_when_no_transactional_contact(): void
