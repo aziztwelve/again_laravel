@@ -84,6 +84,20 @@ class OrderNotificationServiceTest extends TestCase
         Bus::assertDispatched(SendNotificationJob::class, 1);
     }
 
+    public function test_order_notification_is_idempotent_per_channel(): void
+    {
+        Bus::fake([SendNotificationJob::class]);
+
+        $client = $this->clientWithChannels();
+        $order = Order::factory()->create(['client_id' => $client->id, 'total_amount' => 3000]);
+        $service = app(OrderNotificationService::class);
+
+        $service->notifyOrderCreated($order, $client);
+        $service->notifyOrderCreated($order, $client);
+
+        Bus::assertDispatched(SendNotificationJob::class, 3);
+    }
+
     public function test_order_created_includes_vk_when_linked(): void
     {
         Bus::fake([SendNotificationJob::class]);

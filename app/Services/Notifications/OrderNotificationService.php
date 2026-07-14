@@ -5,7 +5,6 @@ namespace App\Services\Notifications;
 use App\Models\Client;
 use App\Models\GiftCard\GiftCard;
 use App\Models\Order;
-use App\Services\Notifications\Jobs\SendNotificationJob;
 use Illuminate\Support\Facades\Log;
 
 class OrderNotificationService
@@ -14,6 +13,7 @@ class OrderNotificationService
         protected OrderMessageBuilder $orderMessageBuilder,
         protected GiftCardMessageBuilder $giftCardMessageBuilder,
         protected CustomerChannelResolver $customerChannelResolver,
+        protected TransactionalNotificationDispatcher $transactionalNotificationDispatcher,
     ) {}
 
     public function notifyOrderCreated(Order $order, ?Client $client = null): void
@@ -65,10 +65,16 @@ class OrderNotificationService
 
     protected function dispatchToCustomerChannels(Order $order, ?Client $client, string $message, array $data): void
     {
+        $giftCardId = $data['gift_card_id'] ?? null;
+        $entityType = $giftCardId ? 'gift_card' : 'order';
+        $entityId = (int) ($giftCardId ?: $order->id);
+
         foreach ($this->customerChannelResolver->resolve($client, $order->email) as $recipient) {
-            SendNotificationJob::dispatch(
-                $recipient['channel'],
-                $recipient['recipient_id'],
+            $this->transactionalNotificationDispatcher->dispatch(
+                $data['type'],
+                $entityType,
+                $entityId,
+                $recipient,
                 $message,
                 array_merge($data, [
                     'mirror_conversation' => [

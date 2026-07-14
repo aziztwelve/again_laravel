@@ -3,6 +3,7 @@
 namespace App\Services\Notifications\Jobs;
 
 use App\Models\CartCommunication;
+use App\Models\NotificationDispatch;
 use App\Services\Notifications\NotificationConversationMirrorService;
 use App\Services\Notifications\NotificationService;
 use Illuminate\Bus\Queueable;
@@ -42,9 +43,11 @@ class SendNotificationJob implements ShouldQueue
                     'recipient_id' => $this->recipientId,
                 ]);
                 $this->updateCartCommunication('failed');
+                $this->updateNotificationDispatch('failed');
             } else {
                 $mirrorService->mirror($this->data, $this->message);
                 $this->updateCartCommunication('sent');
+                $this->updateNotificationDispatch('sent');
             }
 
         } catch (\Exception $e) {
@@ -61,6 +64,7 @@ class SendNotificationJob implements ShouldQueue
     public function failed(\Exception $exception): void
     {
         $this->updateCartCommunication('failed');
+        $this->updateNotificationDispatch('failed');
         Log::error('SendNotificationJob: Job failed permanently', [
             'channel' => $this->channel,
             'error' => $exception->getMessage(),
@@ -78,5 +82,13 @@ class SendNotificationJob implements ShouldQueue
             'status' => $status,
             'sent_at' => $status === 'sent' ? now() : null,
         ]);
+    }
+
+    private function updateNotificationDispatch(string $status): void
+    {
+        $id = $this->data['notification_dispatch_id'] ?? null;
+        if ($id) {
+            NotificationDispatch::whereKey($id)->update(['status' => $status, 'sent_at' => $status === 'sent' ? now() : null]);
+        }
     }
 }
