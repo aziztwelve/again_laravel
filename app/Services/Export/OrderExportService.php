@@ -46,12 +46,23 @@ class OrderExportService extends ExportService
         // Формируем список товаров
         $items = $order->items
             ->map(function ($item) {
-                $productName = $item->product->name ?? 'Неизвестный товар';
+                // У старых импортированных позиций связь с каталогом может
+                // отсутствовать. В таком случае сохраняем исходное название
+                // и артикул из legacy-полей, а не теряем их в экспорте.
+                $productName = $item->product?->name
+                    ?? $item->legacy_name
+                    ?? 'Неизвестный товар';
                 $variantName = $item->variant ? " ({$item->variant->name})" : '';
+                $sku = $this->firstFilledValue(
+                    $item->variant?->sku,
+                    $item->product?->sku,
+                    $item->legacy_sku,
+                );
+                $skuLabel = $sku ? ", арт. {$sku}" : ', арт. не указан';
                 $quantity = $item->quantity;
                 $price = NumberHelper::formatRussian($item->price * $item->quantity);
 
-                return "{$productName}{$variantName} (x{$quantity}, {$price}₽)";
+                return "{$productName}{$variantName}{$skuLabel} (x{$quantity}, {$price}₽)";
             })
             ->implode(', ');
 
@@ -231,5 +242,21 @@ class OrderExportService extends ExportService
         }
 
         return implode(', ', $parts);
+    }
+
+    /**
+     * Возвращает первое непустое строковое значение.
+     */
+    private function firstFilledValue(?string ...$values): ?string
+    {
+        foreach ($values as $value) {
+            $value = trim((string) $value);
+
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return null;
     }
 }
