@@ -28,7 +28,7 @@ class TelegramNotificationChannel extends BaseNotificationChannel
             }
 
             $response = $chat
-                ->message($message)
+                ->html(e($message))
                 ->send();
 
             if (! $response->successful()) {
