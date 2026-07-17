@@ -8,10 +8,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * Контроллер интеграции с Yandex Delivery Platform API.
- *
- * Все методы работают через единый Platform API Яндекса
- * (location/detect, pickup-points/list, offers/create, offers/confirm, request/info).
+ * Контроллер NDD Express Delivery API.
  */
 class YandexDeliveryController extends Controller
 {
@@ -88,7 +85,7 @@ class YandexDeliveryController extends Controller
             'recipient.name'        => 'nullable|string',
             'recipient.phone'       => 'nullable|string',
             'items'                 => 'required|array|min:1',
-            'items.*.weight'        => 'required|numeric',
+            'items.*.weight'        => 'nullable|numeric|min:0.001',
             'items.*.size'          => 'nullable|array',
             'items.*.quantity'      => 'nullable|integer|min:1',
         ]);
@@ -116,29 +113,13 @@ class YandexDeliveryController extends Controller
     }
 
     /**
-     * Бронирование выбранного оффера.
+     * Бронирование оффера больше не применяется в NDD Express: заявка создаётся
+     * только после оплаты заказа через claims/create.
      * POST /api/public/delivery/yandex/offers/confirm
      */
     public function confirmOffer(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'offer_id' => 'required|string',
-        ]);
-
-        $result = $this->service->confirmOffer($validated['offer_id']);
-
-        if (!$result['success']) {
-            return response()->json([
-                'success' => false,
-                'error'   => $result['error'],
-            ], 422);
-        }
-
-        return response()->json([
-            'success'    => true,
-            'request_id' => $result['request_id'],
-            'result'     => $result['result'],
-        ]);
+        return response()->json(['success' => false, 'error' => 'Офферы NDD Express не бронируются до оплаты заказа.'], 410);
     }
 
     /**
@@ -147,18 +128,26 @@ class YandexDeliveryController extends Controller
      */
     public function requestInfo(string $requestId): JsonResponse
     {
-        $result = $this->service->getRequestInfo($requestId);
+        $result = $this->service->getClaimInfo($requestId);
 
-        if (!$result['success']) {
+        if (!$result['successful']) {
             return response()->json([
                 'success' => false,
-                'error'   => $result['error'],
-            ], 404);
+                'error'   => $result['data'],
+            ], $result['status']);
         }
 
         return response()->json([
             'success' => true,
-            'request' => $result['request'],
+            'request' => $result['data'],
+        ]);
+    }
+
+    public function tariffs(): JsonResponse
+    {
+        return response()->json([
+            'success' => true,
+            'tariffs' => \App\Models\YandexTariff::query()->where('is_active', true)->orderBy('sort')->get(['code', 'title', 'taxi_class']),
         ]);
     }
 
