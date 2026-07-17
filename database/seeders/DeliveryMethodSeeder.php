@@ -18,6 +18,7 @@ class DeliveryMethodSeeder extends Seeder
     public function run(): void
     {
         $cdek = \App\Services\Delivery\CdekDeliveryService::class;
+        $yandex = \App\Services\Delivery\YandexDeliveryService::class;
         $generic = \App\Services\Delivery\DeliveryService::class;
 
         $methods = [
@@ -42,14 +43,14 @@ class DeliveryMethodSeeder extends Seeder
                 'code' => 'yandex_pickup',
                 'name' => 'Пункт самовывоза Яндекс.Доставки',
                 'description' => 'Самовывоз из ПВЗ Яндекс.Доставки',
-                'provider_class' => $generic,
+                'provider_class' => $yandex,
                 'settings' => ['kind' => 'pickup', 'company' => 'yandex'],
             ],
             [
                 'code' => 'yandex_courier',
                 'name' => 'Курьером Яндекс.Доставки',
                 'description' => 'Курьерская доставка Яндекс.Доставки',
-                'provider_class' => $generic,
+                'provider_class' => $yandex,
                 'settings' => ['kind' => 'courier', 'company' => 'yandex'],
             ],
 

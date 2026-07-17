@@ -87,6 +87,7 @@ class Order extends Model
         'discount_amount' => 'decimal:2',
         'paid_at' => 'datetime',
         'delivery_date' => 'datetime',
+        'delivery_data' => 'array',
 
         'gift_card_amount' => 'decimal:2',
 
@@ -102,6 +103,16 @@ class Order extends Model
     public function address(): HasOne
     {
         return $this->hasOne(OrderAddress::class);
+    }
+
+    public function shipment(): HasOne
+    {
+        return $this->hasOne(Shipment::class);
+    }
+
+    public function yandexOrder(): HasOne
+    {
+        return $this->hasOne(YandexOrder::class);
     }
 
     public function deliveryTarget()

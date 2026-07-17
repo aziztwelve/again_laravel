@@ -53,6 +53,7 @@ class DatabaseSeeder extends Seeder
             RoleSeeder::class,
             ShipmentStatusSeeder::class,
             DeliveryMethodSeeder::class,
+            YandexTariffSeeder::class,
             ReviewAttributeSeeder::class,
             ReviewResponseSeeder::class,
             ProductsColorSeeder::class,
