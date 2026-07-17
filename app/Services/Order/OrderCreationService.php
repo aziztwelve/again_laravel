@@ -36,6 +36,7 @@ class OrderCreationService
         $userData = $orderData['user'] ?? [];
         $recipient = $orderData['recipient'] ?? [];
         $deliveryMethodData = $orderData['delivery_method'] ?? [];
+        $yandexDeliveryData = $this->buildYandexDeliveryData($orderData, $deliveryAddress);
         // Если в payload пришёл client_id (админ создаёт заказ за клиента) —
         // он имеет приоритет. Если в payload его нет — берём переданный.
         // Для гостевого заказа оба источника пусты и client_id остаётся NULL.
@@ -54,6 +55,7 @@ class OrderCreationService
             'payment_method' => $orderData['payment_method'] ?? null,
             'source' => $orderData['source'] ?? null,
             'delivery_method_id' => $deliveryMethodId,
+            'delivery_data' => $yandexDeliveryData,
 
             // Адрес доставки
             'country_code' => $deliveryAddress['country'] ?? null,
@@ -235,6 +237,43 @@ class OrderCreationService
         return DeliveryMethod::query()
             ->where('name', $name)
             ->value('id');
+    }
+
+    private function buildYandexDeliveryData(array $orderData, array $deliveryAddress): ?array
+    {
+        $data = $orderData['delivery_data'] ?? [];
+        if (! is_array($data)) {
+            $data = [];
+        }
+
+        $offerId = $orderData['yandex_offer'] ?? $data['offer_id'] ?? null;
+        $deliveryType = $orderData['delivery_type'] ?? $data['delivery_type'] ?? null;
+        $pvzId = $orderData['pvz_code'] ?? $data['pvz']['id'] ?? null;
+        $destinationCoordinates = $orderData['destination_coordinates'] ?? $data['destination']['coordinates'] ?? null;
+        $pvzCoordinates = $orderData['pvz_coordinates'] ?? $data['pvz']['coordinates'] ?? null;
+
+        if (! $offerId && ! $deliveryType && ! $pvzId && ! $destinationCoordinates && ! $pvzCoordinates) {
+            return null;
+        }
+
+        return array_filter([
+            'provider' => 'yandex',
+            'delivery_type' => $deliveryType ?? ($pvzId ? 'pickup' : 'courier'),
+            'tariff_code' => $orderData['tariff_code'] ?? $data['tariff_code'] ?? null,
+            'offer_id' => $offerId,
+            'price' => $data['price'] ?? null,
+            'scheduled_time' => $orderData['scheduled_time'] ?? $data['scheduled_time'] ?? null,
+            'pvz' => $pvzId ? array_filter([
+                'id' => $pvzId,
+                'address' => $orderData['pvz_address'] ?? $data['pvz']['address'] ?? null,
+                'coordinates' => $pvzCoordinates,
+                'schedule' => $data['pvz']['schedule'] ?? null,
+            ], fn ($value) => $value !== null) : null,
+            'destination' => $destinationCoordinates ? [
+                'address' => $deliveryAddress['address'] ?? $data['destination']['address'] ?? null,
+                'coordinates' => $destinationCoordinates,
+            ] : ($data['destination'] ?? null),
+        ], fn ($value) => $value !== null);
     }
 
     private function resolveOrderStatus(?string $status): string

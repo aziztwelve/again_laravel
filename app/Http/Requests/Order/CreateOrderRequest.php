@@ -347,6 +347,21 @@ class CreateOrderRequest extends FormRequest
             'delivery_method' => 'nullable|array',
             'delivery_method.name' => 'nullable|string|max:255',
 
+            // Выбор Яндекс.Доставки сохраняется в orders.delivery_data до
+            // создания claims/create после оплаты. Старые поля yandex_offer/
+            // pvz_* поддерживаются для текущей витрины.
+            'yandex_offer' => 'nullable|string|max:255',
+            'pvz_code' => 'nullable|string|max:255',
+            'pvz_address' => 'nullable|string|max:1000',
+            'delivery_type' => 'nullable|in:courier,pickup',
+            'tariff_code' => 'nullable|string|max:100',
+            'scheduled_time' => 'nullable|string|max:255',
+            'destination_coordinates' => 'nullable|array|size:2',
+            'destination_coordinates.*' => 'numeric',
+            'pvz_coordinates' => 'nullable|array|size:2',
+            'pvz_coordinates.*' => 'numeric',
+            'delivery_data' => 'nullable|array',
+
             // Товары
             'items' => 'required|array|min:1|max:50',
             'items.*.product_id' => 'required|integer|exists:products,id',
