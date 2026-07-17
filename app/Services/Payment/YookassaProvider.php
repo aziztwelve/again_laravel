@@ -3,6 +3,8 @@
 namespace App\Services\Payment;
 
 use App\DTOs\PaymentDTO;
+use App\Enums\PaymentStatus as OrderPaymentStatus;
+use App\Events\OrderPaid;
 use App\Models\Payment;
 use YooKassa\Client;
 use YooKassa\Model\Payment as YooKassaPayment;
@@ -81,11 +83,20 @@ class YookassaProvider extends AbstractPaymentProvider
         $status = $data['object']['status'];
 
         if ($status === PaymentStatus::SUCCEEDED) {
+            $wasCompleted = $payment->isCompleted();
             $payment->update([
                 'status' => Payment::STATUS_COMPLETED,
                 'provider_payment_id' => $data['object']['id'],
                 'provider_data' => $data['object']
             ]);
+
+            $order = $payment->order;
+            if ($order && ! $order->isPaid()) {
+                $order->updatePaymentStatus(OrderPaymentStatus::PAID, $payment->provider_payment_id);
+            }
+            if ($order && ! $wasCompleted) {
+                OrderPaid::dispatch($order->fresh(['deliveryMethod']));
+            }
 
             // Если чеки не через Юкассу, а через HelixMedia
             if ($this->receiptGenerator && !$this->config['send_receipt']) {
@@ -165,4 +176,4 @@ class YookassaProvider extends AbstractPaymentProvider
             ];
         }, $items);
     }
-} 
+}

@@ -79,6 +79,7 @@ use App\Http\Controllers\Api\Auth\RegisteredUserController;
 use App\Http\Controllers\Api\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\DeliveryController;
 use App\Http\Controllers\Api\Delivery\YandexDeliveryController;
+use App\Http\Controllers\WebhookController;
 use App\Http\Controllers\Api\PromoCodeController;
 use App\Http\Controllers\Api\Public\Cart\CartPriceController;
 use App\Http\Controllers\Api\Public\Cart\CartRestoreController;
@@ -98,6 +99,9 @@ use Illuminate\Support\Facades\Route;
 
 Route::post('/telegraph/{token}/webhook', [TelegraphWebhookController::class, 'handle'])
     ->name('api.telegraph.webhook');
+
+Route::post('/webhooks/yookassa', [WebhookController::class, 'yookassa'])
+    ->name('api.webhooks.yookassa');
 
 // auth user
 Route::middleware('guest')->group(function () {

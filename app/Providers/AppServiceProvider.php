@@ -2,6 +2,9 @@
 
 namespace App\Providers;
 
+use App\Events\OrderPaid;
+use App\Listeners\CreateYandexOrderAfterPayment;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -31,6 +34,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Event::listen(OrderPaid::class, CreateYandexOrderAfterPayment::class);
         JsonResource::withoutWrapping();
 
         // Триггер «товар появился в наличии» для рассылки подписчикам «Скоро в продаже».
