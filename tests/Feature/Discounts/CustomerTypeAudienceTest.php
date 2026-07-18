@@ -148,6 +148,25 @@ class CustomerTypeAudienceTest extends TestCase
             ->assertJsonPath('errors.0.actual_price', 100);
     }
 
+    public function test_authorized_client_does_not_receive_guest_discount_when_refreshing_cart_prices(): void
+    {
+        $product = $this->product();
+        $discount = $this->discount(Discount::CUSTOMER_TYPE_GUEST);
+        $product->discounts()->attach($discount->id);
+
+        Sanctum::actingAs($this->client());
+
+        $response = $this->postJson('/api/public/cart/refresh-prices', [
+            'items' => [[
+                'product_id' => $product->id,
+            ]],
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('items.0.price', 100)
+            ->assertJsonPath('items.0.discount_id', null);
+    }
+
     private function product(): Product
     {
         return Product::create([

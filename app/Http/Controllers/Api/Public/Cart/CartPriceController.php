@@ -42,7 +42,7 @@ class CartPriceController extends Controller
         ]);
 
         $items = [];
-        $customerType = $request->user() instanceof Client
+        $customerType = $request->user('sanctum') instanceof Client
             ? Discount::CUSTOMER_TYPE_AUTHORIZED
             : Discount::CUSTOMER_TYPE_GUEST;
 

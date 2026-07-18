@@ -81,7 +81,7 @@ class CatalogController extends Controller
         $perPage = $request->get('per_page', 9);
         $products = $query->paginate($perPage);
 
-        $customerType = $request->user() instanceof Client
+        $customerType = $request->user('sanctum') instanceof Client
             ? Discount::CUSTOMER_TYPE_AUTHORIZED
             : Discount::CUSTOMER_TYPE_GUEST;
 
@@ -119,7 +119,7 @@ class CatalogController extends Controller
             })
             ->firstOrFail();
 
-        $customerType = request()->user() instanceof Client
+        $customerType = request()->user('sanctum') instanceof Client
             ? Discount::CUSTOMER_TYPE_AUTHORIZED
             : Discount::CUSTOMER_TYPE_GUEST;
 
