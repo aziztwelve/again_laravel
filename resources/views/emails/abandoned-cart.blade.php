@@ -106,7 +106,10 @@
                 <tr>
                     <td style="padding:24px 48px;background:#292725;font-size:12px;line-height:18px;color:#ffffff">
                         © {{ now()->year }} AGAIN<br>
-                        Это автоматическое напоминание о товарах, оставленных в корзине.
+                        Вы получили это письмо, потому что зарегистрировались на сайте AGAIN. Это автоматическое напоминание о товарах, оставленных в корзине.<br><br>
+                        Это сообщение отправлено вам от:<br>
+                        AGAIN | {{ config('mail.from.address') }}<br><br>
+                        <a href="mailto:{{ config('mail.from.address') }}?subject={{ rawurlencode('Отписка от рассылки AGAIN') }}" style="color:#ffffff;text-decoration:underline">Отписаться от рассылки</a>
                     </td>
                 </tr>
             </table>
