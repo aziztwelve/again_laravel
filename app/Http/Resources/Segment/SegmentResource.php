@@ -20,7 +20,6 @@ class SegmentResource extends JsonResource
             'description' => $this->description,
             'conditions' => $this->conditions,
             'is_active' => $this->is_active,
-            'customer_type' => $this->customer_type ?? 'all',
             'recalculate_frequency' => $this->recalculate_frequency,
             'last_recalculated_at' => $this->last_recalculated_at?->format('d.m.Y H:i:s'),
             'clients_count' => $this->whenCounted('clients'),

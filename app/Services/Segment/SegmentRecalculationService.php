@@ -24,21 +24,6 @@ class SegmentRecalculationService
      */
     public function recalculate(Segment $segment): void
     {
-        if (($segment->customer_type ?? Segment::CUSTOMER_TYPE_ALL) === Segment::CUSTOMER_TYPE_GUEST) {
-            DB::transaction(function () use ($segment) {
-                $clientIds = $segment->clients()->pluck('clients.id')->toArray();
-
-                if (! empty($clientIds)) {
-                    $this->promoCodeSyncService->removePromoCodesFromClients($segment, $clientIds);
-                    $segment->clients()->detach($clientIds);
-                }
-
-                $segment->markAsRecalculated();
-            });
-
-            return;
-        }
-
         $conditions = SegmentConditionsDTO::fromArray($segment->conditions);
 
         if (!$conditions || !$conditions->hasConditions()) {

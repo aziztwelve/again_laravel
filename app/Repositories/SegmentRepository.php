@@ -48,7 +48,8 @@ class SegmentRepository
     {
         $query = Client::query()
             ->with(['profile'])
-            ->select('clients.*');
+            ->select('clients.*')
+            ->whereNotNull('clients.verified_at');
 
         // Исключаем клиентов, которые УЖЕ в сегменте
         $query->whereNotIn('clients.id', function ($subQuery) use ($segment) {

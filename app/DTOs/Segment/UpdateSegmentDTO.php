@@ -9,7 +9,6 @@ class UpdateSegmentDTO
         public readonly ?string $description = null,
         public readonly ?array $conditions = null,
         public readonly ?bool $isActive = null,
-        public readonly ?string $customerType = null,
         public readonly ?string $recalculateFrequency = null
     ) {}
 
@@ -23,7 +22,6 @@ class UpdateSegmentDTO
             description: $data['description'] ?? null,
             conditions: $data['conditions'] ?? null,
             isActive: $data['is_active'] ?? null,
-            customerType: $data['customer_type'] ?? null,
             recalculateFrequency: $data['recalculate_frequency'] ?? null
         );
     }
@@ -38,7 +36,6 @@ class UpdateSegmentDTO
             'description' => $this->description,
             'conditions' => $this->conditions,
             'is_active' => $this->isActive,
-            'customer_type' => $this->customerType,
             'recalculate_frequency' => $this->recalculateFrequency,
         ], fn($value) => $value !== null);
     }

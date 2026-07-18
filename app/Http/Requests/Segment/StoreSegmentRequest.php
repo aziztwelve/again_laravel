@@ -29,10 +29,6 @@ class StoreSegmentRequest extends FormRequest
             ],
             'description' => 'nullable|string|max:1000',
             'is_active' => 'boolean',
-            'customer_type' => [
-                'nullable',
-                Rule::in(['authorized', 'guest', 'all'])
-            ],
             'recalculate_frequency' => [
                 'required',
                 Rule::in(['on_view', 'manual'])
@@ -62,7 +58,6 @@ class StoreSegmentRequest extends FormRequest
             'description.string' => 'Описание должно быть строкой',
             'description.max' => 'Описание не должно превышать 1000 символов',
             'is_active.boolean' => 'Поле активности должно быть да или нет',
-            'customer_type.in' => 'Некорректная аудитория сегмента',
             'recalculate_frequency.required' => 'Необходимо указать частоту пересчёта',
             'recalculate_frequency.in' => 'Некорректная частота пересчёта',
             'conditions.array' => 'Условия должны быть переданы в виде массива',
@@ -88,7 +83,6 @@ class StoreSegmentRequest extends FormRequest
             'name' => 'название',
             'description' => 'описание',
             'is_active' => 'активность',
-            'customer_type' => 'аудитория',
             'recalculate_frequency' => 'частота пересчёта',
             'conditions.period' => 'период',
             'conditions.min_orders_count' => 'минимальное количество заказов',
