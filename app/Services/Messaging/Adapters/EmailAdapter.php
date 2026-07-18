@@ -101,15 +101,26 @@ class EmailAdapter extends AbstractMessageAdapter
                 <div style='max-width: 600px; margin: 0 auto;'>
                     {$textContent}
                     {$attachmentsHtml}
-                    <hr style='margin-top: 30px; border: none; border-top: 1px solid #ddd;'>
-                    <p style='font-size: 12px; color: #999; margin-top: 20px; text-align: center;'>
-                        <a href='#' style='color: #0066cc; text-decoration: none;'>
-                            Отписаться от рассылки
-                        </a>
-                    </p>
+                    {$this->footerHtml()}
                 </div>
             </body>
             </html>
+        ";
+    }
+
+    private function footerHtml(): string
+    {
+        $address = e((string) config('mail.from.address'));
+        $subject = rawurlencode('Отписка от рассылки AGAIN');
+
+        return "
+            <div style='margin-top: 30px; padding: 20px; background: #292725; color: #ffffff; font-size: 12px; line-height: 18px;'>
+                © ".now()->year." AGAIN<br>
+                Вы получили это письмо, потому что зарегистрировались на сайте AGAIN или оставили контактные данные для получения уведомлений.<br><br>
+                Это сообщение отправлено вам от:<br>
+                AGAIN | {$address}<br><br>
+                <a href='mailto:{$address}?subject={$subject}' style='color: #ffffff; text-decoration: underline;'>Отписаться от рассылки</a>
+            </div>
         ";
     }
 

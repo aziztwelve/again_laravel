@@ -103,15 +103,7 @@
                         <a href="{{ $link }}" style="display:inline-block;background:#292725;border-radius:4px;padding:13px 22px;color:#ffffff;text-decoration:none;font-size:14px;line-height:20px;font-weight:700">Перейти к корзине</a>
                     </td>
                 </tr>
-                <tr>
-                    <td style="padding:24px 48px;background:#292725;font-size:12px;line-height:18px;color:#ffffff">
-                        © {{ now()->year }} AGAIN<br>
-                        Вы получили это письмо, потому что зарегистрировались на сайте AGAIN. Это автоматическое напоминание о товарах, оставленных в корзине.<br><br>
-                        Это сообщение отправлено вам от:<br>
-                        AGAIN | {{ config('mail.from.address') }}<br><br>
-                        <a href="mailto:{{ config('mail.from.address') }}?subject={{ rawurlencode('Отписка от рассылки AGAIN') }}" style="color:#ffffff;text-decoration:underline">Отписаться от рассылки</a>
-                    </td>
-                </tr>
+                <tr><td>@include('emails.partials.footer')</td></tr>
             </table>
         </td>
     </tr>

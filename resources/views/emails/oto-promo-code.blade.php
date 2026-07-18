@@ -40,10 +40,7 @@
 
     <a href="{{ url('/') }}" class="button">Перейти в магазин</a>
 
-    <p style="font-size: 14px; color: #777; margin-top: 40px;">
-        Если у вас есть вопросы — пишите нам на {{ config('mail.from.address') }}<br>
-        С уважением, команда {{ config('app.name') }}
-    </p>
+    @include('emails.partials.footer')
 </div>
 </body>
 </html>

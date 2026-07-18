@@ -228,23 +228,7 @@
             </div>
         @endif
 
-        {{-- Подвал --}}
-        <div style="background-color:#f5f5f5;box-sizing:border-box;padding-bottom:17px;padding-left:20px;padding-right:20px;padding-top:17px">
-            <div style="margin-left:auto;margin-right:auto;max-width:580px;width:100%">
-                <table style="width:100%" cellspacing="0" cellpadding="0">
-                    <tr>
-                        <td style="color:#000;font-family:'Open Sans',Segoe UI,Roboto,Ubuntu,Cantarell,Fira Sans,Droid Sans,Helvetica Neue,sans-serif,arial;font-size:16px">
-                            <div style="color:#6d6d6d;font-size:12px">
-                                Интернет-магазин <a href="{{ $shopUrl }}" style="color:#725aaf;display:inline-block;margin-bottom:4px;text-decoration:none;vertical-align:baseline" target="_blank">{{ $shopName }}.</a>
-                                @if($contactPhone)
-                                    <br>Контактный телефон: <a href="tel:{{ preg_replace('/\D+/', '', $contactPhone) }}" style="color:#725aaf;text-decoration:none;white-space:nowrap" target="_blank">{{ $contactPhone }}</a>
-                                @endif
-                            </div>
-                        </td>
-                    </tr>
-                </table>
-            </div>
-        </div>
+        @include('emails.partials.footer')
     </div>
 </div>
 </body>

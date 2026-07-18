@@ -57,10 +57,7 @@
         </tr>
     </table>
 
-    {{-- Футер --}}
-    <div style="text-align:center;font-size:12px;color:#999999;padding-top:40px;border-top:1px solid #eeeeee;margin-top:40px;">
-        С уважением, команда Again
-    </div>
+    @include('emails.partials.footer')
 </div>
 </body>
 </html>
