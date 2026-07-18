@@ -54,6 +54,13 @@ class ChatBindingService
                     $this->tagResolvedChannelMessages($existing);
                 }
 
+                // Пользователь мог открыть мессенджер до входа на витрину.
+                // Когда та же web-chat сессия позднее получает client_id,
+                // переносим уже известные messenger-id в профиль клиента.
+                if ($clientId && ! empty($existing->resolved_channels)) {
+                    $this->bindResolvedChannelsToClient($existing, $clientId);
+                }
+
                 return $existing;
             }
         }
@@ -201,6 +208,33 @@ class ChatBindingService
         $channels[$source] = array_values(array_unique(array_map('strval', $externalIds)));
 
         $binding->forceFill(['resolved_channels' => $channels])->save();
+    }
+
+    /**
+     * Привязать каналы, открытые до авторизации, к клиенту, который появился
+     * в той же web-chat сессии позднее.
+     */
+    protected function bindResolvedChannelsToClient(ChatBindingToken $binding, int $clientId): void
+    {
+        $client = Client::find($clientId);
+        if (! $client) {
+            return;
+        }
+
+        foreach ($binding->resolved_channels ?? [] as $source => $externalIds) {
+            if (! in_array($source, self::CHANNELS, true)) {
+                continue;
+            }
+
+            foreach ((array) $externalIds as $externalId) {
+                if (blank($externalId)) {
+                    continue;
+                }
+
+                $this->saveMessengerId($client, $source, (string) $externalId);
+                $this->attachClientToConversation($source, (string) $externalId, $client->id);
+            }
+        }
     }
 
     /**
