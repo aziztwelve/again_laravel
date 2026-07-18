@@ -9,7 +9,16 @@
     $imageUrl = optional($product->main_image)->url;
     if (! $imageUrl && optional($product->main_image)->path) {
         $storedPath = ltrim($product->main_image->path, '/');
-        foreach ([$storedPath, 'products/'.$storedPath] as $candidate) {
+        $fileName = basename($storedPath);
+        $imageCandidates = [
+            $storedPath,
+            'products/'.$storedPath,
+            'products/original_'.$fileName,
+            'products/lg_'.$fileName,
+            'products/md_'.$fileName,
+            'products/sm_'.$fileName,
+        ];
+        foreach (array_unique($imageCandidates) as $candidate) {
             if (\Illuminate\Support\Facades\Storage::disk('public')->exists($candidate)) {
                 $imageUrl = \Illuminate\Support\Facades\Storage::disk('public')->url($candidate);
                 break;
