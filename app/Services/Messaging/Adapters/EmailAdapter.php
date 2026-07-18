@@ -125,9 +125,6 @@ class EmailAdapter extends AbstractMessageAdapter
 
         // Для изображений показываем превью
         if ($type === 'image' && $url) {
-
-            return "";
-
             return "
                 <div style='margin-bottom: 15px;'>
                     <img src='{$url}' alt='{$fileName}' style='max-width: 100%; height: auto; border-radius: 8px; border: 1px solid #ddd;'>
