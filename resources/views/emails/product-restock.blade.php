@@ -7,6 +7,15 @@
 </head>
 @php
     $imageUrl = optional($product->main_image)->url;
+    if (! $imageUrl && optional($product->main_image)->path) {
+        $storedPath = ltrim($product->main_image->path, '/');
+        foreach ([$storedPath, 'products/'.$storedPath] as $candidate) {
+            if (\Illuminate\Support\Facades\Storage::disk('public')->exists($candidate)) {
+                $imageUrl = \Illuminate\Support\Facades\Storage::disk('public')->url($candidate);
+                break;
+            }
+        }
+    }
     $price = $product->discount_price > 0 ? $product->discount_price : $product->price;
     $priceFormatted = number_format((float)$price, 0, '.', ' ') . ' р.';
     $font = "'Open Sans',Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif";
