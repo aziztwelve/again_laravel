@@ -182,6 +182,7 @@ class CartAnalyticsController extends Controller
         }
 
         $abandoned = [];
+        $abandonedAmount = [];
         $ordered = [];
         $orderedAmount = [];
 
@@ -190,6 +191,7 @@ class CartAnalyticsController extends Controller
             $orRow = $raw->first(fn ($r) => $r->bucket === $bucket && $r->status === 'ordered');
 
             $abandoned[] = (int) ($abRow->cnt ?? 0);
+            $abandonedAmount[] = (float) ($abRow->amount ?? 0);
             $ordered[] = (int) ($orRow->cnt ?? 0);
             $orderedAmount[] = (float) ($orRow->amount ?? 0);
         }
@@ -197,6 +199,7 @@ class CartAnalyticsController extends Controller
         return [
             'labels' => $labels,
             'abandoned' => $abandoned,
+            'abandoned_amount' => $abandonedAmount,
             'ordered' => $ordered,
             'ordered_amount' => $orderedAmount,
             'granularity' => $granularity,

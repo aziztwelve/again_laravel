@@ -97,8 +97,6 @@ class AbandonedCartService
                 // Промокод-стимул на последнем шаге (фаза 2), если включён.
                 $promoCode = $this->maybeIssuePromo($cart, $stepNum);
 
-                $message = $this->buildMessage($cart, $stepNum, $promoCode);
-
                 foreach ($recipients as $recipient) {
                     // Идемпотентность отдельна для каждого канала, поэтому
                     // повторный запуск не создаст дубль и не заблокирует остальные.
@@ -110,6 +108,7 @@ class AbandonedCartService
                     if (! $comm->wasRecentlyCreated) {
                         continue;
                     }
+                    $message = $this->buildMessage($cart, $stepNum, $promoCode, $comm->id);
 
                     SendNotificationJob::dispatch(
                         $recipient['channel'],
@@ -200,7 +199,6 @@ class AbandonedCartService
             return ['ok' => false, 'reason' => 'no_contact'];
         }
 
-        $message = $this->buildMessage($cart, 1);
         $communications = [];
         foreach ($recipients as $recipient) {
             $comm = CartCommunication::create([
@@ -211,6 +209,7 @@ class AbandonedCartService
                 'status' => 'queued',
             ]);
             $communications[] = $comm;
+            $message = $this->buildMessage($cart, 1, null, $comm->id);
 
             SendNotificationJob::dispatch(
                 $recipient['channel'],
@@ -247,9 +246,9 @@ class AbandonedCartService
      * @param  string|null  $promoCode  Промокод-стимул (шаг 2, фаза 2), если выдан.
      * @return array{subject:string, body:string}
      */
-    public function buildMessage(Cart $cart, int $step, ?string $promoCode = null): array
+    public function buildMessage(Cart $cart, int $step, ?string $promoCode = null, ?int $communicationId = null): array
     {
-        $link = $this->recoveryUrl($cart);
+        $link = $this->recoveryUrl($cart, $communicationId);
         $itemsBlock = $this->itemsBlock($cart);
         $total = NumberHelper::formatRussian($cart->total, 0);
 
@@ -386,7 +385,7 @@ class AbandonedCartService
         return implode("\n", $lines);
     }
 
-    protected function recoveryUrl(Cart $cart): string
+    protected function recoveryUrl(Cart $cart, ?int $communicationId = null): string
     {
         $base = rtrim((string) config('abandoned_cart.recovery_url'), '/');
 
@@ -399,7 +398,7 @@ class AbandonedCartService
             $cart->save();
         }
 
-        return $base.'/'.$cart->recovery_token;
+        return $base.'/'.$cart->recovery_token.($communicationId ? '?communication='.$communicationId : '');
     }
 
     protected function withinSendWindow(Carbon $now): bool

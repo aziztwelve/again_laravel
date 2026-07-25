@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Traits\ProductsTrait;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 /**
  * Публичное восстановление брошенной корзины по recovery_token из письма.
@@ -25,7 +26,7 @@ class CartRestoreController extends Controller
 {
     use ProductsTrait;
 
-    public function show(string $token): JsonResponse
+    public function show(Request $request, string $token): JsonResponse
     {
         $cart = Cart::with(['items'])
             ->where('recovery_token', $token)
@@ -44,6 +45,7 @@ class CartRestoreController extends Controller
         // ABANDONED → ACTIVE). Оформленную (ordered) корзину не трогаем.
         // См. docs/tasks/universal-cart.md.
         $revive = ['last_activity_at' => now()];
+        if (($communicationId = $request->integer('communication')) && $cart->communications()->whereKey($communicationId)->exists()) $revive['recovery_cart_communication_id'] = $communicationId;
         if ($cart->status === 'abandoned') {
             $revive['status'] = 'active';
         }

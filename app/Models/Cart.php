@@ -50,4 +50,9 @@ class Cart extends Model
     {
         return $this->hasMany(CartCommunication::class);
     }
+
+    public function recoveryCommunication(): BelongsTo
+    {
+        return $this->belongsTo(CartCommunication::class, 'recovery_cart_communication_id');
+    }
 }

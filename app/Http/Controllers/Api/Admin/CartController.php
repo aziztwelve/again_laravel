@@ -48,6 +48,7 @@ class CartController extends Controller
             ->with([
                 'client.profile',
                 'items',
+                'recoveryCommunication',
                 // Последняя коммуникация для колонок «Канал / Коммуникация / Тип».
                 'communications' => fn ($q) => $q->orderByDesc('id'),
             ])
@@ -94,6 +95,7 @@ class CartController extends Controller
                         'status' => $lastComm->status,
                         'sent_at' => $lastComm->sent_at,   // «Коммуникация» (дата)
                     ] : null,
+                    'email_conversion' => $cart->recoveryCommunication?->channel === 'email' ? 'Письмо '.($cart->recoveryCommunication->step ?? 'вручную') : null,
                 ];
             });
 
