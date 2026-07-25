@@ -90,6 +90,25 @@ class UtmTrackingTest extends TestCase
         $this->assertDatabaseHas('utm_visits', ['utm_link_id' => $link->id]);
     }
 
+    public function test_long_link_tracker_records_visit_and_returns_to_canonical_long_url(): void
+    {
+        $channel = $this->channel();
+        $link = $this->link($channel, [
+            'slug' => 'long1234',
+            'utm_campaign' => 'summer_sale',
+        ]);
+
+        $response = $this->get('/api/public/utm/track/long1234');
+
+        $response->assertRedirect('https://example.com/page?utm_source=ig&utm_campaign=summer_sale');
+        $response->assertPlainCookie('utm_link_id', (string) $link->id);
+        $this->assertDatabaseHas('utm_visits', ['utm_link_id' => $link->id]);
+        $this->assertSame(
+            'https://example.com/page?utm_source=ig&utm_campaign=summer_sale&utm_link=long1234',
+            $link->default_url
+        );
+    }
+
     public function test_redirect_tracker_redirects_inactive_slug_to_home_and_returns_404_for_unknown_slug(): void
     {
         config(['utm.tracking_base_url' => 'https://example.com']);

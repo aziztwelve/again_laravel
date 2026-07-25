@@ -79,4 +79,21 @@ class UtmLink extends Model
 
         return $this->target_url.$separator.http_build_query($params);
     }
+
+    /**
+     * Длинная ссылка для прямой раздачи.
+     *
+     * utm_link позволяет витрине распознать конкретную метку и передать
+     * посетителя в публичный трекер. Сам трекер удалит служебный параметр
+     * перед переходом на целевую страницу, но запишет визит и cookie
+     * атрибуции так же, как для короткой ссылки /go/{slug}.
+     */
+    public function getDefaultUrlAttribute(): string
+    {
+        $separator = str_contains($this->target_url_with_params, '?') ? '&' : '?';
+
+        return $this->target_url_with_params.$separator.http_build_query([
+            'utm_link' => $this->slug,
+        ]);
+    }
 }

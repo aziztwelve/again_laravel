@@ -27,6 +27,8 @@ class UtmLinkResource extends JsonResource
             // Готовая ссылка-трекер для кнопки «копировать в буфер».
             'tracking_url' => $this->tracking_url,
             'target_url_with_params' => $this->target_url_with_params,
+            // Длинная ссылка: UTM-параметры + идентификатор для атрибуции.
+            'default_url' => $this->default_url,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

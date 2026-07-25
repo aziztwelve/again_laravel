@@ -112,6 +112,13 @@ Route::middleware('guest')->group(function () {
 
 Route::prefix('/public')->group(function () {
 
+    // Длинная UTM-ссылка приходит сначала на витрину с ?utm_link={slug}.
+    // Middleware витрины переводит её сюда, чтобы записать визит и поставить
+    // utm_link_id до возврата на целевую страницу с UTM-параметрами.
+    Route::get('/utm/track/{slug}', [\App\Http\Controllers\Public\UtmRedirectController::class, 'handle'])
+        ->where('slug', '[a-z0-9]{8}')
+        ->name('public.utm.track');
+
     Route::get('/settings/analytics', [AnalyticsSettingsController::class, 'getAnalyticsSettings']);
 
     Route::prefix('oto-banners')->name('public.oto-banners.')->group(function () {
