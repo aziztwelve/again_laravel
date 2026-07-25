@@ -325,4 +325,34 @@ class UniversalCartTest extends TestCase
         $this->assertSame(0, $response->json('data.ordered_carts'));
         $this->assertSame(1000, (int) $response->json('data.lost_revenue'));
     }
+
+    public function test_abandoned_cart_analytics_uses_requested_date_range(): void
+    {
+        $client = $this->client();
+
+        Cart::create([
+            'client_id' => $client->id,
+            'status' => 'abandoned',
+            'created_at' => now()->subDays(45),
+            'total' => 1000,
+            'total_original' => 1000,
+            'total_discount' => 0,
+        ]);
+        Cart::create([
+            'client_id' => $client->id,
+            'status' => 'ordered',
+            'created_at' => now()->subDays(5),
+            'total' => 2000,
+            'total_original' => 2000,
+            'total_discount' => 0,
+        ]);
+
+        $response = $this->actingAs($client, 'sanctum')->getJson('/api/carts/analytics?date_from='.now()->subDays(7)->toDateString().'&date_to='.now()->toDateString());
+
+        $response->assertOk()
+            ->assertJsonPath('data.period.from', now()->subDays(7)->toDateString())
+            ->assertJsonPath('data.period.to', now()->toDateString());
+        $this->assertSame(0, $response->json('data.abandoned_count'));
+        $this->assertSame(1, $response->json('data.ordered_carts'));
+    }
 }
