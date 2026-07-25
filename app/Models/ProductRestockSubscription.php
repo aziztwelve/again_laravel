@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ProductRestockSubscription extends Model
 {
@@ -24,6 +25,7 @@ class ProductRestockSubscription extends Model
         'meta',
         'ip',
         'user_agent',
+        'manager_comment',
     ];
 
     protected $casts = [
@@ -44,6 +46,11 @@ class ProductRestockSubscription extends Model
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
+    }
+
+    public function histories(): HasMany
+    {
+        return $this->hasMany(ProductRestockSubscriptionHistory::class);
     }
 
     /**

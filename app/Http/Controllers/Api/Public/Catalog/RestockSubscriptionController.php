@@ -75,7 +75,7 @@ class RestockSubscriptionController extends Controller
             ], 200);
         }
 
-        ProductRestockSubscription::create([
+        $subscription = ProductRestockSubscription::create([
             'product_id' => $product->id,
             'product_variant_id' => $data['product_variant_id'] ?? null,
             'client_id' => $client?->id,
@@ -87,6 +87,11 @@ class RestockSubscriptionController extends Controller
             'meta' => $data['meta'] ?? null,
             'ip' => $request->ip(),
             'user_agent' => $request->userAgent(),
+        ]);
+
+        $subscription->histories()->create([
+            'action' => 'created',
+            'description' => 'Заявка создана на сайте',
         ]);
 
         return response()->json([

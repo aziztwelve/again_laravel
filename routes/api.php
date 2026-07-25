@@ -580,6 +580,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::prefix('/restock-subscriptions')->group(function () {
         Route::get('/', [AdminRestockSubscriptionController::class, 'index']);
         Route::get('/count', [AdminRestockSubscriptionController::class, 'count']);
+        Route::get('/{restock_subscription}', [AdminRestockSubscriptionController::class, 'show']);
+        Route::put('/{restock_subscription}', [AdminRestockSubscriptionController::class, 'update']);
         Route::delete('/{restock_subscription}', [AdminRestockSubscriptionController::class, 'destroy']);
     });
 

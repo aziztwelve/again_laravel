@@ -109,5 +109,10 @@ class NotifyRestockSubscribersJob implements ShouldQueue
             'status' => ProductRestockSubscription::STATUS_NOTIFIED,
             'notified_at' => Carbon::now(),
         ]);
+
+        $subscription->histories()->create([
+            'action' => 'notified',
+            'description' => 'Клиенту отправлено уведомление о поступлении товара',
+        ]);
     }
 }

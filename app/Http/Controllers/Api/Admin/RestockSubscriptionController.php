@@ -70,10 +70,66 @@ class RestockSubscriptionController extends Controller
         ]);
     }
 
+    public function show(ProductRestockSubscription $restock_subscription): JsonResponse
+    {
+        return response()->json([
+            'data' => $this->cardData($restock_subscription),
+        ]);
+    }
+
+    public function update(Request $request, ProductRestockSubscription $restock_subscription): JsonResponse
+    {
+        $data = $request->validate([
+            'manager_comment' => ['nullable', 'string', 'max:5000'],
+        ]);
+
+        $comment = isset($data['manager_comment']) ? trim($data['manager_comment']) : null;
+        if ($restock_subscription->manager_comment !== $comment) {
+            $restock_subscription->update(['manager_comment' => $comment ?: null]);
+            $restock_subscription->histories()->create([
+                'user_id' => $request->user()?->id,
+                'action' => 'manager_comment_updated',
+                'description' => $comment ? 'Менеджер обновил комментарий' : 'Менеджер удалил комментарий',
+            ]);
+        }
+
+        return response()->json([
+            'message' => 'Комментарий менеджера сохранён',
+            'data' => $this->cardData($restock_subscription->fresh()),
+        ]);
+    }
+
     public function destroy(ProductRestockSubscription $restock_subscription): JsonResponse
     {
         $restock_subscription->delete();
 
         return response()->json(null, 204);
+    }
+
+    private function cardData(ProductRestockSubscription $subscription): array
+    {
+        $subscription->load([
+            'product:id,name,slug,stock_quantity',
+            'variant:id,name',
+            'client.profile',
+            'histories.user.profile',
+        ]);
+
+        return [
+            ...$subscription->toArray(),
+            'history' => $subscription->histories
+                ->sortByDesc('id')
+                ->values()
+                ->map(fn ($entry) => [
+                    'id' => $entry->id,
+                    'action' => $entry->action,
+                    'description' => $entry->description,
+                    'created_at' => $entry->created_at,
+                    'user' => $entry->user ? [
+                        'id' => $entry->user->id,
+                        'name' => $entry->user->get_full_name() ?: $entry->user->email,
+                    ] : null,
+                ]),
+        ];
     }
 }
