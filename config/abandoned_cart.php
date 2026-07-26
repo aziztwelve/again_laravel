@@ -21,6 +21,7 @@ return [
     'steps' => [
         ['step' => 1, 'after_hours' => 0],
         ['step' => 2, 'after_hours' => 48],
+        ['step' => 3, 'after_hours' => 96],
     ],
 
     // Приоритет каналов (решение #4). Берём первый, для которого у клиента есть
@@ -37,7 +38,7 @@ return [
     // текст письма/сообщения. См. docs/tasks/abandoned-cart.md.
     'promo' => [
         'enabled' => (bool) env('ABANDONED_CART_PROMO_ENABLED', false),
-        'step' => (int) env('ABANDONED_CART_PROMO_STEP', 2),
+        'step' => (int) env('ABANDONED_CART_PROMO_STEP', 3),
         'discount_type' => env('ABANDONED_CART_PROMO_TYPE', 'percentage'), // percentage|fixed
         'discount_amount' => (float) env('ABANDONED_CART_PROMO_AMOUNT', 10),
         'ttl_days' => (int) env('ABANDONED_CART_PROMO_TTL_DAYS', 7),
