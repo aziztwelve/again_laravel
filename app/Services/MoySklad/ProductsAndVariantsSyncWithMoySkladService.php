@@ -212,7 +212,10 @@ class ProductsAndVariantsSyncWithMoySkladService
             'price' => $this->extractPrice($data->salePrices ?? []),
             'cost_price' => $this->extractCostPrice($data->buyPrice ?? (object)['value' => 0]),
             'barcode' => $barcode,
-            'code' => $data->code ?? null, // Сохраняем код точно как в МойСклад
+            // В админке артикулом является поле SKU. Код МойСклад
+            // сохраняем в оба поля, чтобы он был виден в карточке товара.
+            'sku' => $data->code ?: null,
+            'code' => $data->code ?? null,
             'stock_quantity' => $stockQty,
 //            'sku' => $slug,
             'weight' => $this->extractWeight($data),
@@ -350,9 +353,10 @@ class ProductsAndVariantsSyncWithMoySkladService
                 'color_id' => $findColorFromTable?->id ?? null,
                 'name' => $variant_name,
                 'unit_id' => $product->default_unit_id,
-//                'sku' => $sku,
+                // Артикул варианта берём из кода его модификации в МойСклад.
+                'sku' => $data->code ?: null,
                 'barcode' => $variantBarcode,
-                'code' => $data->code ?? null, // Сохраняем код точно как в МойСклад
+                'code' => $data->code ?? null,
                 'price' => $this->extractPrice($data->salePrices ?? []),
                 'cost_price' => $this->extractCostPrice($data->buyPrice ?? (object)['value' => 0]),
                 'stock_quantity' => $stockQty,
