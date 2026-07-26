@@ -214,7 +214,7 @@ class ProductsAndVariantsSyncWithMoySkladService
             'barcode' => $barcode,
             // В админке артикулом является поле SKU. Код МойСклад
             // сохраняем в оба поля, чтобы он был виден в карточке товара.
-            'sku' => $data->code ?: null,
+            'sku' => ($data->code ?? null) ?: null,
             'code' => $data->code ?? null,
             'stock_quantity' => $stockQty,
 //            'sku' => $slug,
@@ -354,7 +354,7 @@ class ProductsAndVariantsSyncWithMoySkladService
                 'name' => $variant_name,
                 'unit_id' => $product->default_unit_id,
                 // Артикул варианта берём из кода его модификации в МойСклад.
-                'sku' => $data->code ?: null,
+                'sku' => ($data->code ?? null) ?: null,
                 'barcode' => $variantBarcode,
                 'code' => $data->code ?? null,
                 'price' => $this->extractPrice($data->salePrices ?? []),
