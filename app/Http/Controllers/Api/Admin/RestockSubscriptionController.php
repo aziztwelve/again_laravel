@@ -24,7 +24,11 @@ class RestockSubscriptionController extends Controller
             $query->where('product_id', $request->product_id);
         }
 
-        if ($request->filled('status')) {
+        // Основной экран «Скоро в продаже» — очередь ожидающих заявок.
+        // Уведомлённые не теряются: их можно открыть явным фильтром статуса.
+        if (! $request->has('status')) {
+            $query->pending();
+        } elseif ($request->filled('status')) {
             $query->where('status', $request->status);
         }
 
