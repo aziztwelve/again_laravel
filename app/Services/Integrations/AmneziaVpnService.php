@@ -103,7 +103,7 @@ class AmneziaVpnService
         return $result;
     }
 
-    private function proxyOptions(): ?array
+    public function proxyOptions(): ?array
     {
         $settings = Setting::getGroup(self::GROUP);
         $scheme = (string) ($settings['scheme'] ?? 'socks5h');

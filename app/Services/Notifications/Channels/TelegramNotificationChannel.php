@@ -3,7 +3,9 @@
 namespace App\Services\Notifications\Channels;
 
 use App\Services\Notifications\BaseNotificationChannel;
+use App\Services\Integrations\AmneziaVpnService;
 use DefStudio\Telegraph\Models\TelegraphChat;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class TelegramNotificationChannel extends BaseNotificationChannel
@@ -27,9 +29,16 @@ class TelegramNotificationChannel extends BaseNotificationChannel
                 return false;
             }
 
-            $response = $chat
-                ->html(e($message))
-                ->send();
+            // Telegraph internally uses the Laravel HTTP factory. Apply the
+            // Amnezia SOCKS5 options only for this synchronous Telegram call.
+            Http::globalOptions(app(AmneziaVpnService::class)->proxyOptions() ?? []);
+            try {
+                $response = $chat
+                    ->html(e($message))
+                    ->send();
+            } finally {
+                Http::globalOptions([]);
+            }
 
             if (! $response->successful()) {
                 Log::warning('TelegramNotificationChannel: Telegram rejected message', [
