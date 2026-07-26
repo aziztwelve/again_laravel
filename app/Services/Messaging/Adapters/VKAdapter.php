@@ -176,7 +176,36 @@ class VKAdapter extends AbstractMessageAdapter
      */
     protected function uploadPhoto(string $peerId, string $filePath): ?string
     {
+        $temporaryJpeg = null;
+
         try {
+            // VK Messages API does not accept WebP reliably: upload succeeds,
+            // but returns an empty `photo` value on save. Convert it to JPEG
+            // before uploading, while keeping the original product image intact.
+            if (strtolower(pathinfo($filePath, PATHINFO_EXTENSION)) === 'webp') {
+                if (! function_exists('imagecreatefromwebp')) {
+                    Log::error('VKAdapter: GD WebP support is unavailable');
+                    return null;
+                }
+
+                $source = @imagecreatefromwebp($filePath);
+                if (! $source) {
+                    Log::error('VKAdapter: Failed to decode WebP image', ['file_path' => $filePath]);
+                    return null;
+                }
+
+                $temporaryJpeg = tempnam(sys_get_temp_dir(), 'vk_photo_').'.jpg';
+                if (! imagejpeg($source, $temporaryJpeg, 90)) {
+                    imagedestroy($source);
+                    @unlink($temporaryJpeg);
+                    Log::error('VKAdapter: Failed to convert WebP image to JPEG', ['file_path' => $filePath]);
+                    return null;
+                }
+
+                imagedestroy($source);
+                $filePath = $temporaryJpeg;
+            }
+
             // 1. Получаем upload URL
             $uploadServerResponse = Http::get('https://api.vk.com/method/photos.getMessagesUploadServer', [
                 'peer_id' => $peerId,
@@ -240,6 +269,10 @@ class VKAdapter extends AbstractMessageAdapter
                 'error' => $e->getMessage()
             ]);
             return null;
+        } finally {
+            if ($temporaryJpeg && file_exists($temporaryJpeg)) {
+                @unlink($temporaryJpeg);
+            }
         }
     }
 
