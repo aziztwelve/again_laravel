@@ -62,7 +62,19 @@ class NotifyRestockSubscribersJob implements ShouldQueue
             ->pending()
             ->with('client.profile')
             ->chunkById(100, function ($subscriptions) use ($product, $productUrl, $customerChannelResolver) {
+                $availableColorIds = $product->variants()
+                    ->where('stock_quantity', '>', 0)
+                    ->whereNotNull('color_id')
+                    ->pluck('color_id')
+                    ->map(fn ($id) => (int) $id)
+                    ->all();
+
                 foreach ($subscriptions as $subscription) {
+                    $selectedColorIds = collect($subscription->color_ids ?? [])->map(fn ($id) => (int) $id)->all();
+                    if ($selectedColorIds && ! array_intersect($selectedColorIds, $availableColorIds)) {
+                        continue;
+                    }
+
                     $this->notifySubscription($subscription, $product, $productUrl, $customerChannelResolver);
                 }
             });

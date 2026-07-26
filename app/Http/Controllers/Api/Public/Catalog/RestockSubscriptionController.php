@@ -7,6 +7,7 @@ use App\Http\Requests\Public\StoreRestockSubscriptionRequest;
 use App\Models\Client;
 use App\Models\Product;
 use App\Models\ProductRestockSubscription;
+use App\Models\ProductVariant;
 use App\Services\Client\GuestClientService;
 use Illuminate\Http\JsonResponse;
 
@@ -34,14 +35,28 @@ class RestockSubscriptionController extends Controller
             ], 422);
         }
 
-        if ((float)$product->stock_quantity > 0) {
+        $email = mb_strtolower(trim($data['email']));
+        $colorIds = collect($data['color_ids'] ?? [])->map(fn ($id) => (int) $id)->sort()->values()->all();
+
+        if ($colorIds) {
+            $validColorCount = ProductVariant::query()
+                ->where('product_id', $product->id)
+                ->whereIn('color_id', $colorIds)
+                ->distinct()
+                ->count('color_id');
+
+            if ($validColorCount !== count($colorIds)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Выбранный цвет недоступен для этого товара.',
+                ], 422);
+            }
+        } elseif ((float) $product->stock_quantity > 0) {
             return response()->json([
                 'success' => false,
                 'message' => 'Товар уже в наличии.',
             ], 422);
         }
-
-        $email = mb_strtolower(trim($data['email']));
 
         // Привязка к клиенту: авторизованный клиент имеет приоритет. Для гостя
         // используем единый резолвер заказов: поиск по email/телефону и создание
@@ -66,7 +81,9 @@ class RestockSubscriptionController extends Controller
             ->forProduct($product->id)
             ->pending()
             ->where('email', $email)
-            ->first();
+            ->get()
+            ->first(fn (ProductRestockSubscription $subscription) => collect($subscription->color_ids ?? [])
+                ->map(fn ($id) => (int) $id)->sort()->values()->all() === $colorIds);
 
         if ($existing) {
             return response()->json([
@@ -78,6 +95,7 @@ class RestockSubscriptionController extends Controller
         $subscription = ProductRestockSubscription::create([
             'product_id' => $product->id,
             'product_variant_id' => $data['product_variant_id'] ?? null,
+            'color_ids' => $colorIds ?: null,
             'client_id' => $client?->id,
             'name' => $data['name'] ?? null,
             'email' => $email,
@@ -91,7 +109,7 @@ class RestockSubscriptionController extends Controller
 
         $subscription->histories()->create([
             'action' => 'created',
-            'description' => 'Заявка создана на сайте',
+            'description' => $colorIds ? 'Заявка создана на сайте с выбором цветов' : 'Заявка создана на сайте',
         ]);
 
         return response()->json([

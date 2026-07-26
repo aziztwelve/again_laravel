@@ -5,8 +5,10 @@ namespace Tests\Feature;
 use App\Jobs\NotifyRestockSubscribersJob;
 use App\Models\Category;
 use App\Models\Client;
+use App\Models\Color;
 use App\Models\Product;
 use App\Models\ProductRestockSubscription;
+use App\Models\ProductVariant;
 use App\Models\UserProfile;
 use App\Services\Notifications\CustomerChannelResolver;
 use App\Services\Notifications\Jobs\SendNotificationJob;
@@ -177,6 +179,50 @@ class RestockSubscriptionTest extends TestCase
 
         // Уже notified — повторно не шлём.
         Bus::assertNotDispatched(SendNotificationJob::class);
+    }
+
+    public function test_job_waits_for_the_selected_color(): void
+    {
+        Bus::fake([SendNotificationJob::class]);
+
+        $product = $this->product(['stock_quantity' => 1]);
+        $availableColor = Color::create(['name' => 'Красный '.uniqid(), 'code' => '#ff0000']);
+        $waitingColor = Color::create(['name' => 'Чёрный '.uniqid(), 'code' => '#000000']);
+
+        ProductVariant::create([
+            'product_id' => $product->id,
+            'color_id' => $availableColor->id,
+            'name' => 'Красный',
+            'sku' => 'restock-red-'.uniqid(),
+            'price' => 1000,
+            'stock_quantity' => 1,
+        ]);
+        $waitingVariant = ProductVariant::create([
+            'product_id' => $product->id,
+            'color_id' => $waitingColor->id,
+            'name' => 'Чёрный',
+            'sku' => 'restock-black-'.uniqid(),
+            'price' => 1000,
+            'stock_quantity' => 0,
+        ]);
+
+        $subscription = ProductRestockSubscription::create([
+            'product_id' => $product->id,
+            'email' => 'color@example.com',
+            'color_ids' => [$waitingColor->id],
+            'status' => 'pending',
+        ]);
+
+        (new NotifyRestockSubscribersJob($product->id))->handle(app(CustomerChannelResolver::class));
+
+        Bus::assertNotDispatched(SendNotificationJob::class);
+        $this->assertSame('pending', $subscription->fresh()->status);
+
+        $waitingVariant->update(['stock_quantity' => 1]);
+        (new NotifyRestockSubscribersJob($product->id))->handle(app(CustomerChannelResolver::class));
+
+        Bus::assertDispatched(SendNotificationJob::class);
+        $this->assertSame('notified', $subscription->fresh()->status);
     }
 
     public function test_job_notifies_linked_subscriber_in_all_transactional_channels(): void

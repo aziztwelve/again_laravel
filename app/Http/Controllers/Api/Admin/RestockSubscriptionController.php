@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Helpers\PaginationHelper;
 use App\Http\Controllers\Controller;
 use App\Models\ProductRestockSubscription;
+use App\Models\Color;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -48,7 +49,7 @@ class RestockSubscriptionController extends Controller
             ->paginate($request->get('per_page', 20));
 
         return response()->json([
-            'data' => $list->items(),
+            'data' => $this->attachColors($list->items()),
             'meta' => PaginationHelper::format($list),
         ]);
     }
@@ -114,6 +115,7 @@ class RestockSubscriptionController extends Controller
             'client.profile',
             'histories.user.profile',
         ]);
+        $this->attachColors([$subscription]);
 
         return [
             ...$subscription->toArray(),
@@ -131,5 +133,25 @@ class RestockSubscriptionController extends Controller
                     ] : null,
                 ]),
         ];
+    }
+
+    /** Добавляет названия цветов к заявкам, не создавая отдельную pivot-таблицу. */
+    private function attachColors(iterable $subscriptions): array
+    {
+        $subscriptions = is_array($subscriptions) ? $subscriptions : iterator_to_array($subscriptions);
+        $ids = collect($subscriptions)
+            ->flatMap(fn ($subscription) => $subscription->color_ids ?? [])
+            ->unique()
+            ->values();
+        $colors = Color::query()->whereIn('id', $ids)->get(['id', 'name', 'code'])->keyBy('id');
+
+        foreach ($subscriptions as $subscription) {
+            $subscription->setAttribute('colors', collect($subscription->color_ids ?? [])
+                ->map(fn ($id) => $colors->get($id))
+                ->filter()
+                ->values());
+        }
+
+        return $subscriptions;
     }
 }

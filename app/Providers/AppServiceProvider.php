@@ -35,6 +35,7 @@ class AppServiceProvider extends ServiceProvider
 
         // Триггер «товар появился в наличии» для рассылки подписчикам «Скоро в продаже».
         \App\Models\Product::observe(\App\Observers\ProductObserver::class);
+        \App\Models\ProductVariant::observe(\App\Observers\ProductVariantObserver::class);
 
         // Прокси для всех Http:: запросов — Telegram иначе недоступен с RU-хостинга.
         // CURLPROXY_SOCKS5_HOSTNAME (7) = socks5h — DNS резолвится на стороне прокси.

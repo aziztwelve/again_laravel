@@ -16,6 +16,8 @@ class StoreRestockSubscriptionRequest extends FormRequest
         return [
             'product_id' => ['required', 'integer', 'exists:products,id'],
             'product_variant_id' => ['nullable', 'integer', 'exists:product_variants,id'],
+            'color_ids' => ['nullable', 'array', 'min:1', 'max:20'],
+            'color_ids.*' => ['integer', 'distinct', 'exists:colors,id'],
             'name' => ['nullable', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:30'],

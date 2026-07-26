@@ -15,6 +15,7 @@ class ProductRestockSubscription extends Model
     protected $fillable = [
         'product_id',
         'product_variant_id',
+        'color_ids',
         'client_id',
         'name',
         'email',
@@ -30,6 +31,7 @@ class ProductRestockSubscription extends Model
 
     protected $casts = [
         'meta' => 'array',
+        'color_ids' => 'array',
         'notified_at' => 'datetime',
     ];
 
