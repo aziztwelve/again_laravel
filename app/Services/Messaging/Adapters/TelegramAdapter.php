@@ -3,6 +3,7 @@
 namespace App\Services\Messaging\Adapters;
 
 use App\Services\Messaging\AbstractMessageAdapter;
+use App\Services\Integrations\AmneziaVpnService;
 use DefStudio\Telegraph\Models\TelegraphChat;
 use App\Models\Message;
 use Illuminate\Support\Facades\Storage;
@@ -35,7 +36,13 @@ class TelegramAdapter extends AbstractMessageAdapter
 
             // Отправка текстового сообщения (если есть текст)
             if (!empty($content)) {
-                $messageResponse = $chat->html($content)->send();
+                $messageResponse = app(AmneziaVpnService::class)
+                    ->telegramHttp()
+                    ->post("https://api.telegram.org/bot{$chat->bot->token}/sendMessage", [
+                        'chat_id' => $externalId,
+                        'text' => $content,
+                        'parse_mode' => 'HTML',
+                    ]);
 
                 if (!$messageResponse->successful()) {
                     \Log::error("TelegramAdapter: Failed to send message", [
