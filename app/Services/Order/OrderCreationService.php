@@ -30,7 +30,7 @@ class OrderCreationService
      * @param  int|null  $clientId  ID клиента; NULL для гостевого заказа
      * @return Order Созданный заказ
      */
-    public function createOrder(array $orderData, ?int $clientId = null): Order
+    public function createOrder(array $orderData, ?int $clientId = null, ?string $recoveryCartToken = null): Order
     {
         $deliveryAddress = $orderData['delivery_address'] ?? [];
         $userData = $orderData['user'] ?? [];
@@ -130,8 +130,11 @@ class OrderCreationService
         // docs/tasks/guest-client-auto-create.md). Поэтому сначала пробуем найти
         // корзину по client_id, а если её нет — по guest_token.
         $cartLinked = false;
+        if ($recoveryCartToken) {
+            $cartLinked = $this->linkRecoveryCartToOrder($order, $recoveryCartToken);
+        }
         if ($resolvedClientId) {
-            $cartLinked = $this->linkCartToOrder($order, (int) $resolvedClientId);
+            $cartLinked = $cartLinked || $this->linkCartToOrder($order, (int) $resolvedClientId);
         }
         if (! $cartLinked && ! empty($orderData['guest_token'])) {
             // Гостевая корзина по guest_token (универсальная корзина).
@@ -183,6 +186,32 @@ class OrderCreationService
             ->whereIn('status', ['active', 'abandoned'])
             ->orderByRaw("status = 'abandoned'")
             ->orderByDesc('created_at')
+            ->first();
+
+        if (! $cart) {
+            return false;
+        }
+
+        $cart->update([
+            'status' => 'ordered',
+            'ordered_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $order->forceFill(['cart_id' => $cart->id])->save();
+
+        return true;
+    }
+
+    /**
+     * Связать заказ с конкретной корзиной, из которой пользователь вернулся по
+     * ссылке в письме. Токен хранится в HttpOnly-cookie только на время
+     * восстановления, поэтому не подменяет обычную привязку корзин.
+     */
+    protected function linkRecoveryCartToOrder(Order $order, string $recoveryToken): bool
+    {
+        $cart = Cart::where('recovery_token', $recoveryToken)
+            ->whereIn('status', ['active', 'abandoned'])
             ->first();
 
         if (! $cart) {

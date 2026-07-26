@@ -158,7 +158,8 @@ class PublicCheckoutController extends Controller
             // 4. Создаём заказ (client_id берётся из $validated['client_id'] или NULL)
             $order = $this->orderCreationService->createOrder(
                 $validated,
-                $orderClient?->id
+                $orderClient?->id,
+                $request->cookie('recovery_cart_token'),
             );
 
             // 5. Позиции

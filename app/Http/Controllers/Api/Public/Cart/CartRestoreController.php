@@ -98,6 +98,16 @@ class CartRestoreController extends Controller
             'success' => true,
             'cart_id' => $cart->id,
             'items' => $items,
-        ]);
+        ])->withCookie(cookie(
+            name: 'recovery_cart_token',
+            value: $cart->recovery_token,
+            minutes: 24 * 60,
+            path: config('cart.cookie.path', '/'),
+            domain: config('cart.cookie.domain'),
+            secure: (bool) config('cart.cookie.secure', true),
+            httpOnly: true,
+            raw: false,
+            sameSite: config('cart.cookie.same_site', 'lax'),
+        ));
     }
 }

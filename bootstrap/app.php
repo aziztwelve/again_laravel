@@ -29,6 +29,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->encryptCookies(except: [
             'utm_link_id',
             'guest_token',
+            'recovery_cart_token',
         ]);
 
         // На api-группе по умолчанию нет cookie-middleware. Подключаем
