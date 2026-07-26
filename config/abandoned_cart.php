@@ -54,9 +54,9 @@ return [
     ],
 
     // База для ссылки восстановления корзины: {recovery_url}/{token}.
-    // По умолчанию — витрина (FRONTEND_URL) + /cart/restore.
+    // По умолчанию — витрина (FRONTEND_URL) + /cart/recovery.
     'recovery_url' => env(
         'CART_RECOVERY_URL',
-        rtrim((string) env('FRONTEND_URL', env('APP_URL')), '/').'/cart/restore'
+        rtrim((string) env('FRONTEND_URL', env('APP_URL')), '/').'/cart/recovery'
     ),
 ];
