@@ -191,8 +191,15 @@ class ProductsAndVariantsSyncWithMoySkladService
         if (!$product) {
             $product = Product::withTrashed()
                 ->where(function ($query) use ($legacyUuidSlug, $barcode) {
-                    $query->where('slug', $legacyUuidSlug)
-                        ->orWhere('barcode', $barcode);
+                    $query->where('slug', $legacyUuidSlug);
+
+                    // `orWhere('barcode', null)` becomes `barcode is null`.
+                    // Most products have no barcode, so a new item from
+                    // МойСклад previously matched an unrelated local product
+                    // instead of being created.
+                    if ($barcode !== null && $barcode !== '') {
+                        $query->orWhere('barcode', $barcode);
+                    }
                 })
                 ->first();
         }
