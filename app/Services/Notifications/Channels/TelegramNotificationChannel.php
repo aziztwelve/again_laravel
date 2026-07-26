@@ -30,13 +30,29 @@ class TelegramNotificationChannel extends BaseNotificationChannel
 
             // Telegraph creates its own HTTP request and cannot receive the
             // dynamic SOCKS5 options. Send through the shared Amnezia client.
-            $response = app(AmneziaVpnService::class)
-                ->telegramHttp()
-                ->post("https://api.telegram.org/bot{$chat->bot->token}/sendMessage", [
+            $telegram = app(AmneziaVpnService::class)->telegramHttp();
+            $imageUrl = $data['image_url'] ?? null;
+
+            if ($imageUrl) {
+                $response = $telegram->post("https://api.telegram.org/bot{$chat->bot->token}/sendPhoto", [
+                    'chat_id' => $recipientId,
+                    'photo' => $imageUrl,
+                    'caption' => $message,
+                    'parse_mode' => 'HTML',
+                    'reply_markup' => json_encode([
+                        'inline_keyboard' => [[[
+                            'text' => 'Купить',
+                            'url' => $data['product_url'] ?? $imageUrl,
+                        ]]],
+                    ], JSON_UNESCAPED_UNICODE),
+                ]);
+            } else {
+                $response = $telegram->post("https://api.telegram.org/bot{$chat->bot->token}/sendMessage", [
                     'chat_id' => $recipientId,
                     'text' => $message,
                     'parse_mode' => 'HTML',
                 ]);
+            }
 
             if (! $response->successful()) {
                 Log::warning('TelegramNotificationChannel: Telegram rejected message', [

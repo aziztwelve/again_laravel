@@ -14,6 +14,7 @@ use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\View;
 
 class NotifyRestockSubscribersJob implements ShouldQueue
@@ -55,13 +56,14 @@ class NotifyRestockSubscribersJob implements ShouldQueue
 
         $frontendUrl = rtrim((string) config('app.frontend_url'), '/');
         $productUrl = $frontendUrl.'/catalog/'.$product->slug;
+        $imageAttachment = $this->productImageAttachment($product);
 
         // Идемпотентность (#6): обрабатываем только pending; после рассылки → notified.
         ProductRestockSubscription::query()
             ->forProduct($product->id)
             ->pending()
             ->with('client.profile')
-            ->chunkById(100, function ($subscriptions) use ($product, $productUrl, $customerChannelResolver) {
+            ->chunkById(100, function ($subscriptions) use ($product, $productUrl, $imageAttachment, $customerChannelResolver) {
                 $availableColorIds = $product->variants()
                     ->where('stock_quantity', '>', 0)
                     ->whereNotNull('color_id')
@@ -75,15 +77,63 @@ class NotifyRestockSubscribersJob implements ShouldQueue
                         continue;
                     }
 
-                    $this->notifySubscription($subscription, $product, $productUrl, $customerChannelResolver);
+                    $this->notifySubscription($subscription, $product, $productUrl, $imageAttachment, $customerChannelResolver);
                 }
             });
+    }
+
+    /**
+     * Возвращает одновременно локальный путь и публичный URL: разные
+     * мессенджеры используют разные способы загрузки изображения.
+     */
+    protected function productImageAttachment(Product $product): ?array
+    {
+        $image = $product->main_image;
+
+        if (! $image) {
+            return null;
+        }
+
+        if (! empty($image->url)) {
+            return [
+                'type' => 'image',
+                'url' => $image->url,
+            ];
+        }
+
+        if (empty($image->path)) {
+            return null;
+        }
+
+        $storedPath = ltrim($image->path, '/');
+        $fileName = basename($storedPath);
+        $candidates = [
+            $storedPath,
+            'products/'.$storedPath,
+            'products/original_'.$fileName,
+            'products/lg_'.$fileName,
+            'products/md_'.$fileName,
+            'products/sm_'.$fileName,
+        ];
+
+        foreach (array_unique($candidates) as $candidate) {
+            if (Storage::disk('public')->exists($candidate)) {
+                return [
+                    'type' => 'image',
+                    'file_path' => $candidate,
+                    'url' => Storage::disk('public')->url($candidate),
+                ];
+            }
+        }
+
+        return null;
     }
 
     protected function notifySubscription(
         ProductRestockSubscription $subscription,
         Product $product,
         string $productUrl,
+        ?array $imageAttachment,
         CustomerChannelResolver $customerChannelResolver
     ): void {
         $textMessage = sprintf(
@@ -105,6 +155,9 @@ class NotifyRestockSubscribersJob implements ShouldQueue
                 [
                     'type' => 'product_restock',
                     'product_id' => $product->id,
+                    'product_url' => $productUrl,
+                    'image_url' => $imageAttachment['url'] ?? null,
+                    'attachments' => $imageAttachment ? [$imageAttachment] : [],
                     'subject' => 'Уже в наличии — Again',
                     'html' => $recipient['channel'] === 'email' ? $html : null,
                     'mirror_conversation' => [

@@ -26,7 +26,11 @@ class VKNotificationChannel extends BaseNotificationChannel
             }
 
             // recipientId = vk_user_id
-            $success = $this->adapter->sendMessage($recipientId, $message);
+            $success = $this->adapter->sendMessage(
+                $recipientId,
+                $message,
+                $data['attachments'] ?? []
+            );
 
             $this->logSend($recipientId, $this->getChannelName(), $message, $success);
             return $success;

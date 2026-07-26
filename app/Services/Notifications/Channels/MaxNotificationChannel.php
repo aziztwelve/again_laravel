@@ -28,7 +28,11 @@ class MaxNotificationChannel extends BaseNotificationChannel
                 return false;
             }
 
-            $success = $this->adapter->sendMessage($recipientId, $message);
+            $success = $this->adapter->sendMessage(
+                $recipientId,
+                $message,
+                $data['attachments'] ?? []
+            );
 
             $this->logSend($recipientId, $this->getChannelName(), $message, $success);
             return $success;
