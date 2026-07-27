@@ -5,6 +5,7 @@ namespace Tests\Feature\Cart;
 use App\Models\Cart;
 use App\Models\CartCommunication;
 use App\Models\Client;
+use App\Models\Order;
 use App\Models\Product;
 use App\Models\UserProfile;
 use App\Services\Cart\AbandonedCartService;
@@ -151,6 +152,36 @@ class AbandonedCartTest extends TestCase
         $this->assertSame(0, $result2['sent']);
         Queue::assertPushed(SendNotificationJob::class, 1);
         $this->assertSame(1, CartCommunication::where('cart_id', $cart->id)->count());
+    }
+
+    public function test_new_client_receives_first_order_copy(): void
+    {
+        $client = $this->client(['email' => 'new@example.com']);
+        $cart = $this->cart($client, 'abandoned', now(), ['recovery_token' => 'new-'.uniqid()]);
+
+        $message = $this->service()->buildMessage($cart->fresh('client.profile', 'items.product'), 2);
+
+        $this->assertSame('Дарим 10% на первый заказ 🤍', $message['subject']);
+        $this->assertStringContainsString('FIRST10', $message['body']);
+    }
+
+    public function test_returning_client_receives_returning_copy(): void
+    {
+        $client = $this->client(['email' => 'returning@example.com']);
+        Order::create([
+            'order_number' => 'TEST-'.uniqid(),
+            'client_id' => $client->id,
+            'status' => 'completed',
+            'payment_status' => 'paid',
+            'total_amount' => 1990,
+        ]);
+        $cart = $this->cart($client, 'abandoned', now(), ['recovery_token' => 'returning-'.uniqid()]);
+
+        $message = $this->service()->buildMessage($cart->fresh('client.profile', 'items.product'), 1);
+
+        $this->assertSame('Тест, вы снова выбрали нас ❤️', $message['subject']);
+        $this->assertStringContainsString('приоритетная обработка', $message['body']);
+        $this->assertStringNotContainsString('FIRST10', $message['body']);
     }
 
     public function test_sends_abandoned_cart_to_every_available_channel(): void

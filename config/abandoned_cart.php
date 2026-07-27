@@ -13,15 +13,15 @@ return [
 
     // Через сколько часов бездействия активная корзина считается брошенной.
     // «Бездействие» = COALESCE(cart.updated_at, cart.created_at).
-    'abandon_after_hours' => (int) env('ABANDONED_CART_ABANDON_AFTER_HOURS', 24),
+    'abandon_after_hours' => (int) env('ABANDONED_CART_ABANDON_AFTER_HOURS', 2),
 
     // Шаги цепочки. after_hours — офсет от cart.abandoned_at.
-    // Шаг 1 (0ч) уходит сразу при детекте брошенной корзины (≈24ч после
-    // последней активности — соответствует ТЗ «через 24ч»). Шаг 2 — позже.
+    // Шаг 1 — через 2ч после последней активности; шаги 2 и 3 — через 24ч
+    // и 48ч соответственно.
     'steps' => [
         ['step' => 1, 'after_hours' => 0],
-        ['step' => 2, 'after_hours' => 48],
-        ['step' => 3, 'after_hours' => 96],
+        ['step' => 2, 'after_hours' => 22],
+        ['step' => 3, 'after_hours' => 46],
     ],
 
     // Приоритет каналов (решение #4). Берём первый, для которого у клиента есть

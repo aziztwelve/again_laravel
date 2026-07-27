@@ -12,10 +12,10 @@
                 </tr>
                 <tr>
                     <td style="padding:40px 48px 18px">
-                        <div style="font-size:30px;line-height:36px;font-weight:700;color:#292725">Товары всё ещё в наличии</div>
+                        <div style="font-size:30px;line-height:36px;font-weight:700;color:#292725">{{ $headline }}</div>
                         <div style="padding-top:16px;font-size:16px;line-height:24px;color:#5e5955">
-                            Здравствуйте!<br>
-                            {{ $intro }} Оформите заказ сейчас, пока товары ждут вас в корзине.
+                            {{ $greeting }}<br>
+                            {!! nl2br(e($messageText)) !!}
                         </div>
                     </td>
                 </tr>
@@ -23,14 +23,14 @@
                     <td style="padding:14px 48px 40px">
                         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#efede9;border-radius:8px">
                             <tr>
-                                <td style="padding:20px 20px 8px;font-size:17px;line-height:24px;font-weight:700;color:#292725">Оформите заказ сейчас</td>
+                                <td style="padding:20px 20px 8px;font-size:17px;line-height:24px;font-weight:700;color:#292725">{{ $cta }}</td>
                             </tr>
                             <tr>
                                 <td style="padding:0 20px 16px;font-size:14px;line-height:20px;color:#5e5955">Успейте купить то, что хотели</td>
                             </tr>
                             <tr>
                                 <td style="padding:0 20px 20px">
-                                    <a href="{{ $link }}" style="display:inline-block;background:#292725;border-radius:4px;padding:12px 20px;color:#ffffff;text-decoration:none;font-size:14px;line-height:20px;font-weight:700">Перейти к корзине</a>
+                                    <a href="{{ $link }}" style="display:inline-block;background:#292725;border-radius:4px;padding:12px 20px;color:#ffffff;text-decoration:none;font-size:14px;line-height:20px;font-weight:700">{{ $cta }}</a>
                                 </td>
                             </tr>
                         </table>
@@ -109,7 +109,7 @@
                 @endif
                 <tr>
                     <td align="center" style="padding:0 48px 40px">
-                        <a href="{{ $link }}" style="display:inline-block;background:#292725;border-radius:4px;padding:13px 22px;color:#ffffff;text-decoration:none;font-size:14px;line-height:20px;font-weight:700">Перейти к корзине</a>
+                        <a href="{{ $link }}" style="display:inline-block;background:#292725;border-radius:4px;padding:13px 22px;color:#ffffff;text-decoration:none;font-size:14px;line-height:20px;font-weight:700">{{ $cta }}</a>
                     </td>
                 </tr>
                 <tr><td>@include('emails.partials.footer')</td></tr>
