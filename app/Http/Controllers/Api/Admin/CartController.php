@@ -95,7 +95,11 @@ class CartController extends Controller
                         'status' => $lastComm->status,
                         'sent_at' => $lastComm->sent_at,   // «Коммуникация» (дата)
                     ] : null,
-                    'email_conversion' => $cart->recoveryCommunication?->channel === 'email' ? 'Письмо '.($cart->recoveryCommunication->step ?? 'вручную') : null,
+                    // Конверсия имеет смысл только после оформления: переход
+                    // из письма у активной/брошенной корзины ещё не заказ.
+                    'email_conversion' => $cart->status === 'ordered' && $cart->recoveryCommunication?->channel === 'email'
+                        ? 'Письмо '.($cart->recoveryCommunication->step ?? 'вручную')
+                        : null,
                 ];
             });
 
