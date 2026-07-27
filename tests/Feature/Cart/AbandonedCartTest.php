@@ -171,7 +171,7 @@ class AbandonedCartTest extends TestCase
         Order::create([
             'order_number' => 'TEST-'.uniqid(),
             'client_id' => $client->id,
-            'status' => 'completed',
+            'status' => 'delivered',
             'payment_status' => 'paid',
             'total_amount' => 1990,
         ]);
