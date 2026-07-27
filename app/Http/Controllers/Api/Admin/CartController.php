@@ -53,8 +53,11 @@ class CartController extends Controller
                 'communications' => fn ($q) => $q->orderByDesc('id'),
             ])
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->status))
-            ->when($request->filled('date_from'), fn ($q) => $q->whereDate('created_at', '>=', $request->date_from))
-            ->when($request->filled('date_to'), fn ($q) => $q->whereDate('created_at', '<=', $request->date_to))
+            // В таблице отображается «Последнее обновление», поэтому диапазон
+            // обязан фильтровать ту же дату. Иначе корзина, созданная в периоде,
+            // но изменённая позже, визуально попадает за его границы.
+            ->when($request->filled('date_from'), fn ($q) => $q->whereDate('updated_at', '>=', $request->date_from))
+            ->when($request->filled('date_to'), fn ($q) => $q->whereDate('updated_at', '<=', $request->date_to))
             ->when($search !== '', function ($q) use ($search) {
                 $q->where(function ($sub) use ($search) {
                     if (ctype_digit($search)) {

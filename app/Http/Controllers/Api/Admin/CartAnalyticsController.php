@@ -27,7 +27,7 @@ class CartAnalyticsController extends Controller
 
         $allCarts = Cart::query()
             ->whereNotNull('client_id')
-            ->whereBetween('created_at', [$from, $to])
+            ->whereBetween('updated_at', [$from, $to])
             ->get();
 
         $abandonedCarts = $allCarts->where('status', 'abandoned');
@@ -56,14 +56,14 @@ class CartAnalyticsController extends Controller
         $totalItems = CartItem::query()
             ->join('cart', 'cart_items.cart_id', '=', 'cart.id')
             ->whereNotNull('cart.client_id')
-            ->whereBetween('cart.created_at', [$from, $to])
+            ->whereBetween('cart.updated_at', [$from, $to])
             ->sum('cart_items.quantity');
 
         $topProducts = CartItem::query()
             ->join('products', 'cart_items.product_id', '=', 'products.id')
             ->join('cart', 'cart_items.cart_id', '=', 'cart.id')
             ->whereNotNull('cart.client_id')
-            ->whereBetween('cart.created_at', [$from, $to])
+            ->whereBetween('cart.updated_at', [$from, $to])
             ->select('products.name', DB::raw('SUM(cart_items.quantity) as total_quantity'))
             ->groupBy('cart_items.product_id', 'products.name')
             ->orderByDesc('total_quantity')
@@ -113,15 +113,15 @@ class CartAnalyticsController extends Controller
 
     /**
      * Период анализа. По умолчанию — последние 30 дней (как дефолт на скрине).
-     * preset=all → min/max created_at по корзинам.
+     * preset=all → min/max updated_at по корзинам.
      *
      * @return array{0:Carbon,1:Carbon}
      */
     protected function resolvePeriod(Request $request): array
     {
         if ($request->query('preset') === 'all' || $request->boolean('all')) {
-            $min = Cart::query()->whereNotNull('client_id')->min('created_at');
-            $max = Cart::query()->whereNotNull('client_id')->max('created_at');
+            $min = Cart::query()->whereNotNull('client_id')->min('updated_at');
+            $max = Cart::query()->whereNotNull('client_id')->max('updated_at');
             $from = $min ? Carbon::parse($min)->startOfDay() : now()->subDays(29)->startOfDay();
             $to = $max ? Carbon::parse($max)->endOfDay() : now()->endOfDay();
 
@@ -152,11 +152,11 @@ class CartAnalyticsController extends Controller
         $bucketFormat = $granularity === 'day' ? '%Y-%m-%d' : '%Y-%m';
 
         $raw = Cart::query()
-            ->whereBetween('created_at', [$from, $to])
+            ->whereBetween('updated_at', [$from, $to])
             ->whereNotNull('client_id')
             ->whereIn('status', ['abandoned', 'ordered'])
             ->select([
-                DB::raw("DATE_FORMAT(created_at, \"$bucketFormat\") as bucket"),
+                DB::raw("DATE_FORMAT(updated_at, \"$bucketFormat\") as bucket"),
                 'status',
                 DB::raw('COUNT(*) as cnt'),
                 DB::raw('SUM(total) as amount'),
