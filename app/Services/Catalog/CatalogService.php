@@ -83,6 +83,7 @@ class CatalogService
         // Категория «Скоро в продаже»: показывать выбранные в админке товары
         // без остатка. Когда остаток появляется, товар уходит из этой категории.
         $isComingSoon = false;
+        $category = null;
 
         // Фильтр по категории (ID или SLUG)
         if (!empty($filters['category_id']) || !empty($filters['category_slug'])) {
