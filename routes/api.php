@@ -238,7 +238,7 @@ Route::prefix('/public')->group(function () {
         Route::get('/methods', [DeliveryMethodController::class, 'get_all_delivery_methods'])
             ->name('methods');
 
-        // Яндекс.Доставка (NDD Express API)
+        // Яндекс.Доставка (Platform API / доставка по России)
         Route::prefix('yandex')->name('yandex.')->group(function () {
             Route::get('/tariffs', [YandexDeliveryController::class, 'tariffs'])->name('tariffs');
             Route::get('/location', [YandexDeliveryController::class, 'detectLocation'])->name('location');

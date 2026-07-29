@@ -37,6 +37,8 @@ class OrderCreationService
         $recipient = $orderData['recipient'] ?? [];
         $deliveryMethodData = $orderData['delivery_method'] ?? [];
         $yandexDeliveryData = $this->buildYandexDeliveryData($orderData, $deliveryAddress);
+        $itemsTotal = $orderData['total'] ?? $this->calculateTotalFromItems($orderData['items'] ?? []);
+        $deliveryCost = $this->resolveDeliveryCost($itemsTotal, $yandexDeliveryData);
         // Если в payload пришёл client_id (админ создаёт заказ за клиента) —
         // он имеет приоритет. Если в payload его нет — берём переданный.
         // Для гостевого заказа оба источника пусты и client_id остаётся NULL.
@@ -51,11 +53,12 @@ class OrderCreationService
             // после INSERT-а сразу перезаписываем на сам id (см. ниже).
             'order_number' => 'TMP-'.bin2hex(random_bytes(8)),
             'view_token' => $this->generateViewToken(),
-            'total_amount' => $orderData['total'] ?? $this->calculateTotalFromItems($orderData['items'] ?? []),
+            'total_amount' => $itemsTotal + $deliveryCost,
             'payment_method' => $orderData['payment_method'] ?? null,
             'source' => $orderData['source'] ?? null,
             'delivery_method_id' => $deliveryMethodId,
             'delivery_data' => $yandexDeliveryData,
+            'delivery_cost' => $deliveryCost,
 
             // Адрес доставки
             'country_code' => $deliveryAddress['country'] ?? null,
@@ -303,6 +306,15 @@ class OrderCreationService
                 'coordinates' => $destinationCoordinates,
             ] : ($data['destination'] ?? null),
         ], fn ($value) => $value !== null);
+    }
+
+    private function resolveDeliveryCost(float $itemsTotal, ?array $yandexDeliveryData): float
+    {
+        if (! $yandexDeliveryData) return 0.0;
+        $type = $yandexDeliveryData['delivery_type'] ?? 'courier';
+        $freeFrom = $type === 'courier' ? 7900 : 4500;
+        if ($itemsTotal >= $freeFrom) return 0.0;
+        return (float) ($yandexDeliveryData['price'] ?? 0);
     }
 
     private function resolveOrderStatus(?string $status): string

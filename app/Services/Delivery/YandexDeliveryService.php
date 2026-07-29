@@ -48,7 +48,17 @@ class YandexDeliveryService extends DeliveryService
             Log::warning('Yandex Delivery offers/create failed', ['status' => $result['status'], 'response' => $result['data']]);
             return [];
         }
-        return $this->normalizeOffers($result['data']['offers'] ?? []);
+        $offers = $this->normalizeOffers($result['data']['offers'] ?? []);
+        $itemsTotal = array_sum(array_map(fn (array $item) => (float) ($item['price'] ?? 0) * (int) ($item['quantity'] ?? 1), $items));
+        $freeFrom = $deliveryType === 'courier' ? 7900 : 4500;
+        if ($itemsTotal >= $freeFrom) {
+            $offers = array_map(function (array $offer) {
+                $offer['provider_price'] = $offer['price'];
+                $offer['price'] = 0.0;
+                return $offer;
+            }, $offers);
+        }
+        return $offers;
     }
 
     public function confirmOffer(string $offerId, ?int $orderId = null): array
