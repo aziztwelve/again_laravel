@@ -16,6 +16,7 @@ class PayloadBuilder
             throw new InvalidArgumentException('Не настроен склад отгрузки Яндекс.Доставки.');
         }
 
+        $placeBarcode = 'place-'.substr(md5(json_encode($items)), 0, 12);
         $payload = [
             'info' => array_filter([
                 'operator_request_id' => $operatorRequestId ?? 'checkout-'.Str::uuid(),
@@ -25,8 +26,8 @@ class PayloadBuilder
                 'platform_station' => ['platform_id' => $stationId],
             ],
             'destination' => $this->destination($deliveryType, $pvzId, $destination),
-            'items' => array_map(fn (array $item) => $this->item($item), $items),
-            'places' => [$this->place($items)],
+            'items' => array_map(fn (array $item) => $this->item($item, $placeBarcode), $items),
+            'places' => [$this->place($items, $placeBarcode)],
             'billing_info' => ['payment_method' => 'already_paid', 'delivery_cost' => 0],
             'recipient_info' => $this->recipient($recipient),
             'last_mile_policy' => $deliveryType === 'pickup' ? 'self_pickup' : 'time_interval',
@@ -94,7 +95,7 @@ class PayloadBuilder
         ];
     }
 
-    private function item(array $item): array
+    private function item(array $item, string $placeBarcode): array
     {
         $size = $item['size'] ?? [];
         $article = (string) ($item['article'] ?? '');
@@ -102,8 +103,8 @@ class PayloadBuilder
             'count' => max(1, (int) ($item['quantity'] ?? 1)),
             'name' => (string) ($item['name'] ?? 'Товар'),
             'article' => $article,
-            // Platform API requires the package barcode on every item.
-            'place_barcode' => $article !== '' ? $article : 'place-1',
+            // Значение должно ссылаться на barcode из places[].
+            'place_barcode' => $placeBarcode,
             'billing_details' => [
                 'unit_price' => (float) ($item['price'] ?? 0),
                 'assessed_unit_price' => (float) ($item['price'] ?? 0),
@@ -116,11 +117,11 @@ class PayloadBuilder
         ];
     }
 
-    private function place(array $items): array
+    private function place(array $items, string $placeBarcode): array
     {
         $weight = array_sum(array_map(fn ($item) => (float) ($item['weight'] ?? 500) * (int) ($item['quantity'] ?? 1), $items));
         return [
-            'barcode' => 'place-'.substr(md5(json_encode($items)), 0, 12),
+            'barcode' => $placeBarcode,
             'physical_dims' => ['weight_gross' => max(1, (int) $weight), 'dx' => 20, 'dy' => 15, 'dz' => 10],
         ];
     }
