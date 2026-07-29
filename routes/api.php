@@ -873,6 +873,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/', [OrderController::class, 'store'])->name('store');
         Route::get('/stats', [OrderStatsController::class, 'stats'])->name('stats');
         Route::get('/user', [OrderController::class, 'getUserOrders']);
+        Route::get('/yandex-delivery/analytics', [\App\Http\Controllers\Api\Admin\YandexDeliveryAnalyticsController::class, 'summary'])->name('yandex.analytics');
+        Route::get('/yandex-delivery/export', [\App\Http\Controllers\Api\Admin\YandexDeliveryAnalyticsController::class, 'export'])->name('yandex.export');
 
         Route::get('/{order}', [OrderController::class, 'show'])->name('show');
         Route::get('/{order}/view', [OrderViewController::class, 'show'])->name('view');

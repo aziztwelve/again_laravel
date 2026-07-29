@@ -171,6 +171,10 @@ class OrderViewController extends Controller
         $yandexOrder = $order->yandexOrder;
         if (! $yandexOrder?->claim_id) return $this->errorResponse('Заявка Яндекс.Доставки ещё не создана.', 422);
 
+        if (in_array($yandexOrder->internal_status, ['courier_assigned', 'picked_up'], true) && ! $request->boolean('force')) {
+            return $this->errorResponse('Курьер уже назначен или забрал заказ. Отмена может быть платной — подтвердите действие менеджера.', 409, ['requires_manager_confirmation' => true]);
+        }
+
         $result = $service->cancelRequest($yandexOrder->claim_id, $order->id);
         if (! $result['successful']) return $this->errorResponse('Яндекс не подтвердил отмену.', 422, $result['data']);
         $yandexOrder->update(['cancel_state' => 'requested']);
