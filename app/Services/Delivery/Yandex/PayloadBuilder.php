@@ -119,7 +119,10 @@ class PayloadBuilder
     private function place(array $items): array
     {
         $weight = array_sum(array_map(fn ($item) => (float) ($item['weight'] ?? 500) * (int) ($item['quantity'] ?? 1), $items));
-        return ['physical_dims' => ['weight_gross' => max(1, (int) $weight), 'dx' => 20, 'dy' => 15, 'dz' => 10]];
+        return [
+            'barcode' => 'place-'.substr(md5(json_encode($items)), 0, 12),
+            'physical_dims' => ['weight_gross' => max(1, (int) $weight), 'dx' => 20, 'dy' => 15, 'dz' => 10],
+        ];
     }
 
     private function recipient(array $recipient): array
