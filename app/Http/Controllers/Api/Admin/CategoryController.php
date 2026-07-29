@@ -110,7 +110,7 @@ class CategoryController extends Controller
         }
 
         if (!empty($validated['product_ids'])) {
-            $category->products()->attach($validated['product_ids']);
+            $category->products()->sync($this->productsWithPositions($validated['product_ids']));
         }
 
         return response()->json([
@@ -211,7 +211,7 @@ class CategoryController extends Controller
         }
 
         if (array_key_exists('product_ids', $validated)) {
-            $category->products()->sync($validated['product_ids']);
+            $category->products()->sync($this->productsWithPositions($validated['product_ids']));
         }
 
         return response()->json([
@@ -246,10 +246,13 @@ class CategoryController extends Controller
 
             $category_products_ids = CategoryProduct::where('category_id', $category->id)
                 ->orWhereIn('category_id', $category_children_ids)
+                ->orderBy('position')
                 ->pluck('product_id')
                 ->toArray();
 
-            $products = Product::whereIn('id', $category_products_ids)->get();
+            $products = Product::whereIn('id', $category_products_ids)
+                ->orderByRaw('FIELD(id, ' . implode(',', $category_products_ids ?: [0]) . ')')
+                ->get();
         }
 
         return response()->json([
@@ -257,6 +260,14 @@ class CategoryController extends Controller
             'category_name' => $category->name,
             'products' => ProductNumberTwoResouce::collection($products),
         ]);
+    }
+
+    /** @return array<int, array{position: int}> */
+    private function productsWithPositions(array $productIds): array
+    {
+        return collect($productIds)
+            ->mapWithKeys(fn ($productId, $index) => [(int) $productId => ['position' => $index + 1]])
+            ->all();
     }
 
 

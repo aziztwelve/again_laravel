@@ -161,6 +161,15 @@ class CatalogService
             });
         }
 
+        // Для ручной подборки «Новинки» порядок задаётся в админке категории.
+        $isManualNewCategory = $category?->slug === 'novinki' && !$category->is_new_product;
+        if ($isManualNewCategory) {
+            $query->join('category_product as category_sort', function ($join) use ($category) {
+                $join->on('category_sort.product_id', '=', 'products.id')
+                    ->where('category_sort.category_id', $category->id);
+            })->select('products.*');
+        }
+
         // Сортировка: сперва товары в наличии, затем по выбранному полю.
         // Для категории «Скоро в продаже» все товары без остатка — сортируем
         // только по выбранному полю (по умолчанию display_order).
@@ -171,7 +180,11 @@ class CatalogService
             $query->orderByRaw('CASE WHEN stock_quantity > 0 THEN 0 ELSE 1 END');
         }
 
-        $query->orderBy($sortBy, $sortOrder);
+        if ($isManualNewCategory) {
+            $query->orderBy('category_sort.position');
+        } else {
+            $query->orderBy($sortBy, $sortOrder);
+        }
 
         return $query;
     }
