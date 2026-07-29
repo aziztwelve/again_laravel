@@ -876,6 +876,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
         Route::get('/{order}', [OrderController::class, 'show'])->name('show');
         Route::get('/{order}/view', [OrderViewController::class, 'show'])->name('view');
+        Route::post('/{order}/yandex-delivery/create', [OrderViewController::class, 'createYandexDelivery'])->name('yandex.create');
+        Route::post('/{order}/yandex-delivery/cancel', [OrderViewController::class, 'cancelYandexDelivery'])->name('yandex.cancel');
         Route::put('/{order}', [OrderController::class, 'update'])->name('update');
         Route::delete('/{order}', [OrderController::class, 'destroy'])->name('destroy');
 

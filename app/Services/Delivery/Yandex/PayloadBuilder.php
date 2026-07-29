@@ -97,10 +97,13 @@ class PayloadBuilder
     private function item(array $item): array
     {
         $size = $item['size'] ?? [];
+        $article = (string) ($item['article'] ?? '');
         return [
             'count' => max(1, (int) ($item['quantity'] ?? 1)),
             'name' => (string) ($item['name'] ?? 'Товар'),
-            'article' => (string) ($item['article'] ?? ''),
+            'article' => $article,
+            // Platform API requires the package barcode on every item.
+            'place_barcode' => $article !== '' ? $article : 'place-1',
             'billing_details' => [
                 'unit_price' => (float) ($item['price'] ?? 0),
                 'assessed_unit_price' => (float) ($item['price'] ?? 0),

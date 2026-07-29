@@ -7,6 +7,7 @@ use App\Models\Order;
 use App\Models\Shipment;
 use App\Models\ShipmentStatus;
 use App\Models\YandexOrder;
+use App\Models\YandexStatusEvent;
 use App\Services\Delivery\Yandex\PayloadBuilder;
 use App\Services\Delivery\Yandex\StatusMapper;
 use App\Services\Delivery\Yandex\YandexDeliveryClient;
@@ -145,13 +146,28 @@ class YandexDeliveryService extends DeliveryService
         $state = $data['state'] ?? [];
         $status = $state['status'] ?? $data['status'] ?? 'CREATED';
         $delivery = $order->delivery_data ?? [];
-        return YandexOrder::updateOrCreate(['order_id' => $order->id], [
+        $previousStatus = $existing?->status;
+        $yandexOrder = YandexOrder::updateOrCreate(['order_id' => $order->id], [
             'claim_id' => $requestId, 'status' => $status, 'internal_status' => $this->statusMapper->toInternal($status),
             'delivery_type' => $delivery['delivery_type'] ?? 'courier', 'tariff_code' => $delivery['tariff_code'] ?? null,
             'price' => $delivery['price'] ?? null, 'offer_id' => $delivery['offer_id'] ?? null,
             'pvz_id' => $delivery['pvz']['id'] ?? null, 'tracking_url' => $data['sharing_url'] ?? null,
             'request_id' => $existing?->request_id ?? (string) \Illuminate\Support\Str::uuid(), 'last_synced_at' => now(),
         ]);
+        if ($requestId && $order->tracking_number !== $requestId) {
+            $order->update(['tracking_number' => $requestId]);
+        }
+        if ($previousStatus !== $status) {
+            YandexStatusEvent::create([
+                'yandex_order_id' => $yandexOrder->id,
+                'source' => 'polling',
+                'raw_status' => $status,
+                'internal_status' => $this->statusMapper->toInternal($status),
+                'payload' => $data,
+                'received_at' => now(),
+            ]);
+        }
+        return $yandexOrder;
     }
 
     private function normalizeOffers(array $offers): array

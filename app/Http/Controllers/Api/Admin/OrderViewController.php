@@ -9,8 +9,10 @@ use App\Services\Order\OrderAuthorizationService;
 use App\Services\Order\OrderCreationService;
 use App\Services\Order\OrderCustomFieldsService;
 use App\Services\Order\OrderDiscountService;
+use App\Services\Delivery\YandexDeliveryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 class OrderViewController extends Controller
 {
@@ -57,6 +59,7 @@ class OrderViewController extends Controller
             'tasks.assignee.profile',
             'assignedUser.profile',
             'assignedUser.roles',
+            'yandexOrder.statusEvents',
         ]);
 
         $summary = $this->orderCreationService->getOrderSummary($order);
@@ -126,6 +129,53 @@ class OrderViewController extends Controller
             ],
             'similar_clients' => $this->getSimilarClients($client),
         ]);
+    }
+
+    /** Ручное создание/повторное получение статуса заявки Яндекс.Доставки. */
+    public function createYandexDelivery(Request $request, Order $order, YandexDeliveryService $service): JsonResponse
+    {
+        if (! $this->orderAuthorizationService->canView($request->user(), $order)) {
+            return $this->errorResponse('Доступ запрещён', 403);
+        }
+        if (! str_starts_with((string) $order->deliveryMethod?->code, 'yandex_')) {
+            return $this->errorResponse('Для заказа не выбрана Яндекс.Доставка.', 422);
+        }
+
+        $yandexOrder = $order->yandexOrder()->firstOrCreate([], [
+            'request_id' => (string) Str::uuid(),
+            'delivery_type' => $order->delivery_data['delivery_type'] ?? 'courier',
+            'tariff_code' => $order->delivery_data['tariff_code'] ?? null,
+            'offer_id' => $order->delivery_data['offer_id'] ?? null,
+            'pvz_id' => $order->delivery_data['pvz']['id'] ?? null,
+            'price' => $order->delivery_data['price'] ?? null,
+            'status' => 'CREATED',
+            'internal_status' => 'created',
+        ]);
+        if ($yandexOrder->claim_id) {
+            $service->sync($yandexOrder);
+            return $this->successResponse('Статус заявки обновлён.', ['yandex_order' => $yandexOrder->fresh()]);
+        }
+
+        $result = $service->createOrder($order, $yandexOrder);
+        if (! $result['successful']) {
+            return $this->errorResponse('Не удалось создать заявку Яндекс.Доставки.', 422, $result['data']);
+        }
+        return $this->successResponse('Заявка Яндекс.Доставки создана.', ['yandex_order' => $yandexOrder->fresh()]);
+    }
+
+    public function cancelYandexDelivery(Request $request, Order $order, YandexDeliveryService $service): JsonResponse
+    {
+        if (! $this->orderAuthorizationService->canView($request->user(), $order)) {
+            return $this->errorResponse('Доступ запрещён', 403);
+        }
+        $yandexOrder = $order->yandexOrder;
+        if (! $yandexOrder?->claim_id) return $this->errorResponse('Заявка Яндекс.Доставки ещё не создана.', 422);
+
+        $result = $service->cancelRequest($yandexOrder->claim_id, $order->id);
+        if (! $result['successful']) return $this->errorResponse('Яндекс не подтвердил отмену.', 422, $result['data']);
+        $yandexOrder->update(['cancel_state' => 'requested']);
+        $service->sync($yandexOrder->fresh());
+        return $this->successResponse('Отмена заявки отправлена в Яндекс.Доставку.');
     }
 
     /**
