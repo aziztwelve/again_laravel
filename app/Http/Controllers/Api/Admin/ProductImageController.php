@@ -83,7 +83,7 @@ class ProductImageController extends Controller
     public function store(Request $request, Product $product)
     {
         $validated = $request->validate([
-            'images.*' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048',
+            'images.*' => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:32768',
             'variants' => 'array',
             'variants.*' => 'exists:product_variants,id',
         ]);
