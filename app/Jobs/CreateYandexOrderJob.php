@@ -52,26 +52,17 @@ class CreateYandexOrderJob implements ShouldQueue
             return;
         }
 
-        $created = $service->createClaim($order, $yandexOrder);
+        // The selected offer is confirmed only after successful payment. If it
+        // has expired, request/create is used as a safe fallback.
+        $created = $service->confirmOfferForOrder($order, $yandexOrder);
         if (! $created['successful']) {
-            throw new RuntimeException('Yandex claims/create failed with HTTP '.$created['status']);
+            throw new RuntimeException('Yandex request/create failed with HTTP '.$created['status']);
         }
 
         $yandexOrder->refresh();
         if (! $yandexOrder->claim_id) {
-            throw new RuntimeException('Yandex claims/create did not return claim_id');
+            throw new RuntimeException('Yandex request/create did not return request_id');
         }
-
-        $info = $service->getClaimInfo($yandexOrder->claim_id, $order->id);
-        $status = $info['data']['status'] ?? $yandexOrder->status;
-        $version = (int) ($info['data']['version'] ?? $yandexOrder->claim_version);
-        $yandexOrder->update(['status' => $status, 'claim_version' => $version, 'last_synced_at' => now()]);
-
-        if (in_array($status, ['new', 'ready_for_approval'], true)) {
-            $accepted = $service->acceptClaim($yandexOrder->claim_id, $version, $order->id);
-            if (! $accepted['successful']) {
-                throw new RuntimeException('Yandex claims/accept failed with HTTP '.$accepted['status']);
-            }
-        }
+        $service->sync($yandexOrder->refresh());
     }
 }

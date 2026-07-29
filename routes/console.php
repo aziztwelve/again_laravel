@@ -2,6 +2,7 @@
 
 use App\Console\Commands\SyncEmailMessages;
 use App\Console\Commands\CheckDiscountsValidity;
+use App\Jobs\PollYandexDeliveryStatusesJob;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 
@@ -35,3 +36,8 @@ Schedule::command('cart:gc-guest-carts')
     ->dailyAt('04:30')
     ->withoutOverlapping()
     ->runInBackground();
+
+// У NDD Platform API нет вебхуков: обновляем незавершённые заявки опросом.
+Schedule::job(new PollYandexDeliveryStatusesJob())
+    ->everyTenMinutes()
+    ->withoutOverlapping();

@@ -5,6 +5,11 @@ namespace App\Services\Delivery\Yandex;
 class StatusMapper
 {
     private const MAP = [
+        'created' => 'created', 'confirmed' => 'created',
+        'courier_assigned' => 'courier_assigned', 'picked_up' => 'picked_up',
+        'created' => 'created', 'accepted' => 'created', 'confirmed' => 'created',
+        'courier_assigned' => 'courier_assigned', 'picked_up' => 'picked_up',
+        'delivered' => 'delivered', 'returned' => 'returning', 'cancelled' => 'cancelled', 'failed' => 'failed',
         'new' => 'created', 'estimating' => 'created', 'ready_for_approval' => 'created', 'accepted' => 'created',
         'performer_lookup' => 'courier_assigned', 'performer_found' => 'courier_assigned', 'pickup_arrived' => 'courier_assigned',
         'pickuped' => 'picked_up', 'delivery_arrived' => 'picked_up',

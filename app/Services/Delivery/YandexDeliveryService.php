@@ -7,17 +7,15 @@ use App\Models\Order;
 use App\Models\Shipment;
 use App\Models\ShipmentStatus;
 use App\Models\YandexOrder;
-use App\Models\YandexTariff;
 use App\Services\Delivery\Yandex\PayloadBuilder;
 use App\Services\Delivery\Yandex\StatusMapper;
 use App\Services\Delivery\Yandex\YandexDeliveryClient;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 use InvalidArgumentException;
 
-/** NDD Express Delivery API (offers/calculate → claims/*). */
+/** Yandex Delivery Platform API (Delivery across Russia / NDD). */
 class YandexDeliveryService extends DeliveryService
 {
     protected array $settings;
@@ -35,147 +33,136 @@ class YandexDeliveryService extends DeliveryService
         $this->client = new YandexDeliveryClient($this->settings);
     }
 
-    public function calculateOffers(string $deliveryType, array $items, ?string $pvzId = null, ?array $pvzCoords = null, ?array $destination = null, array $recipient = [], ?string $tariffCode = null): array
+    public function calculateOffers(string $deliveryType, array $items, ?string $pvzId = null, ?array $pvzCoords = null, ?array $destination = null, array $recipient = []): array
     {
         try {
-            $tariff = $tariffCode ? YandexTariff::query()->where('code', $tariffCode)->where('is_active', true)->first() : null;
-            $payload = $this->payloadBuilder->offers($this->source(), $deliveryType, $items, $destination, $pvzCoords, $tariff?->taxi_class);
+            $payload = $this->payloadBuilder->offers($this->settings, $deliveryType, $items, $pvzId, $destination, $recipient);
         } catch (InvalidArgumentException $exception) {
             Log::notice('Yandex Delivery offer calculation rejected', ['message' => $exception->getMessage()]);
             return [];
         }
 
-        $result = $this->client->request('POST', 'offers/calculate', $payload);
-        if (!$result['successful']) {
-            Log::warning('Yandex Delivery offers/calculate failed', ['status' => $result['status'], 'response' => $result['data']]);
+        $result = $this->client->request('POST', '/api/b2b/platform/offers/create', $payload, query: ['send_unix' => 'false']);
+        if (! $result['successful']) {
+            Log::warning('Yandex Delivery offers/create failed', ['status' => $result['status'], 'response' => $result['data']]);
             return [];
         }
-
-        return $this->normalizeOffers($result['data']['offers'] ?? $result['data']);
+        return $this->normalizeOffers($result['data']['offers'] ?? []);
     }
 
-    /** @return array{successful: bool, status: int, data: array, body: string} */
-    public function createClaim(Order $order, ?YandexOrder $yandexOrder = null): array
+    public function confirmOffer(string $offerId, ?int $orderId = null): array
     {
-        $yandexOrder ??= $order->yandexOrder;
-        $requestId = $yandexOrder?->request_id ?? (string) Str::uuid();
-        $payload = $this->payloadBuilder->claim($order->loadMissing('items.product', 'items.variant', 'client'), $this->source());
-        $result = $this->client->request('POST', 'claims/create', $payload, $order->id, $yandexOrder?->claim_id, ['request_id' => $requestId]);
+        return $this->client->request('POST', '/api/b2b/platform/offers/confirm', ['offer_id' => $offerId], $orderId);
+    }
 
-        if ($result['successful']) {
-            $claim = $result['data'];
-            YandexOrder::updateOrCreate(['order_id' => $order->id], [
-                'claim_id' => $claim['id'] ?? $claim['claim_id'] ?? $yandexOrder?->claim_id,
-                'claim_version' => $claim['version'] ?? 1,
-                'status' => $claim['status'] ?? 'new',
-                'internal_status' => $this->statusMapper->toInternal($claim['status'] ?? 'new'),
-                'delivery_type' => $order->delivery_data['delivery_type'] ?? 'courier',
-                'tariff_code' => $order->delivery_data['tariff_code'] ?? null,
-                'price' => $order->delivery_data['price'] ?? null,
-                'offer_id' => $order->delivery_data['offer_id'] ?? null,
-                'pvz_id' => $order->delivery_data['pvz']['id'] ?? null,
-                'scheduled_time' => $order->delivery_data['scheduled_time'] ?? null,
-                'request_id' => $requestId,
-                'last_synced_at' => now(),
-            ]);
-        }
-
+    public function confirmOfferForOrder(Order $order, YandexOrder $yandexOrder): array
+    {
+        $offerId = $order->delivery_data['offer_id'] ?? null;
+        if (! $offerId) return $this->createOrder($order, $yandexOrder);
+        $result = $this->confirmOffer($offerId, $order->id);
+        if ($result['successful']) $this->saveRequest($order, $result['data'], $yandexOrder);
         return $result;
     }
 
-    public function getClaimInfo(string $claimId, ?int $orderId = null): array
+    /** Creates an immediate Platform API request as a fallback for an already paid order. */
+    public function createOrder(Order $order, ?YandexOrder $yandexOrder = null): array
     {
-        return $this->client->request('POST', 'claims/info', ['claim_id' => $claimId], $orderId, $claimId);
+        $yandexOrder ??= $order->yandexOrder;
+        $payload = $this->payloadBuilder->order($order, $this->settings);
+        $result = $this->client->request('POST', '/api/b2b/platform/request/create', $payload, $order->id, $yandexOrder?->claim_id, ['send_unix' => 'false']);
+        if ($result['successful']) $this->saveRequest($order, $result['data'], $yandexOrder);
+        return $result;
     }
 
-    public function acceptClaim(string $claimId, int $version, ?int $orderId = null): array
+    public function getRequestInfo(string $requestId, ?int $orderId = null): array
     {
-        return $this->client->request('POST', 'claims/accept', ['claim_id' => $claimId, 'version' => $version], $orderId, $claimId);
+        return $this->client->request('GET', '/api/b2b/platform/request/info', [], $orderId, $requestId, ['request_id' => $requestId, 'slim' => 'true']);
     }
 
-    public function cancelClaim(string $claimId, int $version, string $cancelState = 'free', ?int $orderId = null): array
+    public function cancelRequest(string $requestId, ?int $orderId = null): array
     {
-        return $this->client->request('POST', 'claims/cancel', ['claim_id' => $claimId, 'version' => $version, 'cancel_state' => $cancelState], $orderId, $claimId);
+        return $this->client->request('POST', '/api/b2b/platform/request/cancel', ['request_id' => $requestId], $orderId, $requestId);
     }
 
-    public function getPerformerPosition(string $claimId, ?int $orderId = null): array
+    public function getPickupPoints(array $filter = []): Collection
     {
-        return $this->client->request('GET', 'claims/performer-position', [], $orderId, $claimId, ['claim_id' => $claimId]);
+        $payload = array_filter([
+            'geo_id' => $filter['geo_id'] ?? null,
+            'type' => $filter['type'] ?? 'pickup_point',
+            'payment_method' => $filter['payment_method'] ?? 'already_paid',
+            'is_yandex_branded' => $filter['is_yandex_branded'] ?? null,
+        ], fn ($value) => $value !== null);
+        $result = $this->client->request('POST', '/api/b2b/platform/pickup-points/list', $payload);
+        return $result['successful'] ? collect($result['data']['points'] ?? []) : collect();
     }
 
-    public function getDriverPhone(string $claimId, ?int $orderId = null): array
+    public function detectLocation(string $location): array
     {
-        return $this->client->request('POST', 'driver-voiceforwarding', ['claim_id' => $claimId], $orderId, $claimId);
+        $result = $this->client->request('POST', '/api/b2b/platform/location/detect', ['location' => $location]);
+        return $result['successful'] ? $result['data'] : [];
     }
 
     public function geocode(string $address): ?array
     {
         $key = $this->settings['geocoder_key'] ?? null;
-        if (!$key) return null;
+        if (! $key) return null;
         $response = Http::timeout(10)->get('https://geocode-maps.yandex.ru/1.x/', ['apikey' => $key, 'geocode' => $address, 'format' => 'json', 'results' => 1]);
         $point = $response->json('response.GeoObjectCollection.featureMember.0.GeoObject.Point.pos');
         return $point ? array_map('floatval', explode(' ', $point)) : null;
     }
 
-    /** Legacy endpoint: NDD Express has no pickup-points/list equivalent; the official widget is used instead. */
-    public function getPickupPoints(array $filter = []): Collection { return collect(); }
-    public function detectLocation(string $location): array { return []; }
-
-    public function calculateRate(Order $order): Collection
+    public function sync(YandexOrder $yandexOrder): void
     {
-        $data = $order->delivery_data ?? [];
-        return collect($this->calculateOffers($data['delivery_type'] ?? 'courier', [], $data['pvz']['id'] ?? null, $data['pvz']['coordinates'] ?? null, $data['destination'] ?? null, [], $data['tariff_code'] ?? null));
+        if (! $yandexOrder->claim_id) return;
+        $result = $this->getRequestInfo($yandexOrder->claim_id, $yandexOrder->order_id);
+        if (! $result['successful']) return;
+        $this->saveRequest($yandexOrder->order, $result['data'], $yandexOrder);
     }
 
     public function createShipment(Order $order): Shipment
     {
-        $result = $this->createClaim($order);
-        if (!$result['successful']) throw new \RuntimeException('Не удалось создать заявку Яндекс.Доставки.');
-        $claimId = $result['data']['id'] ?? $result['data']['claim_id'] ?? null;
+        $result = $this->createOrder($order);
+        if (! $result['successful']) throw new \RuntimeException('Не удалось создать заявку Яндекс.Доставки.');
+        $requestId = $result['data']['request_id'] ?? null;
         $statusId = ShipmentStatus::query()->where('code', ShipmentStatus::NEW)->value('id');
         return Shipment::updateOrCreate(['order_id' => $order->id], [
-            'delivery_method_id' => $order->delivery_method_id,
-            'status_id' => $statusId,
-            'tracking_number' => $claimId,
-            'provider_data' => $result['data'],
+            'delivery_method_id' => $order->delivery_method_id, 'status_id' => $statusId,
+            'tracking_number' => $requestId, 'provider_data' => $result['data'],
             'shipping_address' => json_encode($order->delivery_address, JSON_UNESCAPED_UNICODE),
-            'recipient_name' => $order->client?->name ?? 'Покупатель',
-            'recipient_phone' => $order->client?->phone ?? '',
+            'recipient_name' => $order->client?->name ?? 'Покупатель', 'recipient_phone' => $order->client?->phone ?? '',
             'cost' => $order->delivery_cost ?? 0,
         ]);
     }
 
-    public function getTrackingInfo(string $trackingNumber): array { return $this->getClaimInfo($trackingNumber)['data']; }
-    public function cancelShipment(Shipment $shipment): bool
-    {
-        $yandexOrder = YandexOrder::query()->where('shipment_id', $shipment->id)->first();
-        if (!$yandexOrder?->claim_id) return false;
-        return $this->cancelClaim($yandexOrder->claim_id, $yandexOrder->claim_version, 'free', $shipment->order_id)['successful'];
-    }
+    public function calculateRate(Order $order): Collection { return collect(); }
+    public function getTrackingInfo(string $trackingNumber): array { return $this->getRequestInfo($trackingNumber)['data']; }
+    public function cancelShipment(Shipment $shipment): bool { return $this->cancelRequest($shipment->tracking_number, $shipment->order_id)['successful']; }
     public function printLabel(Shipment $shipment): string { return ''; }
 
-    private function source(): array
+    private function saveRequest(Order $order, array $data, ?YandexOrder $existing = null): YandexOrder
     {
-        $source = $this->settings['source'] ?? [];
-        if (empty($source['coordinates']) || empty($source['address'])) throw new InvalidArgumentException('Не настроена точка отправки Яндекс.Доставки.');
-        return $source;
+        $requestId = $data['request_id'] ?? $existing?->claim_id;
+        $state = $data['state'] ?? [];
+        $status = $state['status'] ?? $data['status'] ?? 'CREATED';
+        $delivery = $order->delivery_data ?? [];
+        return YandexOrder::updateOrCreate(['order_id' => $order->id], [
+            'claim_id' => $requestId, 'status' => $status, 'internal_status' => $this->statusMapper->toInternal($status),
+            'delivery_type' => $delivery['delivery_type'] ?? 'courier', 'tariff_code' => $delivery['tariff_code'] ?? null,
+            'price' => $delivery['price'] ?? null, 'offer_id' => $delivery['offer_id'] ?? null,
+            'pvz_id' => $delivery['pvz']['id'] ?? null, 'tracking_url' => $data['sharing_url'] ?? null,
+            'request_id' => $existing?->request_id ?? (string) \Illuminate\Support\Str::uuid(), 'last_synced_at' => now(),
+        ]);
     }
 
     private function normalizeOffers(array $offers): array
     {
-        return collect($offers)->map(function (array $offer) {
-            $code = $offer['tariff_code'] ?? $offer['taxi_class'] ?? $offer['requirements']['taxi_class'] ?? null;
-            $tariff = $code ? YandexTariff::query()->where('code', $code)->first() : null;
-            return [
-                'offer_id' => $offer['offer_id'] ?? $offer['id'] ?? null,
-                'tariff_code' => $code,
-                'title' => $tariff?->title ?? $offer['tariff_name'] ?? $code ?? 'Яндекс.Доставка',
-                'price' => (float) ($offer['price'] ?? $offer['price_info']['total_price'] ?? 0),
-                'currency' => $offer['currency'] ?? 'RUB',
-                'delivery_date' => $offer['delivery_date'] ?? $offer['delivery_interval']['to'] ?? null,
-                'delivery_interval' => $offer['delivery_interval'] ?? null,
-                'slots' => $offer['slots'] ?? [],
-            ];
-        })->values()->all();
+        return collect($offers)->map(fn (array $offer) => [
+            'offer_id' => $offer['offer_id'] ?? $offer['id'] ?? null,
+            'tariff_name' => $offer['details']['tariff_name'] ?? $offer['tariff_name'] ?? 'Яндекс.Доставка',
+            'price' => (float) ($offer['pricing']['total'] ?? $offer['price'] ?? 0),
+            'currency' => $offer['pricing']['currency'] ?? 'RUB',
+            'delivery_date' => $offer['delivery_interval']['to'] ?? $offer['delivery_date'] ?? null,
+            'delivery_interval' => $offer['delivery_interval'] ?? null,
+        ])->filter(fn (array $offer) => $offer['offer_id'])->values()->all();
     }
 }

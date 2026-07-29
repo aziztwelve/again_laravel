@@ -8,7 +8,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * Контроллер NDD Express Delivery API.
+ * Контроллер Platform API Яндекс.Доставки (Доставка по России / NDD).
  */
 class YandexDeliveryController extends Controller
 {
@@ -112,14 +112,15 @@ class YandexDeliveryController extends Controller
         ]);
     }
 
-    /**
-     * Бронирование оффера больше не применяется в NDD Express: заявка создаётся
-     * только после оплаты заказа через claims/create.
-     * POST /api/public/delivery/yandex/offers/confirm
-     */
+    /** POST /api/public/delivery/yandex/offers/confirm */
     public function confirmOffer(Request $request): JsonResponse
     {
-        return response()->json(['success' => false, 'error' => 'Офферы NDD Express не бронируются до оплаты заказа.'], 410);
+        $validated = $request->validate(['offer_id' => 'required|string|max:255']);
+        $result = $this->service->confirmOffer($validated['offer_id']);
+        if (! $result['successful']) {
+            return response()->json(['success' => false, 'error' => $result['data']], $result['status']);
+        }
+        return response()->json(['success' => true, 'request_id' => $result['data']['request_id'] ?? null]);
     }
 
     /**
@@ -128,7 +129,7 @@ class YandexDeliveryController extends Controller
      */
     public function requestInfo(string $requestId): JsonResponse
     {
-        $result = $this->service->getClaimInfo($requestId);
+        $result = $this->service->getRequestInfo($requestId);
 
         if (!$result['successful']) {
             return response()->json([

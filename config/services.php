@@ -58,12 +58,12 @@ return [
         'enabled' => env('YANDEX_DELIVERY_ENABLED', false),
         'mode' => env('YANDEX_DELIVERY_MODE', 'sandbox'),
         'token' => env('YANDEX_DELIVERY_TOKEN'),
-        'client_id' => env('YANDEX_DELIVERY_CLIENT_ID'),
-        'webhook_secret' => env('YANDEX_DELIVERY_WEBHOOK_SECRET'),
+        'platform_station_id' => env('YANDEX_DELIVERY_PLATFORM_STATION_ID'),
+        'merchant_id' => env('YANDEX_DELIVERY_MERCHANT_ID'),
         'geocoder_key' => env('YANDEX_DELIVERY_GEOCODER_KEY'),
         'base_url' => [
-            'sandbox' => 'https://b2b.taxi.tst.yandex.net/b2b/cargo/integration/v2',
-            'production' => 'https://b2b.taxi.yandex.net/b2b/cargo/integration/v2',
+            'sandbox' => 'https://b2b.taxi.tst.yandex.net',
+            'production' => 'https://b2b-authproxy.taxi.yandex.net',
         ],
         'packaging' => [
             'default' => [

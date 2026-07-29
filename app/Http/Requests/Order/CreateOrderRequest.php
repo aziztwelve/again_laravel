@@ -348,7 +348,7 @@ class CreateOrderRequest extends FormRequest
             'delivery_method.name' => 'nullable|string|max:255',
 
             // Выбор Яндекс.Доставки сохраняется в orders.delivery_data до
-            // создания claims/create после оплаты. Старые поля yandex_offer/
+            // подтверждения Platform API после оплаты. Старые поля yandex_offer/
             // pvz_* поддерживаются для текущей витрины.
             'yandex_offer' => 'nullable|string|max:255',
             'pvz_code' => 'nullable|string|max:255',
