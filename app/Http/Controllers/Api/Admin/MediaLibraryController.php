@@ -7,11 +7,14 @@ use App\Models\Image;
 use App\Models\MediaFile;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Traits\ImageTrait;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
 class MediaLibraryController extends Controller
 {
+    use ImageTrait;
+
     public function index(Request $request)
     {
         return response()->json(['data' => MediaFile::latest()->paginate($request->integer('per_page', 48))]);
@@ -62,12 +65,33 @@ class MediaLibraryController extends Controller
             'image_ids.*' => ['integer', 'exists:images,id'],
             'media_ids' => ['nullable', 'array'],
             'media_ids.*' => ['integer', 'exists:media_files,id'],
+            'files' => ['nullable', 'array'],
+            'files.*' => ['image', 'max:32768'],
             'variant_id' => ['nullable', 'integer', 'exists:product_variants,id'],
         ]);
 
         $target = isset($data['variant_id']) ? ProductVariant::findOrFail($data['variant_id']) : $product;
         if ($target instanceof ProductVariant && $target->product_id !== $product->id) {
             abort(422, 'Variant does not belong to product.');
+        }
+
+        if ($request->hasFile('files')) {
+            $uploaded = collect();
+            $startPosition = $target->images()->count();
+
+            foreach ($request->file('files') as $offset => $file) {
+                $uploaded->push($this->save_images(
+                    $file,
+                    $target::class,
+                    $target->id,
+                    $startPosition + $offset
+                ));
+            }
+
+            return response()->json([
+                'data' => $target->images()->orderBy('order')->get(),
+                'attached' => $uploaded->values(),
+            ], 201);
         }
 
         if (!empty($data['image_ids'])) {

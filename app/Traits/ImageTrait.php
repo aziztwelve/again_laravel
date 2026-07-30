@@ -52,7 +52,7 @@ trait ImageTrait
         $image_name_table = "image_" . "{$item_id}_" . $randomInt . '.' . $extension;
 
 
-        ImageModel::create([
+        return ImageModel::create([
             'item_id' => $item_id,
             "item_type" => $item_type,
             "blur_hash" => $blur_hash_image,
