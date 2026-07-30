@@ -23,7 +23,7 @@ return new class extends Migration {
             $table->unsignedInteger('position')->default(0);
             $table->boolean('is_main')->default(false);
             $table->unique(['media_file_id', 'media_fileable_type', 'media_fileable_id'], 'media_fileable_unique');
-            $table->index(['media_fileable_type', 'media_fileable_id', 'position']);
+            $table->index(['media_fileable_type', 'media_fileable_id', 'position'], 'media_target_position_idx');
         });
     }
 
