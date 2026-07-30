@@ -92,13 +92,7 @@ class ProductImageController extends Controller
         if ($request->hasFile('images')) {
             foreach ($request->file('images') as $imageFile) {
                 $image = $this->saveProductImage($imageFile, $product);
-                //                foreach ($validated['variants'] as $variantId) {
-//                    $product->images()->attach($image->id, [
-//                        'product_variant_id' => $variantId,
-//                    ]);
-//                }
                 $createdImages[] = $image;
-                $product->images()->save($image);
             }
         }
 
@@ -137,8 +131,7 @@ class ProductImageController extends Controller
         $thumbPath = $directory . '/thumb_' . $filename;
         $thumb->save(storage_path('app/public/' . $thumbPath));
 
-        // Создаем запись в таблице images
-        return Image::create([
+        return $product->images()->create([
             'path' => $path,
             'url' => Storage::url($path),
             'order' => $product->images()->count() + 1,
