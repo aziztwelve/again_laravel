@@ -367,6 +367,8 @@ class UniversalCartTest extends TestCase
             'total' => 1000,
             'total_original' => 1000,
             'total_discount' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
         $abandonedCart = Cart::create([
             'client_id' => $client->id,
@@ -374,6 +376,8 @@ class UniversalCartTest extends TestCase
             'total' => 1000,
             'total_original' => 1000,
             'total_discount' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
 
         CartCommunication::create([
