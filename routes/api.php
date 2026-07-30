@@ -38,6 +38,7 @@ use App\Http\Controllers\Api\Admin\OtoBanner\OtoBannerController;
 use App\Http\Controllers\Api\Admin\Product\ProductAttributeController;
 use App\Http\Controllers\Api\Admin\ProductController;
 use App\Http\Controllers\Api\Admin\ProductImageController;
+use App\Http\Controllers\Api\Admin\MediaLibraryController;
 use App\Http\Controllers\Api\Admin\ProductOrderController;
 use App\Http\Controllers\Api\Admin\ProductVariantController;
 use App\Http\Controllers\Api\Admin\PromoCodeClientController;
@@ -791,6 +792,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
     //        // Products
     Route::group(['prefix' => 'products', 'as' => 'products.'], function () {
 
+        Route::get('/media-library', [MediaLibraryController::class, 'index']);
+        Route::post('/media-library', [MediaLibraryController::class, 'upload']);
+
         //        Route::get('/', [ProductController::class, 'index']);
 
         Route::post('/bulk-activate', [ProductController::class, 'bulkActivate']);
@@ -822,6 +826,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
         // images
         Route::post('/{product}/images', [ProductImageController::class, 'store']);
+        Route::post('/{product}/media-library/attach', [MediaLibraryController::class, 'attach']);
         Route::delete('/{product}/images/{image}/{variant}', [ProductImageController::class, 'destroy']);
         Route::patch('/{product}/images/{image}/{variant}/main', [ProductImageController::class, 'setMain']);
 

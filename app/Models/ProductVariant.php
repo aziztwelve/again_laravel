@@ -63,6 +63,12 @@ class ProductVariant extends Model
         return $this->morphMany(Image::class, 'item');
     }
 
+    public function mediaFiles(): MorphToMany
+    {
+        return $this->morphToMany(MediaFile::class, 'media_fileable', 'media_fileables')
+            ->withPivot(['position', 'is_main'])->orderByPivot('position');
+    }
+
     public function main_image()
     {
         return $this->morphOne(Image::class, 'item')->where('is_main', true);
