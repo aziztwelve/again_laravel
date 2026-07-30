@@ -804,6 +804,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
         Route::post('/', [ProductController::class, 'store']);
 
+        Route::get('/{product}/media-library', [MediaLibraryController::class, 'productIndex']);
+
         Route::get('/{product}', [ProductController::class, 'show']);
         Route::post('/update/{product}', [ProductController::class, 'update']);
 
