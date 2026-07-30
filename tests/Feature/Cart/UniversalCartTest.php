@@ -3,6 +3,7 @@
 namespace Tests\Feature\Cart;
 
 use App\Models\Cart;
+use App\Models\CartCommunication;
 use App\Models\Client;
 use App\Models\Product;
 use App\Services\Cart\CartMerger;
@@ -354,5 +355,55 @@ class UniversalCartTest extends TestCase
             ->assertJsonPath('data.period.to', now()->toDateString());
         $this->assertSame(0, $response->json('data.abandoned_count'));
         $this->assertSame(1, $response->json('data.ordered_carts'));
+    }
+
+    public function test_abandoned_cart_analytics_returns_email_conversion_by_step(): void
+    {
+        $client = $this->client();
+
+        $orderedCart = Cart::create([
+            'client_id' => $client->id,
+            'status' => 'ordered',
+            'total' => 1000,
+            'total_original' => 1000,
+            'total_discount' => 0,
+        ]);
+        $abandonedCart = Cart::create([
+            'client_id' => $client->id,
+            'status' => 'abandoned',
+            'total' => 1000,
+            'total_original' => 1000,
+            'total_discount' => 0,
+        ]);
+
+        CartCommunication::create([
+            'cart_id' => $orderedCart->id,
+            'channel' => 'email',
+            'step' => 1,
+            'status' => 'sent',
+            'sent_at' => now(),
+        ]);
+        CartCommunication::create([
+            'cart_id' => $abandonedCart->id,
+            'channel' => 'email',
+            'step' => 1,
+            'status' => 'sent',
+            'sent_at' => now(),
+        ]);
+        CartCommunication::create([
+            'cart_id' => $orderedCart->id,
+            'channel' => 'email',
+            'step' => 2,
+            'status' => 'sent',
+            'sent_at' => now(),
+        ]);
+
+        $response = $this->actingAs($client, 'sanctum')->getJson('/api/carts/analytics');
+
+        $response->assertOk()
+            ->assertJsonPath('data.email_conversion.labels', ['Письмо 1', 'Письмо 2', 'Письмо 3'])
+            ->assertJsonPath('data.email_conversion.sent', [2, 1, 0])
+            ->assertJsonPath('data.email_conversion.ordered', [1, 1, 0])
+            ->assertJsonPath('data.email_conversion.rates', [50, 100, 0]);
     }
 }

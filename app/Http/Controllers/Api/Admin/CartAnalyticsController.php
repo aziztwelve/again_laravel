@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Cart;
+use App\Models\CartCommunication;
 use App\Models\CartItem;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -87,6 +88,9 @@ class CartAnalyticsController extends Controller
                     'total' => $conversionBase,
                     'rate' => $conversionRate, // %
                 ],
+
+                // --- конверсия цепочки email-напоминаний ---
+                'email_conversion' => $this->buildEmailConversion($from, $to),
 
                 // --- динамика по дням/месяцам ---
                 'chart' => $chart,
@@ -205,6 +209,48 @@ class CartAnalyticsController extends Controller
             'granularity' => $granularity,
             'from' => $from->toDateString(),
             'to' => $to->toDateString(),
+        ];
+    }
+
+    /**
+     * Конверсия каждого шага email-цепочки: оформленные корзины / отправленные письма.
+     */
+    protected function buildEmailConversion(Carbon $from, Carbon $to): array
+    {
+        $rows = CartCommunication::query()
+            ->join('cart', 'cart_communications.cart_id', '=', 'cart.id')
+            ->where('cart_communications.channel', 'email')
+            ->where('cart_communications.status', 'sent')
+            ->whereIn('cart_communications.step', [1, 2, 3])
+            ->whereNotNull('cart.client_id')
+            ->whereBetween('cart.updated_at', [$from, $to])
+            ->select([
+                'cart_communications.step',
+                DB::raw('COUNT(DISTINCT cart_communications.cart_id) as sent'),
+                DB::raw("SUM(CASE WHEN cart.status = 'ordered' THEN 1 ELSE 0 END) as ordered"),
+            ])
+            ->groupBy('cart_communications.step')
+            ->get()
+            ->keyBy('step');
+
+        $sent = [];
+        $ordered = [];
+        $rates = [];
+
+        foreach ([1, 2, 3] as $step) {
+            $sentCount = (int) ($rows->get($step)?->sent ?? 0);
+            $orderedCount = (int) ($rows->get($step)?->ordered ?? 0);
+
+            $sent[] = $sentCount;
+            $ordered[] = $orderedCount;
+            $rates[] = $sentCount ? round($orderedCount / $sentCount * 100, 1) : 0;
+        }
+
+        return [
+            'labels' => ['Письмо 1', 'Письмо 2', 'Письмо 3'],
+            'sent' => $sent,
+            'ordered' => $ordered,
+            'rates' => $rates,
         ];
     }
 }
