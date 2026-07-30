@@ -140,6 +140,37 @@ class MediaLibraryController extends Controller
         return response()->json(['data' => $relation->orderByPivot('position')->get()]);
     }
 
+    public function destroyImage(Request $request, Product $product, Image $image)
+    {
+        $request->validate([
+            'variant_id' => ['nullable', 'integer', 'exists:product_variants,id'],
+        ]);
+
+        $target = $request->filled('variant_id')
+            ? ProductVariant::findOrFail($request->integer('variant_id'))
+            : $product;
+
+        if ($target instanceof ProductVariant && $target->product_id !== $product->id) {
+            abort(422, 'Variant does not belong to product.');
+        }
+
+        if ($image->item_type !== $target::class || (int) $image->item_id !== (int) $target->id) {
+            abort(422, 'Image does not belong to selected target.');
+        }
+
+        $path = $image->path;
+        $image->delete();
+
+        if ($path && !Image::where('path', $path)->exists()) {
+            $this->deleteImageFiles($path);
+        }
+
+        return response()->json([
+            'message' => 'Image deleted successfully.',
+            'data' => $target->images()->orderBy('order')->get(),
+        ]);
+    }
+
     private function formatImage(Image $image, string $sourceType, int $sourceId, ?string $sourceName): array
     {
         return [
@@ -173,5 +204,20 @@ class MediaLibraryController extends Controller
                         ->whereIn('item_id', $variantIds);
                 });
             });
+    }
+
+    private function deleteImageFiles(string $path): void
+    {
+        Storage::disk('public')->delete($path);
+
+        foreach (['original', 'lg', 'md', 'sm'] as $size) {
+            Storage::disk('public')->delete("products/{$size}_{$path}");
+        }
+
+        if (str_starts_with($path, 'product_images/')) {
+            $directory = dirname($path);
+            $filename = basename($path);
+            Storage::disk('public')->delete("{$directory}/thumb_{$filename}");
+        }
     }
 }

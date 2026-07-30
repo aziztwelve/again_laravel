@@ -829,6 +829,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // images
         Route::post('/{product}/images', [ProductImageController::class, 'store']);
         Route::post('/{product}/media-library/attach', [MediaLibraryController::class, 'attach']);
+        Route::delete('/{product}/media-library/images/{image}', [MediaLibraryController::class, 'destroyImage']);
         Route::delete('/{product}/images/{image}/{variant}', [ProductImageController::class, 'destroy']);
         Route::patch('/{product}/images/{image}/{variant}/main', [ProductImageController::class, 'setMain']);
 
