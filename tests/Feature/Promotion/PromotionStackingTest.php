@@ -178,13 +178,16 @@ class PromotionStackingTest extends TestCase
         $this->assertEquals(0, $p2->fresh()->times_used);
     }
 
-    /** Включённый флаг даёт выбор, но не позволяет сложить подарок и промокод. */
-    public function test_checkout_rejects_promo_code_when_gift_is_selected_for_promotion(): void
+    /** Включённый флаг разрешает промокод вместе с подарком. */
+    public function test_checkout_allows_promo_code_with_gift_when_promotion_allows_promo_codes(): void
     {
         $product = $this->makeGiftProduct();
         $gift = $this->makeGiftProduct();
-        $promotion = $this->makePromotion(['allow_promo_codes' => true]);
+        $secondGift = $this->makeGiftProduct();
+        $promotion = $this->makePromotion(['allow_promo_codes' => true, 'is_stackable' => true]);
+        $secondPromotion = $this->makePromotion(['allow_promo_codes' => false, 'is_stackable' => true]);
         $promotion->giftProducts()->attach($gift->id, ['quantity' => 1]);
+        $secondPromotion->giftProducts()->attach($secondGift->id, ['quantity' => 1]);
 
         $promoCode = PromoCode::create([
             'code' => 'PROMO'.strtoupper(uniqid()),
@@ -224,10 +227,14 @@ class PromotionStackingTest extends TestCase
                 'promotion_id' => $promotion->id,
                 'gift_product_id' => $gift->id,
                 'use_discount_instead' => false,
+            ], [
+                'promotion_id' => $secondPromotion->id,
+                'gift_product_id' => $secondGift->id,
+                'use_discount_instead' => false,
             ]],
         ]);
 
-        $response->assertUnprocessable()
-            ->assertJsonValidationErrors('promo_code');
+        $response->assertCreated()
+            ->assertJsonPath('success', true);
     }
 }

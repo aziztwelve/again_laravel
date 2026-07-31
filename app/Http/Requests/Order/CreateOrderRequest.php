@@ -175,30 +175,14 @@ class CreateOrderRequest extends FormRequest
 
             $useDiscountInstead = (bool) ($selection['use_discount_instead'] ?? false);
 
-            // Включённый флаг не суммирует подарок с промокодом: он даёт
-            // покупателю выбор между ними. Поэтому промокод допустим только
-            // при use_discount_instead=true по каждой применённой акции.
-            if ($hasPromoCode && (! $promotion->allow_promo_codes || ! $useDiscountInstead)) {
-                $validator->errors()->add(
-                    'promo_code',
-                    ! $promotion->allow_promo_codes
-                        ? 'Промокод нельзя использовать с акцией «'.$promotion->name.'».'
-                        : 'Выберите промокод или скидку вместо подарка по акции «'.$promotion->name.'».'
-                );
-            }
-
-            // BUG-3: «скидку вместо подарка» нельзя выбрать у акции с allow_promo_codes=false.
-            if ($useDiscountInstead && ! $promotion->allow_promo_codes) {
+            // Подарок обязателен: чекбокс управляет только доступностью поля
+            // промокода, а не заменяет подарок скидкой.
+            if ($useDiscountInstead) {
                 $validator->errors()->add(
                     "promotions.$i.use_discount_instead",
-                    'С акцией «'.$promotion->name.'» нельзя выбрать скидку вместо подарка.'
+                    'Подарок по акции нельзя заменить скидкой.'
                 );
 
-                continue;
-            }
-
-            if ($useDiscountInstead) {
-                // Скидка вместо подарка — подарок не выбирается.
                 continue;
             }
 
@@ -265,6 +249,15 @@ class CreateOrderRequest extends FormRequest
                     );
                 }
             }
+        }
+
+        // Промокод совместим со всеми подарками, если хотя бы одна из
+        // применённых акций разрешает промокоды.
+        if ($hasPromoCode && ! collect($loaded)->contains(fn ($promotion) => $promotion->allow_promo_codes)) {
+            $validator->errors()->add(
+                'promo_code',
+                'Промокод нельзя использовать с выбранными акциями.'
+            );
         }
 
         // Взаимоисключающие (невзаимные) акции нельзя присылать в наборе из нескольких.
