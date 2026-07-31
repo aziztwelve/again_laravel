@@ -44,7 +44,9 @@
                         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                             @foreach($cart->items as $item)
                                 @php
-                                    $name = $item->productVariant?->name ?: $item->product?->name ?: 'Товар';
+                                    $productName = $item->product?->name;
+                                    $variantName = $item->productVariant?->name;
+                                    $name = $productName ?: $variantName ?: 'Товар';
                                     $imageModel = $item->productVariant?->images?->first() ?: $item->product?->images?->first();
                                     $imageUrl = $imageModel?->url;
                                     if (! $imageUrl && $imageModel?->path) {
@@ -65,6 +67,9 @@
                                             }
                                         }
                                     }
+                                    if ($imageUrl && ! \Illuminate\Support\Str::startsWith($imageUrl, ['http://', 'https://'])) {
+                                        $imageUrl = url('/'.ltrim($imageUrl, '/'));
+                                    }
                                 @endphp
                                 <tr>
                                     <td style="padding:16px 0;border-top:1px solid #e8e5e1" valign="top">
@@ -79,7 +84,7 @@
                                                 </td>
                                                 <td valign="top" style="font-size:15px;line-height:21px;color:#292725">
                                                     <strong>{{ $name }}</strong><br>
-                                                    <span style="font-size:14px;color:#77716b">@if($item->color?->name){{ $item->color->name }} · @endif{{ $item->quantity }} шт.</span>
+                                                    <span style="font-size:14px;color:#77716b">@if($variantName && $variantName !== $name){{ $variantName }} · @endif@if($item->color?->name){{ $item->color->name }} · @endif{{ $item->quantity }} шт.</span>
                                                 </td>
                                                 <td align="right" valign="bottom" style="padding-left:12px;font-size:15px;line-height:21px;font-weight:700;color:#292725;white-space:nowrap">
                                                     {{ number_format($item->price * $item->quantity, 0, ',', ' ') }} ₽

@@ -423,7 +423,13 @@ class AbandonedCartService
         $lines = [];
 
         foreach ($cart->items as $item) {
-            $name = $item->productVariant?->name ?: $item->product?->name ?: 'Товар';
+            $productName = $item->product?->name;
+            $variantName = $item->productVariant?->name;
+            $name = $productName ?: $variantName ?: 'Товар';
+
+            if ($variantName && $variantName !== $name) {
+                $name .= " ({$variantName})";
+            }
 
             $colorName = $item->color?->name;
             if ($colorName) {

@@ -5,8 +5,10 @@ namespace Tests\Feature\Cart;
 use App\Models\Cart;
 use App\Models\CartCommunication;
 use App\Models\Client;
+use App\Models\Image;
 use App\Models\Order;
 use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Models\UserProfile;
 use App\Services\Cart\AbandonedCartService;
 use App\Services\Notifications\Jobs\SendNotificationJob;
@@ -216,6 +218,37 @@ class AbandonedCartTest extends TestCase
         $this->assertSame('Тест, вы снова выбрали нас ❤️', $message['subject']);
         $this->assertStringContainsString('приоритетная обработка', $message['body']);
         $this->assertStringNotContainsString('FIRST10', $message['body']);
+    }
+
+    public function test_email_uses_product_name_and_absolute_image_url_for_variant(): void
+    {
+        config(['app.url' => 'https://sub.againdev.ru']);
+
+        $cart = $this->cart($this->client(), 'abandoned', now(), ['recovery_token' => 'variant-'.uniqid()]);
+        $product = $cart->items()->firstOrFail()->product;
+        $variant = ProductVariant::create([
+            'product_id' => $product->id,
+            'name' => '100 мл',
+            'sku' => 'variant-'.uniqid(),
+            'price' => 1990,
+        ]);
+        $variant->images()->save(new Image([
+            'path' => 'products/test-product.jpg',
+            'url' => '/storage/products/test-product.jpg',
+            'order' => 1,
+            'is_main' => true,
+        ]));
+        $cart->items()->update(['product_variant_id' => $variant->id]);
+
+        $message = $this->service()->buildMessage(
+            $cart->fresh(['client.profile', 'items.product', 'items.productVariant.images', 'items.color']),
+            1
+        );
+
+        $this->assertStringContainsString('<strong>'.$product->name.'</strong>', $message['html']);
+        $this->assertStringContainsString('100 мл · 1 шт.', $message['html']);
+        $this->assertStringContainsString('src="https://sub.againdev.ru/storage/products/test-product.jpg"', $message['html']);
+        $this->assertStringNotContainsString('<strong>100 мл</strong>', $message['html']);
     }
 
     public function test_sends_abandoned_cart_to_every_available_channel(): void
