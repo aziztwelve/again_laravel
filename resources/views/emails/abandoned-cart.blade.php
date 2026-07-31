@@ -48,8 +48,8 @@
                                     $variantName = $item->productVariant?->name;
                                     $name = $productName ?: $variantName ?: 'Товар';
                                     $imageModel = $item->productVariant?->images?->first() ?: $item->product?->images?->first();
-                                    $imageUrl = $imageModel?->url;
-                                    if (! $imageUrl && $imageModel?->path) {
+                                    $imageUrl = null;
+                                    if ($imageModel?->path) {
                                         $storedPath = ltrim($imageModel->path, '/');
                                         $fileName = basename($storedPath);
                                         $imageCandidates = [
@@ -66,6 +66,10 @@
                                                 break;
                                             }
                                         }
+                                    }
+                                    $storedImageUrl = rtrim((string) config('app.url'), '/').'/storage/';
+                                    if (! $imageUrl && $imageModel?->url && ! \Illuminate\Support\Str::startsWith($imageModel->url, [$storedImageUrl, '/storage/', 'storage/'])) {
+                                        $imageUrl = $imageModel->url;
                                     }
                                     if ($imageUrl && ! \Illuminate\Support\Str::startsWith($imageUrl, ['http://', 'https://'])) {
                                         $imageUrl = url('/'.ltrim($imageUrl, '/'));
