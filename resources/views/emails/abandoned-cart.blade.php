@@ -84,7 +84,11 @@
                                                 </td>
                                                 <td valign="top" style="font-size:15px;line-height:21px;color:#292725">
                                                     <strong>{{ $name }}</strong><br>
-                                                    <span style="font-size:14px;color:#77716b">@if($variantName && $variantName !== $name){{ $variantName }} · @endif@if($item->color?->name){{ $item->color->name }} · @endif{{ $item->quantity }} шт.</span>
+                                                    <span style="font-size:14px;color:#77716b">
+                                                        @if($variantName && $variantName !== $name){{ $variantName }} · @endif
+                                                        @if($item->color?->name){{ $item->color->name }} · @endif
+                                                        {{ $item->quantity }} шт.
+                                                    </span>
                                                 </td>
                                                 <td align="right" valign="bottom" style="padding-left:12px;font-size:15px;line-height:21px;font-weight:700;color:#292725;white-space:nowrap">
                                                     {{ number_format($item->price * $item->quantity, 0, ',', ' ') }} ₽
