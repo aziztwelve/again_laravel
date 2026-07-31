@@ -46,10 +46,10 @@ class NotificationController extends Controller
         $reviews = $lastReviews ? Review::where('created_at', '>', $lastReviews)->count() : 0;
         $requests = $lastRequests ? ContactRequest::where('created_at', '>', $lastRequests)->count() : 0;
 
-        // Используем last_message_at — индексированное поле, без JOIN
-        $conversations = $lastConversations
-            ? Conversation::where('last_message_at', '>', $lastConversations)->count()
-            : 0;
+        // Счётчик чатов должен отражать реальные непрочитанные диалоги, а не
+        // факт входа в раздел. Счётчик конкретного диалога сбрасывается только
+        // в ConversationController::show после открытия этого диалога.
+        $conversations = Conversation::where('unread_messages_count', '>', 0)->count();
 
         $total = $orders + $tasks + $reviews + $requests + $conversations;
 
