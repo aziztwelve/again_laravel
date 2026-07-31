@@ -17,6 +17,11 @@
 **2 часа**, второе через **24 часа**, третье через **48 часов**. Цепочка
 останавливается сразу после оформления заказа.
 
+> Ниже в документе сохранены исходное ТЗ и история реализации. Упоминания
+> 24/72 часов, двух касаний, одного канала и `updated_at` в этих исторических
+> разделах не являются актуальными требованиями: приоритет имеет эта
+> актуализация.
+
 ### 🟢 Воронка 1 — новый клиент (ещё не покупал)
 
 Цель: снять страх первого заказа, дать безопасный стимул и помочь принять
@@ -234,7 +239,8 @@ public function order(): HasOne { return $this->hasOne(Order::class); } // по 
 ### Шаг A. Определение брошенных корзин (scheduled)
 Команда `php artisan cart:process-abandoned` (по аналогии с
 `BirthdayDiscountCommand`):
-1. Найти активные корзины (`status IS NULL`), у которых `updated_at <= now()-24h`
+1. Найти активные корзины (`status = 'active'`), у которых
+   `COALESCE(last_activity_at, updated_at, created_at) <= now()-2h`
    и есть `client_id` (гостевые корзины исключены) и `items` не пусто.
 2. Пометить `status='abandoned'`, `abandoned_at=now()`, сгенерить
    `recovery_token`.
@@ -250,8 +256,9 @@ Schedule::command('cart:process-abandoned')->hourly()->withoutOverlapping();
 может идти и ночью; ограничение по окну применяется к самой отправке сообщения.
 
 ### Шаг B. Цепочка сообщений
-Сервис `App\Services\Cart\AbandonedCartService`. Шаги (решение #2): **2 касания**
-— шаг 1 через 24 ч, шаг 2 через 72 ч (offset от `abandoned_at`). Для каждого шага:
+Сервис `App\Services\Cart\AbandonedCartService`. Актуальная цепочка: **3 касания**
+— через 2, 24 и 48 часов от последней активности. После пометки корзины
+брошенной это офсеты 0, 22 и 46 часов от `abandoned_at`. Для каждого шага:
 - проверить, что корзина всё ещё `abandoned` (не `ordered`) и не пуста;
 - проверить, что шаг ещё не отправлялся (`cart_communications` по `cart_id+step`);
 - проверить окно отправки 10:00–21:00 МСК (иначе отложить);
@@ -430,11 +437,9 @@ email/telegram/whatsapp/vk/web_chat). Промокод на шаге 2 — фа�
 
 1. ✅ **Связь заказ↔корзина — решено:** `orders.cart_id` (FK→`cart`, nullable).
    Обоснование — см. «Модель данных» § 1.
-2. ✅ **Цепочка — решено:** 2 касания.
-   - Шаг 1 — через **24 ч** (текущий шаблон письма из ТЗ).
-   - Шаг 2 — через **72 ч** (повтор + мягкий стимул, текст уточнить копирайтом).
-   - **Промокод** на последнем шаге — **в фазе 2** (не в MVP), хотя технически
-     возможен через `PromoCodeService`.
+2. ✅ **Цепочка — решено:** 3 касания через **2, 24 и 48 ч** от последней
+   активности; офсеты от `abandoned_at` — **0, 22 и 46 ч**. Тексты и условия
+   каждого шага приведены в актуализации в начале документа.
 3. ✅ **Расписание/окно — решено:** планировщик `hourly`,
    `withoutOverlapping()`. Отправка только в окне **10:00–21:00** по единому TZ
    магазина (МСК); ночные срабатывания откладываются на 10:00. TZ клиента не
@@ -482,15 +487,16 @@ email/telegram/whatsapp/vk/web_chat). Промокод на шаге 2 — фа�
 - `Order` — связь `cart()` (belongsTo), `cart_id` в `$fillable`.
 
 ### Конфиг
-- `config/abandoned_cart.php` — `enabled`, `abandon_after_hours` (24), `steps`
-  (шаг1=0ч, шаг2=48ч от `abandoned_at`), `channel_priority`
-  (`telegram→email→whatsapp→vk`), `send_window` (10–21), `recovery_url`
+- `config/abandoned_cart.php` — `enabled`, `abandon_after_hours` (2), `steps`
+  (шаги 1–3: 0, 22 и 46 ч от `abandoned_at`), `send_window` (10–21),
+  `recovery_url`.
   (env `CART_RECOVERY_URL`, по умолчанию `FRONTEND_URL` + `/cart/restore`).
 
 ### Сервис и команда
 - `App\Services\Cart\AbandonedCartService`:
   - `markAbandonedCarts()` — активные корзины с клиентом и непустым составом,
-    у которых `COALESCE(updated_at, created_at) <= now()-24h`, → `abandoned` +
+    у которых `COALESCE(last_activity_at, updated_at, created_at) <= now()-2h`,
+    → `abandoned` +
     `abandoned_at` + `recovery_token`.
   - `processChain()` — для каждой брошенной корзины и каждого due-шага: проверка
     окна отправки, идемпотентность через `CartCommunication::firstOrCreate`

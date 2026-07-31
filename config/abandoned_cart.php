@@ -12,7 +12,7 @@ return [
     'enabled' => (bool) env('ABANDONED_CART_ENABLED', true),
 
     // Через сколько часов бездействия активная корзина считается брошенной.
-    // «Бездействие» = COALESCE(cart.updated_at, cart.created_at).
+    // «Бездействие» = COALESCE(last_activity_at, updated_at, created_at).
     'abandon_after_hours' => (int) env('ABANDONED_CART_ABANDON_AFTER_HOURS', 2),
 
     // Шаги цепочки. after_hours — офсет от cart.abandoned_at.
@@ -24,8 +24,8 @@ return [
         ['step' => 3, 'after_hours' => 46],
     ],
 
-    // Приоритет каналов (решение #4). Берём первый, для которого у клиента есть
-    // контакт. Каналы из App\Services\Notifications\NotificationService.
+    // Список поддерживаемых каналов. Сценарий отправляет сообщение в каждый
+    // доступный контакт клиента (см. CustomerChannelResolver).
     'channel_priority' => ['telegram', 'email', 'whatsapp', 'vk'],
 
     // Ручная отправка напоминания из админки (шаг F): минимальный интервал между

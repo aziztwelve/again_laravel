@@ -22,7 +22,7 @@ Schedule::command('giftcards:send-scheduled')
     ->withoutOverlapping()
     ->runInBackground();
 
-// Брошенные корзины: детект + триггерная цепочка напоминаний (24ч/72ч).
+// Брошенные корзины: три касания через 2/24/48 ч от последней активности.
 // Ограничение по окну отправки 10:00–21:00 — внутри сервиса. См.
 // docs/tasks/abandoned-cart.md.
 Schedule::command('cart:process-abandoned')
