@@ -428,14 +428,10 @@ class ProductController extends Controller
 
             $prev_price = $product->price;
 
-            $product->update(array_merge(
-                $validated,
-                [
-                    'slug' => Str::slug($validated['name']),
-                    'sku' => Str::slug($validated['name']),
-                    'updated_at' => now(),
-                ]
-            ));
+            // Редактирование описания или названия не должно менять публичный URL
+            // и артикул. Иначе одинаковые названия товаров приводят к конфликту
+            // уникального slug, хотя пользователь менял совсем другое поле.
+            $product->update($validated);
 
             $this->price_history_create($request, $prev_price, $product);
 
