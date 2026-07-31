@@ -244,11 +244,12 @@ class AbandonedCartTest extends TestCase
             $cart->fresh(['client.profile', 'items.product', 'items.productVariant.images', 'items.color']),
             1
         );
+        $html = preg_replace('/\s+/', ' ', $message['html']);
 
-        $this->assertStringContainsString('<strong>'.$product->name.'</strong>', $message['html']);
-        $this->assertStringContainsString('100 мл · 1 шт.', $message['html']);
-        $this->assertStringContainsString('src="https://sub.againdev.ru/storage/products/test-product.jpg"', $message['html']);
-        $this->assertStringNotContainsString('<strong>100 мл</strong>', $message['html']);
+        $this->assertStringContainsString('<strong>'.$product->name.'</strong>', $html);
+        $this->assertStringContainsString('100 мл · 1 шт.', $html);
+        $this->assertStringContainsString('src="https://sub.againdev.ru/storage/products/test-product.jpg"', $html);
+        $this->assertStringNotContainsString('<strong>100 мл</strong>', $html);
     }
 
     public function test_sends_abandoned_cart_to_every_available_channel(): void
