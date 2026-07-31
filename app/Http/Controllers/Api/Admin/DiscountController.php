@@ -110,7 +110,15 @@ class DiscountController extends Controller
 
     public function update(DiscountRequest $request, Discount $discount)
     {
-        $discount->update($request->validated());
+        $validated = $request->validated();
+
+        // Выключение из админки — осознанная ручная пауза. Планировщик может
+        // запускать только скидки, оставленные в режиме автозапуска по датам.
+        if (array_key_exists('is_active', $validated)) {
+            $validated['is_manually_disabled'] = ! (bool) $validated['is_active'];
+        }
+
+        $discount->update($validated);
 
         $discount->categories()->sync([]);
         $discount->products()->sync([]);
@@ -258,4 +266,3 @@ class DiscountController extends Controller
         return $candidate;
     }
 }
-

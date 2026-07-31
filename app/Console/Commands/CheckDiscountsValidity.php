@@ -35,6 +35,7 @@ class CheckDiscountsValidity extends Command
             ->update(['is_active' => false]);
 
         $activated = Discount::where('is_active', false)
+            ->where('is_manually_disabled', false)
             ->where(function ($query) use ($now) {
                 $query->whereNull('ends_at')->orWhere('ends_at', '>', $now);
             })

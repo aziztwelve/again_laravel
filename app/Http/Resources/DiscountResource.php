@@ -14,6 +14,7 @@ class DiscountResource extends JsonResource
             'type' => $this->type,
             'value' => $this->value,
             'is_active' => $this->is_active,
+            'is_manually_disabled' => $this->is_manually_disabled,
             'customer_type' => $this->customer_type ?? 'all',
             'starts_at' => $this->starts_at,
             'ends_at' => $this->ends_at,

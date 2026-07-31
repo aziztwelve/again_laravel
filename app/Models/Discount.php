@@ -18,6 +18,7 @@ class Discount extends Model
     protected $casts = [
         'conditions' => 'json',
         'is_active' => 'boolean',
+        'is_manually_disabled' => 'boolean',
         'starts_at' => 'datetime',
         'ends_at' => 'datetime',
         'value' => 'decimal:2'
