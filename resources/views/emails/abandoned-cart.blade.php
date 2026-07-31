@@ -50,25 +50,12 @@
                                     $imageModel = $item->productVariant?->images?->first() ?: $item->product?->images?->first();
                                     $imageUrl = null;
                                     if ($imageModel?->path) {
-                                        $storedPath = ltrim($imageModel->path, '/');
-                                        $fileName = basename($storedPath);
-                                        $imageCandidates = [
-                                            $storedPath,
-                                            'products/'.$storedPath,
-                                            'products/original_'.$fileName,
-                                            'products/lg_'.$fileName,
-                                            'products/md_'.$fileName,
-                                            'products/sm_'.$fileName,
-                                        ];
-                                        foreach (array_unique($imageCandidates) as $candidate) {
-                                            if (\Illuminate\Support\Facades\Storage::disk('public')->exists($candidate)) {
-                                                $imageUrl = \Illuminate\Support\Facades\Storage::disk('public')->url($candidate);
-                                                break;
-                                            }
-                                        }
+                                        // Витрина отдаёт файлы из products/ через этот API-маршрут.
+                                        // /storage/ на сервере не опубликован, поэтому email не должен
+                                        // использовать сохранённый в старых записях storage URL.
+                                        $imageUrl = url('/api/product/image/lg_'.basename($imageModel->path));
                                     }
-                                    $storedImageUrl = rtrim((string) config('app.url'), '/').'/storage/';
-                                    if (! $imageUrl && $imageModel?->url && ! \Illuminate\Support\Str::startsWith($imageModel->url, [$storedImageUrl, '/storage/', 'storage/'])) {
+                                    if (! $imageUrl && $imageModel?->url) {
                                         $imageUrl = $imageModel->url;
                                     }
                                     if ($imageUrl && ! \Illuminate\Support\Str::startsWith($imageUrl, ['http://', 'https://'])) {
