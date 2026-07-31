@@ -6,6 +6,7 @@ use App\Models\Order;
 use App\Models\Product;
 use App\Models\Promotion;
 use App\Models\PromotionUsage;
+use App\Models\PromoCode;
 use App\Services\Promotion\PromotionService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Tests\TestCase;
@@ -175,5 +176,58 @@ class PromotionStackingTest extends TestCase
         $this->assertEquals(0, PromotionUsage::where('order_id', $order->id)->count());
         $this->assertEquals(0, $p1->fresh()->times_used);
         $this->assertEquals(0, $p2->fresh()->times_used);
+    }
+
+    /** Включённый флаг даёт выбор, но не позволяет сложить подарок и промокод. */
+    public function test_checkout_rejects_promo_code_when_gift_is_selected_for_promotion(): void
+    {
+        $product = $this->makeGiftProduct();
+        $gift = $this->makeGiftProduct();
+        $promotion = $this->makePromotion(['allow_promo_codes' => true]);
+        $promotion->giftProducts()->attach($gift->id, ['quantity' => 1]);
+
+        $promoCode = PromoCode::create([
+            'code' => 'PROMO'.strtoupper(uniqid()),
+            'discount_amount' => 10,
+            'discount_type' => 'percentage',
+            'discount_behavior' => PromoCode::DISCOUNT_BEHAVIOR_REPLACE,
+            'starts_at' => now()->subDay(),
+            'expires_at' => now()->addDay(),
+            'is_active' => true,
+            'applies_to_all_clients' => true,
+            'applies_to_all_products' => true,
+        ]);
+
+        $response = $this->postJson('/api/public/orders', [
+            'delivery_address' => [
+                'country' => 'Россия',
+                'city' => 'Москва',
+                'address' => 'Тестовая улица, 1',
+            ],
+            'user' => [
+                'first_name' => 'Тест',
+                'last_name' => 'Покупатель',
+                'phone' => '+79990000000',
+            ],
+            'recipient' => [
+                'first_name' => 'Тест',
+                'last_name' => 'Покупатель',
+                'phone' => '+79990000000',
+            ],
+            'items' => [[
+                'product_id' => $product->id,
+                'quantity' => 1,
+                'price' => 500,
+            ]],
+            'promo_code' => $promoCode->code,
+            'promotions' => [[
+                'promotion_id' => $promotion->id,
+                'gift_product_id' => $gift->id,
+                'use_discount_instead' => false,
+            ]],
+        ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonValidationErrors('promo_code');
     }
 }

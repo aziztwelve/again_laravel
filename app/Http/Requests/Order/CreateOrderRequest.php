@@ -175,11 +175,15 @@ class CreateOrderRequest extends FormRequest
 
             $useDiscountInstead = (bool) ($selection['use_discount_instead'] ?? false);
 
-            // Промокод несовместим с акцией, запрещающей промокоды.
-            if ($hasPromoCode && ! $promotion->allow_promo_codes) {
+            // Включённый флаг не суммирует подарок с промокодом: он даёт
+            // покупателю выбор между ними. Поэтому промокод допустим только
+            // при use_discount_instead=true по каждой применённой акции.
+            if ($hasPromoCode && (! $promotion->allow_promo_codes || ! $useDiscountInstead)) {
                 $validator->errors()->add(
                     'promo_code',
-                    'Промокод нельзя использовать с акцией «'.$promotion->name.'».'
+                    ! $promotion->allow_promo_codes
+                        ? 'Промокод нельзя использовать с акцией «'.$promotion->name.'».'
+                        : 'Выберите промокод или скидку вместо подарка по акции «'.$promotion->name.'».'
                 );
             }
 
