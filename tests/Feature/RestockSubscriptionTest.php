@@ -264,7 +264,7 @@ class RestockSubscriptionTest extends TestCase
         $this->assertFalse($ids->contains($outOfStock->id));
     }
 
-    public function test_coming_soon_category_shows_only_out_of_stock_products(): void
+    public function test_coming_soon_category_shows_all_manually_selected_products(): void
     {
         $category = Category::create([
             'name' => 'Скоро в продаже '.uniqid(),
@@ -274,13 +274,14 @@ class RestockSubscriptionTest extends TestCase
 
         $inStock = $this->product(['stock_quantity' => 5]);
         $outOfStock = $this->product(['stock_quantity' => 0]);
+        $category->products()->attach([$inStock->id, $outOfStock->id]);
 
         $response = $this->getJson('/api/public/catalog/products?per_page=50&category_slug='.$category->slug);
 
         $response->assertOk();
 
         $ids = collect($response->json('data'))->pluck('id');
-        $this->assertFalse($ids->contains($inStock->id));
+        $this->assertTrue($ids->contains($inStock->id));
         $this->assertTrue($ids->contains($outOfStock->id));
     }
 }
