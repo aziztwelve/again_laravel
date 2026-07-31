@@ -95,11 +95,7 @@ class DiscountController extends Controller
             $this->reassignProductsToDiscount($allProductIds, $discount);
             $this->reassignVariantsToDiscount($allVariantIds, $discount);
 
-            if (!empty($allProductIds) || !empty($allVariantIds)) {
-                Discount::whereNot('id', $discount->id)->update([
-                    'is_active' => 0,
-                ]);
-            }
+            Discount::deactivateOthersForActiveGlobalDiscount($discount);
         }
 
         return response()->json([
@@ -167,11 +163,7 @@ class DiscountController extends Controller
             $this->reassignProductsToDiscount($allProductIds, $discount);
             $this->reassignVariantsToDiscount($allVariantIds, $discount);
 
-            if (!empty($allProductIds) || !empty($allVariantIds)) {
-                Discount::whereNot('id', $discount->id)->update([
-                    'is_active' => 0,
-                ]);
-            }
+            Discount::deactivateOthersForActiveGlobalDiscount($discount);
         }
 
         return response()->json([

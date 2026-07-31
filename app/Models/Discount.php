@@ -31,6 +31,19 @@ class Discount extends Model
         return $target === self::CUSTOMER_TYPE_ALL || $target === $customerType;
     }
 
+    /**
+     * Глобальная скидка вытесняет другие только пока сама включена. Отключение
+     * такой скидки не должно менять состояние остальных скидок.
+     */
+    public static function deactivateOthersForActiveGlobalDiscount(self $discount): void
+    {
+        if (! $discount->is_active || $discount->discount_type !== 'all') {
+            return;
+        }
+
+        static::where('id', '!=', $discount->id)->update(['is_active' => false]);
+    }
+
     public function products()
     {
         return $this->morphedByMany(Product::class, 'discountable');
