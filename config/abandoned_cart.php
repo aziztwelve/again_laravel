@@ -11,17 +11,18 @@ return [
     // Глобальный выключатель фичи (рассылка напоминаний).
     'enabled' => (bool) env('ABANDONED_CART_ENABLED', true),
 
-    // Через сколько часов бездействия активная корзина считается брошенной.
+    // Через сколько минут бездействия корзина входит в цепочку напоминаний.
+    // До третьего касания её статус остаётся active.
     // «Бездействие» = COALESCE(last_activity_at, updated_at, created_at).
-    'abandon_after_hours' => (int) env('ABANDONED_CART_ABANDON_AFTER_HOURS', 2),
+    'abandon_after_minutes' => (int) env('ABANDONED_CART_ABANDON_AFTER_MINUTES', 30),
 
-    // Шаги цепочки. after_hours — офсет от cart.abandoned_at.
-    // Шаг 1 — через 2ч после последней активности; шаги 2 и 3 — через 24ч
-    // и 48ч соответственно.
+    // Шаги цепочки. after_minutes — офсет от начала цепочки (cart.abandoned_at).
+    // В сумме с 30 минутами неактивности это 2, 24 и 48 часов от последней
+    // активности.
     'steps' => [
-        ['step' => 1, 'after_hours' => 0],
-        ['step' => 2, 'after_hours' => 22],
-        ['step' => 3, 'after_hours' => 46],
+        ['step' => 1, 'after_minutes' => 90],
+        ['step' => 2, 'after_minutes' => 1410],
+        ['step' => 3, 'after_minutes' => 2850],
     ],
 
     // Список поддерживаемых каналов. Сценарий отправляет сообщение в каждый
@@ -43,14 +44,6 @@ return [
         'discount_amount' => (float) env('ABANDONED_CART_PROMO_AMOUNT', 10),
         'ttl_days' => (int) env('ABANDONED_CART_PROMO_TTL_DAYS', 7),
         'code_prefix' => env('ABANDONED_CART_PROMO_PREFIX', 'CART'),
-    ],
-
-    // Окно отправки по TZ магазина (config('app.timezone')). Сообщения шлём
-    // только в [start, end). Ночные срабатывания откладываются до следующего
-    // запуска в окне (решение #3).
-    'send_window' => [
-        'start_hour' => (int) env('ABANDONED_CART_WINDOW_START', 10),
-        'end_hour' => (int) env('ABANDONED_CART_WINDOW_END', 21),
     ],
 
     // База для ссылки восстановления корзины: {recovery_url}/{token}.

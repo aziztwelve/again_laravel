@@ -27,15 +27,9 @@ class ProcessAbandonedCartsCommand extends Command
 
         try {
             $marked = $service->markAbandonedCarts();
-            $this->info("Помечено брошенными: {$marked}");
+            $this->info("Добавлено в цепочку напоминаний: {$marked}");
 
             $result = $service->processChain();
-
-            if (! $result['window']) {
-                $this->info('Вне окна отправки — сообщения не отправлялись.');
-
-                return self::SUCCESS;
-            }
 
             $this->info("Отправлено напоминаний: {$result['sent']}, пропущено (нет канала): {$result['skipped']}");
 

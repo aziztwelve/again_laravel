@@ -32,11 +32,6 @@ class AbandonedCartTest extends TestCase
             'from_address' => 'test@example.com',
         ]);
 
-        // Окно отправки — круглосуточно, чтобы тест не зависел от времени суток.
-        config([
-            'abandoned_cart.send_window.start_hour' => 0,
-            'abandoned_cart.send_window.end_hour' => 24,
-        ]);
     }
 
     private function service(): AbandonedCartService
@@ -108,16 +103,16 @@ class AbandonedCartTest extends TestCase
         return $cart->fresh('items');
     }
 
-    public function test_marks_only_inactive_carts_as_abandoned(): void
+    public function test_starts_chain_after_thirty_minutes_but_keeps_cart_active(): void
     {
-        $stale = $this->cart($this->client(), 'active', now()->subHours(25));
-        $fresh = $this->cart($this->client(), 'active', now()->subHour());
+        $stale = $this->cart($this->client(), 'active', now()->subMinutes(31));
+        $fresh = $this->cart($this->client(), 'active', now()->subMinutes(29));
 
         $marked = $this->service()->markAbandonedCarts();
 
         $this->assertSame(1, $marked);
         $stale->refresh();
-        $this->assertSame('abandoned', $stale->status);
+        $this->assertSame('active', $stale->status);
         $this->assertNotNull($stale->abandoned_at);
         $this->assertNotNull($stale->recovery_token);
 
@@ -130,8 +125,8 @@ class AbandonedCartTest extends TestCase
         Queue::fake();
 
         $client = $this->client(['email' => 'buyer@example.com']);
-        $cart = $this->cart($client, 'abandoned', now()->subHour(), [
-            'abandoned_at' => now()->subHour(),
+        $cart = $this->cart($client, 'abandoned', now()->subMinutes(91), [
+            'abandoned_at' => now()->subMinutes(91),
             'recovery_token' => 'tok'.uniqid(),
         ]);
 
@@ -152,6 +147,45 @@ class AbandonedCartTest extends TestCase
         $this->assertSame(0, $result2['sent']);
         Queue::assertPushed(SendNotificationJob::class, 1);
         $this->assertSame(1, CartCommunication::where('cart_id', $cart->id)->count());
+    }
+
+    public function test_first_step_is_sent_after_two_hours_from_activity_while_cart_is_active(): void
+    {
+        Queue::fake();
+
+        $cart = $this->cart($this->client(['email' => 'active@example.com']), 'active', now()->subMinutes(31));
+        $this->assertSame(1, $this->service()->markAbandonedCarts());
+
+        // Детект уже состоялся, а первое касание наступает ещё через 90 минут.
+        $cart->update(['abandoned_at' => now()->subMinutes(91)]);
+        $result = $this->service()->processChain();
+
+        $this->assertSame(1, $result['sent']);
+        $cart->refresh();
+        $this->assertSame('active', $cart->status);
+        $this->assertDatabaseHas('cart_communications', [
+            'cart_id' => $cart->id,
+            'step' => 1,
+            'channel' => 'email',
+        ]);
+    }
+
+    public function test_cart_becomes_abandoned_only_after_third_step_is_queued(): void
+    {
+        Queue::fake();
+
+        $cart = $this->cart($this->client(['email' => 'third@example.com']), 'active', now()->subHours(48), [
+            'abandoned_at' => now()->subHours(48),
+            'recovery_token' => 'third-'.uniqid(),
+        ]);
+
+        $result = $this->service()->processChain();
+
+        $this->assertSame(3, $result['sent']);
+        Queue::assertPushed(SendNotificationJob::class, 3);
+        $cart->refresh();
+        $this->assertSame('abandoned', $cart->status);
+        $this->assertSame(3, CartCommunication::where('cart_id', $cart->id)->count());
     }
 
     public function test_new_client_receives_first_order_copy(): void
@@ -194,8 +228,8 @@ class AbandonedCartTest extends TestCase
             'max_user_id' => '234567',
             'vk_user_id' => '345678',
         ]);
-        $cart = $this->cart($client, 'abandoned', now()->subHour(), [
-            'abandoned_at' => now()->subHour(),
+        $cart = $this->cart($client, 'abandoned', now()->subMinutes(91), [
+            'abandoned_at' => now()->subMinutes(91),
             'recovery_token' => 'tok'.uniqid(),
         ]);
 
@@ -231,8 +265,8 @@ class AbandonedCartTest extends TestCase
         $client = Client::create(['email' => null, 'password' => bcrypt('x')]);
         UserProfile::create(['client_id' => $client->id, 'first_name' => 'N']);
 
-        $cart = $this->cart($client->fresh('profile'), 'abandoned', now()->subHour(), [
-            'abandoned_at' => now()->subHour(),
+        $cart = $this->cart($client->fresh('profile'), 'abandoned', now()->subMinutes(91), [
+            'abandoned_at' => now()->subMinutes(91),
             'recovery_token' => 'tok'.uniqid(),
         ]);
 

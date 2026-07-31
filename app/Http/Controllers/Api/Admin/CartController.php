@@ -256,12 +256,14 @@ class CartController extends Controller
 
         if ($cart && $cart->client_id) {
             $cart->update([
-                'status' => 'abandoned',
-                'updated_at' => now(),
+                // Статус abandoned выставляет только цепочка после третьего
+                // касания. Явная отмена — это действие пользователя, поэтому
+                // фиксируем её как активность и не меняем статус корзины.
+                'last_activity_at' => now(),
             ]);
         }
 
-        return response()->json(['success' => true, 'message' => 'Корзина отменена успешно!']);
+        return response()->json(['success' => true, 'message' => 'Корзина остаётся активной.']);
     }
 
     /**

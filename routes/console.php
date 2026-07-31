@@ -22,11 +22,11 @@ Schedule::command('giftcards:send-scheduled')
     ->withoutOverlapping()
     ->runInBackground();
 
-// Брошенные корзины: три касания через 2/24/48 ч от последней активности.
-// Ограничение по окну отправки 10:00–21:00 — внутри сервиса. См.
+// Брошенные корзины: три касания через 2/24/48 ч от последней активности,
+// без ограничения по часовому поясу. См.
 // docs/tasks/abandoned-cart.md.
 Schedule::command('cart:process-abandoned')
-    ->hourly()
+    ->everyMinute()
     ->withoutOverlapping()
     ->runInBackground();
 

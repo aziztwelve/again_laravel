@@ -8,7 +8,6 @@ use App\Models\CartCommunication;
 use App\Models\PromoCode;
 use App\Services\Notifications\CustomerChannelResolver;
 use App\Services\Notifications\Jobs\SendNotificationJob;
-use Carbon\Carbon;
 
 /**
  * Брошенная корзина: детект + триггерная цепочка напоминаний.
@@ -19,20 +18,21 @@ class AbandonedCartService
     public function __construct(protected CustomerChannelResolver $customerChannelResolver) {}
 
     /**
-     * Пометить активные корзины (status = 'active') брошенными, если последняя
-     * активность была раньше порога. Активность = COALESCE(last_activity_at,
-     * updated_at, created_at). Гостевые корзины не участвуют в сценарии
-     * брошенных корзин: без client_id их не помечаем и не отправляем цепочку.
+     * Начать цепочку для активных корзин, если последняя активность была раньше
+     * порога. До третьего касания статус остаётся active; abandoned_at хранит
+     * момент начала цепочки. Активность = COALESCE(last_activity_at, updated_at,
+     * created_at). Гостевые корзины не участвуют в сценарии.
      *
-     * @return int кол-во помеченных корзин
+     * @return int кол-во корзин, добавленных в цепочку
      */
     public function markAbandonedCarts(): int
     {
-        $hours = (int) config('abandoned_cart.abandon_after_hours', 24);
-        $threshold = now()->subHours($hours);
+        $minutes = (int) config('abandoned_cart.abandon_after_minutes', 30);
+        $threshold = now()->subMinutes($minutes);
 
         $carts = Cart::query()
             ->where('status', 'active')
+            ->whereNull('abandoned_at')
             ->whereNotNull('client_id')
             ->whereHas('items')
             ->whereRaw('COALESCE(last_activity_at, updated_at, created_at) <= ?', [$threshold])
@@ -41,7 +41,6 @@ class AbandonedCartService
         $count = 0;
         foreach ($carts as $cart) {
             $cart->update([
-                'status' => 'abandoned',
                 'abandoned_at' => now(),
                 'recovery_token' => $this->generateRecoveryToken(),
             ]);
@@ -54,16 +53,12 @@ class AbandonedCartService
     /**
      * Пройтись по брошенным корзинам и отправить готовые к отправке шаги
      * цепочки. Идемпотентно: один шаг — максимум одна запись на каждый канал
-     * (UNIQUE cart_id+step+channel). Уважает окно отправки.
+     * (UNIQUE cart_id+step+channel). Отправка не зависит от часового пояса.
      *
-     * @return array{sent:int, skipped:int, window:bool}
+     * @return array{sent:int, skipped:int}
      */
     public function processChain(): array
     {
-        if (! $this->withinSendWindow(now())) {
-            return ['sent' => 0, 'skipped' => 0, 'window' => false];
-        }
-
         $steps = config('abandoned_cart.steps', []);
         $now = now();
         $sent = 0;
@@ -71,7 +66,7 @@ class AbandonedCartService
 
         $carts = Cart::query()
             ->with(['client.profile', 'items.product', 'items.productVariant', 'items.color', 'communications'])
-            ->where('status', 'abandoned')
+            ->whereIn('status', ['active', 'abandoned'])
             ->whereNotNull('client_id')
             ->whereNotNull('abandoned_at')
             ->whereHas('items')
@@ -80,7 +75,10 @@ class AbandonedCartService
         foreach ($carts as $cart) {
             foreach ($steps as $step) {
                 $stepNum = (int) $step['step'];
-                $dueAt = $cart->abandoned_at->copy()->addHours((int) $step['after_hours']);
+                $offsetMinutes = array_key_exists('after_minutes', $step)
+                    ? (int) $step['after_minutes']
+                    : (int) ($step['after_hours'] ?? 0) * 60;
+                $dueAt = $cart->abandoned_at->copy()->addMinutes($offsetMinutes);
 
                 // Ещё не время для этого шага.
                 if ($dueAt->gt($now)) {
@@ -97,6 +95,7 @@ class AbandonedCartService
                 // Промокод-стимул на последнем шаге (фаза 2), если включён.
                 $promoCode = $this->maybeIssuePromo($cart, $stepNum);
 
+                $thirdStepQueued = false;
                 foreach ($recipients as $recipient) {
                     // Идемпотентность отдельна для каждого канала, поэтому
                     // повторный запуск не создаст дубль и не заблокирует остальные.
@@ -106,6 +105,7 @@ class AbandonedCartService
                     );
 
                     if (! $comm->wasRecentlyCreated) {
+                        $thirdStepQueued = $thirdStepQueued || $stepNum === 3;
                         continue;
                     }
                     $message = $this->buildMessage($cart, $stepNum, $promoCode, $comm->id);
@@ -117,11 +117,19 @@ class AbandonedCartService
                         $this->notificationData($cart, $stepNum, $recipient, $message, $comm)
                     );
                     $sent++;
+                    $thirdStepQueued = $thirdStepQueued || $stepNum === 3;
+                }
+
+                // Корзина считается брошенной лишь после третьего касания.
+                // Если заказ был оформлен раньше, он уже имеет status=ordered и
+                // не попадает в выборку выше.
+                if ($stepNum === 3 && $thirdStepQueued && $cart->status === 'active') {
+                    $cart->update(['status' => 'abandoned']);
                 }
             }
         }
 
-        return ['sent' => $sent, 'skipped' => $skipped, 'window' => true];
+        return ['sent' => $sent, 'skipped' => $skipped];
     }
 
     /**
@@ -445,15 +453,6 @@ class AbandonedCartService
         }
 
         return $base.'/'.$cart->recovery_token.($communicationId ? '?communication='.$communicationId : '');
-    }
-
-    protected function withinSendWindow(Carbon $now): bool
-    {
-        $start = (int) config('abandoned_cart.send_window.start_hour', 10);
-        $end = (int) config('abandoned_cart.send_window.end_hour', 21);
-        $hour = (int) $now->format('G');
-
-        return $hour >= $start && $hour < $end;
     }
 
     protected function generateRecoveryToken(): string
