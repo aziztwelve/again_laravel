@@ -241,14 +241,19 @@ class ProductsAndVariantsSyncWithMoySkladService
     private function extractBarcode($data): ?string
     {
         if (!empty($data->barcodes) && is_array($data->barcodes)) {
-            $first = $data->barcodes[0];
-            // Сохраняем баркод точно как в МойСклад
-            return $first->ean13
-                ?? $first->ean8
-                ?? $first->code128
-                ?? $first->gtin
-                ?? null;
+            // МойСклад может передать GTIN и EAN отдельными элементами.
+            // Предпочитаем EAN, но ищем каждый формат во всём списке.
+            foreach (['ean13', 'ean8', 'code128', 'gtin'] as $format) {
+                foreach ($data->barcodes as $barcode) {
+                    $value = $barcode->{$format} ?? null;
+
+                    if ($value !== null && $value !== '') {
+                        return $value;
+                    }
+                }
+            }
         }
+
         return null;
     }
 
@@ -341,11 +346,7 @@ class ProductsAndVariantsSyncWithMoySkladService
 
             $stockQty = $this->normalizeIntValue($stock[$data->id]['stock'] ?? 0);
 
-            // Безопасное извлечение баркода из варианта (сохраняем точно как в МойСклад)
-            $variantBarcode = null;
-            if (!empty($data->barcodes) && is_array($data->barcodes)) {
-                $variantBarcode = $data->barcodes[0]->ean13 ?? null;
-            }
+            $variantBarcode = $this->extractBarcode($data);
 
             $attributes = [
                 'uuid' => $data->id,
