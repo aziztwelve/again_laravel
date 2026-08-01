@@ -26,10 +26,31 @@ class Cart extends Model
         'consent_at' => 'datetime',
         'last_activity_at' => 'datetime',
         'marketing_consent' => 'boolean',
+        'recovery_cycle' => 'integer',
         'total' => 'decimal:2',
         'total_original' => 'decimal:2',
         'total_discount' => 'decimal:2',
     ];
+
+    protected static function booted(): void
+    {
+        static::updated(function (self $cart): void {
+            // Новая активность после старта цепочки должна начать новый цикл
+            // восстановления. Иначе прежние записи коммуникаций блокируют
+            // повторный первый шаг по уникальному ключу cart+step+channel.
+            if (! $cart->wasChanged('last_activity_at') || $cart->getOriginal('abandoned_at') === null) {
+                return;
+            }
+
+            $cart->forceFill([
+                'status' => 'active',
+                'abandoned_at' => null,
+                'recovery_token' => null,
+                'recovery_promo_code' => null,
+                'recovery_cart_communication_id' => null,
+            ])->saveQuietly();
+        });
+    }
 
     public function client(): BelongsTo
     {

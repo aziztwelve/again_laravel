@@ -43,6 +43,7 @@ class AbandonedCartService
             $cart->update([
                 'abandoned_at' => now(),
                 'recovery_token' => $this->generateRecoveryToken(),
+                'recovery_cycle' => ((int) $cart->recovery_cycle) + 1,
             ]);
             $count++;
         }
@@ -100,7 +101,12 @@ class AbandonedCartService
                     // Идемпотентность отдельна для каждого канала, поэтому
                     // повторный запуск не создаст дубль и не заблокирует остальные.
                     $comm = CartCommunication::firstOrCreate(
-                        ['cart_id' => $cart->id, 'step' => $stepNum, 'channel' => $recipient['channel']],
+                        [
+                            'cart_id' => $cart->id,
+                            'cycle' => (int) $cart->recovery_cycle,
+                            'step' => $stepNum,
+                            'channel' => $recipient['channel'],
+                        ],
                         ['type' => 'trigger', 'status' => 'queued']
                     );
 

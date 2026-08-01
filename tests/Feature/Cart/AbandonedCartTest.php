@@ -172,6 +172,35 @@ class AbandonedCartTest extends TestCase
         ]);
     }
 
+    public function test_new_activity_restarts_the_recovery_chain_with_a_new_cycle(): void
+    {
+        Queue::fake();
+
+        $cart = $this->cart($this->client(['email' => 'restart@example.com']), 'active', now()->subMinutes(31));
+        $this->service()->markAbandonedCarts();
+        $cart->refresh();
+        $firstCycle = $cart->recovery_cycle;
+
+        $cart->update(['abandoned_at' => now()->subMinutes(91)]);
+        $this->service()->processChain();
+        $this->assertSame(1, CartCommunication::where('cart_id', $cart->id)->count());
+
+        $cart->update(['last_activity_at' => now()]);
+        $cart->refresh();
+        $this->assertNull($cart->abandoned_at);
+
+        $cart->update(['last_activity_at' => now()->subMinutes(31)]);
+        $this->service()->markAbandonedCarts();
+        $cart->refresh();
+        $this->assertSame($firstCycle + 1, $cart->recovery_cycle);
+
+        $cart->update(['abandoned_at' => now()->subMinutes(91)]);
+        $result = $this->service()->processChain();
+
+        $this->assertSame(1, $result['sent']);
+        $this->assertSame(2, CartCommunication::where('cart_id', $cart->id)->count());
+    }
+
     public function test_cart_becomes_abandoned_only_after_third_step_is_queued(): void
     {
         Queue::fake();
