@@ -80,10 +80,9 @@ class CatalogService
             ]);
 
 
-        // Категория «Скоро в продаже»: показывать все товары, которые вручную
-        // выбраны в админке. Товар может быть частично в наличии (например,
-        // только в одном цвете), но всё равно оставаться в подборке для
-        // отсутствующих вариантов.
+        // Категория «Скоро в продаже»: ручная подборка из админки, но в неё
+        // попадают только товары без остатка целиком либо с цветом, у которого
+        // нет ни одного варианта в наличии.
         $isComingSoon = false;
         $category = null;
 
@@ -108,6 +107,27 @@ class CatalogService
                     $query
                         ->whereHas('categories', function ($q) use ($category) {
                             $q->where('categories.id', $category->id);
+                        })
+                        ->where(function ($q) {
+                            $q->where('stock_quantity', '<=', 0)
+                                ->orWhereHas('variants', function ($variantQuery) {
+                                    // Для цвета нужны отсутствовать все его размеры.
+                                    // Одиночный отсутствующий размер при наличии
+                                    // другого размера этого же цвета не выводит
+                                    // товар в «Скоро в продаже».
+                                    $variantQuery
+                                        ->whereNotNull('color_id')
+                                        ->where('stock_quantity', '<=', 0)
+                                        ->whereNotExists(function ($inStockColorVariant) {
+                                            $inStockColorVariant
+                                                ->selectRaw('1')
+                                                ->from('product_variants as in_stock_variants')
+                                                ->whereColumn('in_stock_variants.product_id', 'product_variants.product_id')
+                                                ->whereColumn('in_stock_variants.color_id', 'product_variants.color_id')
+                                                ->whereNull('in_stock_variants.deleted_at')
+                                                ->where('in_stock_variants.stock_quantity', '>', 0);
+                                        });
+                                });
                         });
                 } else {
                     // Обычная логика - товары привязанные к категории

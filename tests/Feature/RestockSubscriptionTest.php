@@ -264,7 +264,7 @@ class RestockSubscriptionTest extends TestCase
         $this->assertFalse($ids->contains($outOfStock->id));
     }
 
-    public function test_coming_soon_category_shows_all_manually_selected_products(): void
+    public function test_coming_soon_category_shows_only_unavailable_products_or_colors(): void
     {
         $category = Category::create([
             'name' => 'Скоро в продаже '.uniqid(),
@@ -274,14 +274,36 @@ class RestockSubscriptionTest extends TestCase
 
         $inStock = $this->product(['stock_quantity' => 5]);
         $outOfStock = $this->product(['stock_quantity' => 0]);
-        $category->products()->attach([$inStock->id, $outOfStock->id]);
+        $partiallyOutOfStock = $this->product(['stock_quantity' => 5]);
+        $colorInStock = Color::create(['name' => 'В наличии '.uniqid(), 'code' => '#000000']);
+        $colorOutOfStock = Color::create(['name' => 'Нет в наличии '.uniqid(), 'code' => '#ffffff']);
+
+        ProductVariant::create([
+            'product_id' => $partiallyOutOfStock->id,
+            'name' => 'В наличии',
+            'sku' => 'in-stock-'.uniqid(),
+            'price' => 1000,
+            'stock_quantity' => 5,
+            'color_id' => $colorInStock->id,
+        ]);
+        ProductVariant::create([
+            'product_id' => $partiallyOutOfStock->id,
+            'name' => 'Нет в наличии',
+            'sku' => 'out-of-stock-'.uniqid(),
+            'price' => 1000,
+            'stock_quantity' => 0,
+            'color_id' => $colorOutOfStock->id,
+        ]);
+
+        $category->products()->attach([$inStock->id, $outOfStock->id, $partiallyOutOfStock->id]);
 
         $response = $this->getJson('/api/public/catalog/products?per_page=50&category_slug='.$category->slug);
 
         $response->assertOk();
 
         $ids = collect($response->json('data'))->pluck('id');
-        $this->assertTrue($ids->contains($inStock->id));
+        $this->assertFalse($ids->contains($inStock->id));
         $this->assertTrue($ids->contains($outOfStock->id));
+        $this->assertTrue($ids->contains($partiallyOutOfStock->id));
     }
 }
