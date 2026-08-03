@@ -2,7 +2,6 @@
 
 namespace App\Services\MoySklad;
 
-use App\Http\Controllers\Api\Admin\MoySkladController;
 use App\Models\Color;
 use App\Models\DeliveryServiceSetting;
 use App\Models\Product;
@@ -40,8 +39,6 @@ class ProductsAndVariantsSyncWithMoySkladService
     public function sync_products_with_moysklad()
     {
         $helper = new MoySkladHelperService();
-        $controller = new MoySkladController();
-
         $moyskladUnits = $this->getUnitsMap($helper);
         $products = $helper->get_products()->rows ?? [];
         $variants = $helper->get_product_variants()->rows ?? [];
@@ -68,7 +65,7 @@ class ProductsAndVariantsSyncWithMoySkladService
         }
 
         $this->removeDeletedProducts($syncedUUIDs);
-        $this->syncLocalUnsyncedProducts($controller);
+        // МойСклад — источник каталога. Локальные товары без UUID не выгружаем.
     }
 
     private function getUnitsMap(MoySkladHelperService $service): array
@@ -405,48 +402,4 @@ class ProductsAndVariantsSyncWithMoySkladService
             ->delete();
     }
 
-    private function syncLocalUnsyncedProducts(MoySkladController $controller): void
-    {
-        $unsynced = Product::whereNull('uuid')->get();
-
-        foreach ($unsynced as $product) {
-            try {
-                $msProduct = $controller->check_product_for_existence($product->uuid)
-                    ? $controller->update_product($product)
-                    : $controller->create_product($product);
-
-                if ($msProduct) {
-                    $product->update(['uuid' => $msProduct->id]);
-
-                    $variants = ProductVariant::where('product_id', $product->id)->get();
-
-                    foreach ($variants as $variant) {
-                        if (!$variant->code) {
-                            $variant->update([
-                                'code' => (string)rand(1000000000, 9999999999),
-                            ]);
-                        }
-                    }
-
-                    if ($variants->count() > 0) {
-                        $remoteVariants = $controller->mass_variant_creation_and_update($variants, $msProduct);
-
-                        foreach ($variants as $variant) {
-                            if (isset($remoteVariants[$variant->code])) {
-                                $variant->update([
-                                    'uuid' => $remoteVariants[$variant->code],
-                                ]);
-                            }
-                        }
-                    }
-                }
-            } catch (Exception $e) {
-                \Log::error("Ошибка синхронизации локального продукта {$product->id}: " . $e->getMessage(), [
-                    'getLine' => $e->getLine(),
-                    'getTraceAsString' => $e->getTraceAsString(),
-                ]);
-                continue;
-            }
-        }
-    }
 }
