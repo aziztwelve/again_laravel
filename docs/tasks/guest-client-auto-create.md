@@ -127,7 +127,7 @@ php artisan test --filter=GuestClientServiceTest
 ### Пример curl (гость с email)
 
 ```bash
-BASE_URL="https://sub.againdev.ru"
+BASE_URL="https://againdev3.ru"
 curl -sk -X POST "$BASE_URL/api/public/orders" \
   -H 'Content-Type: application/json' \
   -d '{

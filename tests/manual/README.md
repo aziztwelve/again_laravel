@@ -4,7 +4,7 @@
 `laravel/docs/tasks/guest-checkout.md` (раздел «Сценарии backend»).
 
 Скрипты гоняются **против живого Laravel** (например, dev-сервера
-`https://sub.againdev.ru`), а не в изолированной тестовой БД. Поэтому
+`https://againdev3.ru`), а не в изолированной тестовой БД. Поэтому
 существуют:
 * подготовительный скрипт, который вытаскивает реальные тестовые
   данные (товар, промокоды, токен клиента) из БД и кладёт в
@@ -83,7 +83,7 @@ Exit-код 0 если все PASS, 1 если есть FAIL.
 После `01-prepare.sh`:
 
 ```bash
-BASE_URL="https://sub.againdev.ru"
+BASE_URL="https://againdev3.ru"
 PRODUCT_ID=42
 PRODUCT_PRICE=1160.00
 PRODUCT_STOCK=10

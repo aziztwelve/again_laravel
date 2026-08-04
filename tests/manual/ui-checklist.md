@@ -8,22 +8,22 @@
 
 ---
 
-## Где что живёт (dev `sub.againdev.ru` — единый домен)
+## Где что живёт (dev `againdev3.ru` — единый домен)
 
 | Кусок | URL | Что внутри |
 |-------|-----|------------|
-| **API (Laravel)** | `https://sub.againdev.ru/api/*` | то, что прогоняет `02-run.sh` |
-| **Витрина (nuxt-shop)** | `https://sub.againdev.ru/` | SSR на `127.0.0.1:3000`, проксируется nginx из `location /`. На dev может быть под Basic/preview-guard от самого Nuxt — спросить креды у автора фичи. |
-| **Админка (vue-admin)** | `https://sub.againdev.ru/admin/` | статика из `/var/www/html/vue-admin/dist`, обращается к `sub.againdev.ru/api/*` |
+| **API (Laravel)** | `https://againdev3.ru/api/*` | то, что прогоняет `02-run.sh` |
+| **Витрина (nuxt-shop)** | `https://againdev3.ru/` | SSR на `127.0.0.1:3000`, проксируется nginx из `location /`. На dev может быть под Basic/preview-guard от самого Nuxt — спросить креды у автора фичи. |
+| **Админка (vue-admin)** | `https://againdev3.ru/admin/` | статика из `/var/www/html/vue-admin/dist`, обращается к `againdev3.ru/api/*` |
 
 Единый домен: витрина (`/`, `/checkout`, …) обслуживается nuxt-shop, а `/api`
-и `/go` — laravel. Старый домен витрины `sub.againdev2.ru` больше не используется.
+и `/go` — laravel. Предыдущие домены витрины больше не используются.
 
 ---
 
-## Витрина (nuxt-shop) — `https://sub.againdev.ru`
+## Витрина (nuxt-shop) — `https://againdev3.ru`
 
-* [ ] **U1.** В **инкогнито**: открыть `https://sub.againdev.ru/checkout`. Блок «Покупатель»
+* [ ] **U1.** В **инкогнито**: открыть `https://againdev3.ru/checkout`. Блок «Покупатель»
   показывает приглашение «Оформляете как гость…», ссылку на `/login` и
   опциональное поле email. Корзина видна (она в `localStorage`).
   Заполнить получателя (имя/фамилия/телефон), адрес, способ оплаты,
@@ -51,7 +51,7 @@
 
 ---
 
-## Админка (vue-admin) — `https://sub.againdev.ru/admin/`
+## Админка (vue-admin) — `https://againdev3.ru/admin/`
 
 Зайти в админку, желательно как пользователь с правами просмотра и
 редактирования заказов.

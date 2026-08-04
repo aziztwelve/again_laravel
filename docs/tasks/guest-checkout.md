@@ -218,7 +218,7 @@
 
 ```bash
 # 1. Базовая конфигурация
-BASE_URL="https://sub.againdev.ru"   # или твой APP_URL из .env
+BASE_URL="https://againdev3.ru"   # или твой APP_URL из .env
 cd /var/www/html/laravel
 
 # 2. Убедиться, что миграции применены

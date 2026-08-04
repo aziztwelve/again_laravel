@@ -151,8 +151,8 @@ curl -s -o /dev/null -w "laravel /up -> %{http_code}\n" https://againdev3.ru/up 
 
 ## Единый домен againdev3.ru (витрина + дашборд + API на одном origin)
 
-Все три проекта обслуживаются на **одном домене** `againdev3.ru`. Старые домены
-витрины `sub.againdev.ru` и `sub.againdev2.ru` выведены из эксплуатации. Один origin
+Все три проекта обслуживаются на **одном домене** `againdev3.ru`. Предыдущие домены
+витрины выведены из эксплуатации. Один origin
 автоматически делает все куки first-party — отдельные обходы (как раньше
 same-origin `/api`) больше не нужны.
 
@@ -240,8 +240,8 @@ cd /var/www/html/laravel && php artisan tinker --execute="echo \App\Models\Order
 
 ## История деплоев
 
-- **2026-08-04** — единый домен сменён на **`againdev3.ru`**; прежний
-  `sub.againdev.ru` перенаправляется на новый адрес.
+- **2026-08-04** — единый домен сменён на **`againdev3.ru`**; прежний адрес
+  перенаправляется на новый.
 
 - **2026-07-12** — deeplink-привязка переписки из мессенджеров к клиенту/заказу
   (см. `docs/tasks/messenger-deeplink-binding.md`): новая таблица/модель
@@ -253,16 +253,16 @@ cd /var/www/html/laravel && php artisan tinker --execute="echo \App\Models\Order
   (`orders.client_id`). Применена 1 миграция. Проверено: эндпоинт отдаёт верные
   ссылки/боты, идемпотентность токена, `resolveBinding` привязывает клиента по
   заказу. Heads: laravel `db2cec5`, nuxt-shop `e93336e`, vue-admin `542604e`.
-- **2026-06-29** — переход на **единый домен** `sub.againdev.ru`: витрина,
-  дашборд и API на одном origin; домен витрины `sub.againdev2.ru` выведен из
+- **2026-06-29** — переход на единый домен: витрина,
+  дашборд и API на одном origin; прежний домен витрины выведен из
   эксплуатации. nginx маршрутит `/api` и `/go` в laravel, `/admin` — статика
   vue-admin, `/` — nuxt-shop SSR. `guest_token` и `utm_link_id` стали host-only
   first-party автоматически (обход same-origin `/api` больше не нужен). env:
-  `APP_URL=FRONTEND_URL=https://sub.againdev.ru`, `UTM_COOKIE_SECURE=true`.
+  `APP_URL=FRONTEND_URL`, `UTM_COOKIE_SECURE=true`.
   Конфиги/код почищены от мёртвых доменов (`cors.php`, `app.frontend_url`,
   фолбэки `FRONTEND_URL`).
-- **2026-06-28** — same-origin `/api` для витрины: nginx `sub.againdev2.ru` отдаёт
-  `/api` через php-fpm (laravel), `nuxt-shop` `API_URL=https://sub.againdev2.ru/api`.
+- **2026-06-28** — same-origin `/api` для витрины: nginx отдаёт
+  `/api` через php-fpm (laravel), `nuxt-shop` использует единый API URL.
   Чинит гостевую корзину (`guest_token` стал first-party cookie). Также: фикс
   recovery-ссылки (`/cart/restore` алиас → `/cart/recovery`, `CART_RECOVERY_URL`
   на канонический путь), бейдж «Гость»/«Клиент» и контакт гостя в списке корзин,

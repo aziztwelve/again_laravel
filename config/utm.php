@@ -9,7 +9,7 @@ return [
     | совпадать с доменом витрины/чекаута, иначе host-only cookie utm_link_id
     | не попадёт в заказ.
     |
-    | Единый домен проекта — sub.againdev.ru: витрина, дашборд и API на одном
+    | Единый домен проекта — againdev3.ru: витрина, дашборд и API на одном
     | origin, поэтому по умолчанию база = APP_URL (через FRONTEND_URL, который
     | теперь тоже равен APP_URL). Отдельный UTM_TRACKING_BASE_URL нужен только
     | для нестандартных окружений.
@@ -24,7 +24,7 @@ return [
     | api-чекаут. Имя куки фиксировано ('utm_link_id') и исключено из шифрования
     | в bootstrap/app.php — не меняйте без правки except-списка.
     |
-    | Единый домен (sub.againdev.ru): /go и чекаут на одном origin, поэтому
+    | Единый домен (againdev3.ru): /go и чекаут на одном origin, поэтому
     | кука — host-only (cookie_domain не задаём), SameSite=Lax, Secure=true
     | (домен на HTTPS). Кросс-доменная схема (Domain=.example.com,
     | SameSite=None) больше не нужна — оставлена в env только на случай отката.

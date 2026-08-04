@@ -341,13 +341,13 @@
 продакшеном или в следующих итерациях.
 
 ### Риски / требуют подтверждения
-1. ✅ **Кука атрибуции — единый домен `sub.againdev.ru` (актуализировано 2026-06-29).**
+1. ✅ **Кука атрибуции — единый домен `againdev3.ru` (актуализировано 2026-08-04).**
    Витрина, дашборд и API на одном origin, поэтому кука `utm_link_id` — host-only
    first-party: `/go/{slug}` и api-чекаут на одном домене, кука доходит до заказа
    без доп. настроек. Параметры в `config/utm.php`; в проде задать
    `UTM_COOKIE_SECURE=true` (HTTPS), `UTM_COOKIE_DOMAIN` НЕ задавать (host-only),
    `UTM_COOKIE_SAMESITE=lax`, `UTM_TRACKING_BASE_URL` НЕ задавать (= APP_URL).
-   Условие работы: nginx на `sub.againdev.ru` маршрутит `/go` в laravel (как и
+   Условие работы: nginx на `againdev3.ru` маршрутит `/go` в laravel (как и
    `/api`) — см. `docs/deploy-runbook.md`. Кросс-доменная схема
    (`UTM_COOKIE_DOMAIN=.example.com`, `SameSite=none`) больше не нужна, оставлена
    в env только на случай отката.

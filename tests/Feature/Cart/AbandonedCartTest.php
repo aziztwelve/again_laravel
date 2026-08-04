@@ -251,7 +251,7 @@ class AbandonedCartTest extends TestCase
 
     public function test_email_uses_product_name_and_absolute_image_url_for_variant(): void
     {
-        config(['app.url' => 'https://sub.againdev.ru']);
+        config(['app.url' => 'https://againdev3.ru']);
 
         $cart = $this->cart($this->client(), 'abandoned', now(), ['recovery_token' => 'variant-'.uniqid()]);
         $product = $cart->items()->firstOrFail()->product;
@@ -277,7 +277,7 @@ class AbandonedCartTest extends TestCase
 
         $this->assertStringContainsString('<strong>'.$product->name.'</strong>', $html);
         $this->assertStringContainsString('100 мл · 1 шт.', $html);
-        $this->assertStringContainsString('src="https://sub.againdev.ru/api/product/image/lg_test-product.jpg"', $html);
+        $this->assertStringContainsString('src="https://againdev3.ru/api/product/image/lg_test-product.jpg"', $html);
         $this->assertStringNotContainsString('<strong>100 мл</strong>', $html);
         $this->assertStringContainsString($product->name.' (100 мл)', $message['body']);
     }

@@ -32,7 +32,7 @@ virt: kvm
 
 - Laravel: `/var/www/html/laravel` на `186.246.14.59`
 - Dashboard: `/var/www/html/vue-admin`
-- Публичный домен: `https://sub.againdev.ru`
+- Публичный домен: `https://againdev3.ru`
 
 ## Цель
 
@@ -226,7 +226,7 @@ POST  /api/third-party-integrations/amnezia-vpn/test
 На production:
 
 ```bash
-curl -s -o /dev/null -w "laravel /up -> %{http_code}\n" https://sub.againdev.ru/up -k
+curl -s -o /dev/null -w "laravel /up -> %{http_code}\n" https://againdev3.ru/up -k
 ```
 
 Через backend API:
