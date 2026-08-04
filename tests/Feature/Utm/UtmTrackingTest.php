@@ -138,19 +138,19 @@ class UtmTrackingTest extends TestCase
         $link = $service->create([
             'name' => 'VK Body',
             'marketing_channel_id' => $channel->id,
-            'target_url' => 'https://sub.againdev.ru/catalog/'.$product->uuid.'?color=black',
+            'target_url' => 'https://againdev3.ru/catalog/'.$product->uuid.'?color=black',
             'utm_medium' => 'ver1',
         ]);
 
         $this->assertSame(
-            'https://sub.againdev.ru/catalog/menstrualnye-trusy-body-again-1?color=black',
+            'https://againdev3.ru/catalog/menstrualnye-trusy-body-again-1?color=black',
             $link->target_url
         );
     }
 
     public function test_link_creation_replaces_retired_storefront_domain(): void
     {
-        config(['utm.tracking_base_url' => 'https://sub.againdev.ru']);
+        config(['utm.tracking_base_url' => 'https://againdev3.ru']);
 
         $channel = $this->channel();
 
@@ -164,7 +164,7 @@ class UtmTrackingTest extends TestCase
             'utm_medium' => 'manual',
         ]);
 
-        $this->assertSame('https://sub.againdev.ru/catalog?foo=bar', $link->target_url);
+        $this->assertSame('https://againdev3.ru/catalog?foo=bar', $link->target_url);
     }
 
     // === Атрибуция заказа к метке (utm_link_id из orderData → заказ) ===

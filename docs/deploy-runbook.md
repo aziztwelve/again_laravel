@@ -4,7 +4,7 @@
 выполнять шаги ниже по порядку.
 
 **Сервер:** `ssh root@186.246.14.59` (хост `7826976-ck036553.twc1.net`)
-**Публичный адрес:** https://sub.againdev.ru
+**Публичный адрес:** https://againdev3.ru
 **Окружение laravel:** `APP_ENV=local`, БД `laravel` (dev/демо-сервер).
 
 > Доступ по SSH-ключу (BatchMode работает). Подключение:
@@ -131,7 +131,7 @@ ssh -o BatchMode=yes root@186.246.14.59 '
 set -euo pipefail
 pm2 list | grep -E "laravel|nuxt|whatsapp"
 cd /var/www/html/laravel && echo "pending: $(php artisan migrate:status | grep -ci pending || true)"
-curl -s -o /dev/null -w "laravel /up -> %{http_code}\n" https://sub.againdev.ru/up -k
+curl -s -o /dev/null -w "laravel /up -> %{http_code}\n" https://againdev3.ru/up -k
 '
 ```
 Ожидаем: все pm2 `online`, `pending: 0`, `/up -> 200`.
@@ -149,20 +149,20 @@ curl -s -o /dev/null -w "laravel /up -> %{http_code}\n" https://sub.againdev.ru/
 
 ---
 
-## Единый домен sub.againdev.ru (витрина + дашборд + API на одном origin)
+## Единый домен againdev3.ru (витрина + дашборд + API на одном origin)
 
-Все три проекта обслуживаются на **одном домене** `sub.againdev.ru`. Старый
-домен витрины `sub.againdev2.ru` выведен из эксплуатации. Один origin
+Все три проекта обслуживаются на **одном домене** `againdev3.ru`. Старые домены
+витрины `sub.againdev.ru` и `sub.againdev2.ru` выведены из эксплуатации. Один origin
 автоматически делает все куки first-party — отдельные обходы (как раньше
 same-origin `/api`) больше не нужны.
 
-Для витрины на `sub.againdev.ru` включена basic auth в Nuxt middleware
+Для витрины на `againdev3.ru` включена basic auth в Nuxt middleware
 `server/middleware/basic-auth.ts`: логин `dev`, пароль `12345678`. Защита
 срабатывает только на запросах, которые доходят до `nuxt-shop` через `location /`;
 `/api`, `/go` и `/admin/` обслуживаются отдельными nginx location и не закрываются
 этой авторизацией.
 
-**Маршрутизация nginx на `sub.againdev.ru` (server {443}), порядок важен —
+**Маршрутизация nginx на `againdev3.ru` (server {443}), порядок важен —
 specific ДО `location /`:**
 ```nginx
 # API laravel (php-fpm)
@@ -209,21 +209,21 @@ location / {
 
 **Обязательные env (laravel `.env` на сервере):**
 ```
-APP_URL=https://sub.againdev.ru
-FRONTEND_URL=https://sub.againdev.ru      # витрина = тот же домен
+APP_URL=https://againdev3.ru
+FRONTEND_URL=https://againdev3.ru      # витрина = тот же домен
 # UTM_TRACKING_BASE_URL не задавать (по умолчанию = APP_URL)
 UTM_COOKIE_SECURE=true                     # домен на HTTPS
 # UTM_COOKIE_DOMAIN не задавать (host-only), UTM_COOKIE_SAMESITE=lax
 # CART_COOKIE_* / SESSION_DOMAIN не задавать (host-only)
 ```
-**Витрина nuxt-shop `.env`:** `API_URL=https://sub.againdev.ru/api` (тот же origin).
+**Витрина nuxt-shop `.env`:** `API_URL=https://againdev3.ru/api` (тот же origin).
 
 Проверка:
 ```bash
 # guest_token — host-only first-party
-curl -sI -X POST https://sub.againdev.ru/api/cart/items/bulk | grep -i 'set-cookie'
+curl -sI -X POST https://againdev3.ru/api/cart/items/bulk | grep -i 'set-cookie'
 # /go ставит host-only utm_link_id и 302 на target_url
-curl -sI https://sub.againdev.ru/go/<slug> | grep -iE 'location|set-cookie'
+curl -sI https://againdev3.ru/go/<slug> | grep -iE 'location|set-cookie'
 # config должен совпадать с env выше
 cd /var/www/html/laravel && php artisan tinker --execute="echo config('utm.attribution.cookie_secure') ? 'UTM secure: yes' : 'UTM secure: no';"
 # атрибуция реально пишется в заказы
@@ -239,6 +239,9 @@ cd /var/www/html/laravel && php artisan tinker --execute="echo \App\Models\Order
 ---
 
 ## История деплоев
+
+- **2026-08-04** — единый домен сменён на **`againdev3.ru`**; прежний
+  `sub.againdev.ru` перенаправляется на новый адрес.
 
 - **2026-07-12** — deeplink-привязка переписки из мессенджеров к клиенту/заказу
   (см. `docs/tasks/messenger-deeplink-binding.md`): новая таблица/модель

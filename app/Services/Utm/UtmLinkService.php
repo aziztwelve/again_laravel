@@ -68,9 +68,9 @@ class UtmLinkService
     private function canonicalizeTargetUrl(string $url): string
     {
         $parts = parse_url($url);
-        if (($parts['host'] ?? null) === 'sub.againdev2.ru') {
+        if (in_array($parts['host'] ?? null, ['sub.againdev.ru', 'sub.againdev2.ru'], true)) {
             $parts['host'] = parse_url((string) config('utm.tracking_base_url', config('app.url')), PHP_URL_HOST)
-                ?: 'sub.againdev.ru';
+                ?: 'againdev3.ru';
         }
 
         $path = $parts['path'] ?? '';

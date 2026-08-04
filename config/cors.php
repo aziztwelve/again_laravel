@@ -2,10 +2,10 @@
 return [
     'paths' => ['api/*', 'sanctum/csrf-cookie', 'login', 'register', '*', 'broadcasting/auth'],
     'allowed_methods' => ['*'],
-    // Единый домен проекта — sub.againdev.ru (витрина + дашборд + API на одном
-    // origin). Старый домен витрины sub.againdev2.ru выведен из эксплуатации.
+    // Единый домен проекта — againdev3.ru (витрина + дашборд + API на одном
+    // origin). Старые домены витрины выведены из эксплуатации.
     'allowed_origins' => [
-        'https://sub.againdev.ru',
+        'https://againdev3.ru',
         'https://againdev.ru',
 
         'http://localhost:3000',
