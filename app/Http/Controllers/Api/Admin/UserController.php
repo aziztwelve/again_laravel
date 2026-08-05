@@ -550,8 +550,19 @@ class UserController extends Controller
      */
     public function updatePassword(Request $request, User $user): \Illuminate\Http\JsonResponse
     {
+        $actor = $request->user();
+        $isOwnPassword = $actor->is($user);
+        $canManageUsers = $actor->hasAnyRole(['admin', 'super-admin'])
+            && $actor->hasPermission('users.manage');
+
+        if (! $isOwnPassword && ! $canManageUsers) {
+            return response()->json([
+                'message' => 'Недостаточно прав для смены пароля другого пользователя.',
+            ], 403);
+        }
+
         $validator = Validator::make($request->all(), [
-            'old_password' => 'required|string',
+            'old_password' => $isOwnPassword ? 'required|string' : 'nullable|string',
             'password' => 'required|string|min:8|confirmed',
         ], [
             'password.confirmed' => 'Пароль подтверждения не совпадает.'
@@ -561,7 +572,7 @@ class UserController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        if (!Hash::check($request->old_password, $user->password)) {
+        if ($isOwnPassword && !Hash::check($request->old_password, $user->password)) {
             return response()->json([
                 'message' => 'Неверный текущий пароль.'
             ], 403);
