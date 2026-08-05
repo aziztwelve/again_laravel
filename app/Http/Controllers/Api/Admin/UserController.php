@@ -552,8 +552,8 @@ class UserController extends Controller
     {
         $actor = $request->user();
         $isOwnPassword = $actor->is($user);
-        $canManageUsers = $actor->hasAnyRole(['admin', 'super-admin'])
-            && $actor->hasPermission('users.manage');
+        $canManageUsers = $actor->hasRole('super-admin')
+            || ($actor->hasRole('admin') && $actor->hasPermission('users.manage'));
 
         if (! $isOwnPassword && ! $canManageUsers) {
             return response()->json([
