@@ -182,13 +182,40 @@ class YandexDeliveryService extends DeliveryService
 
     private function normalizeOffers(array $offers): array
     {
-        return collect($offers)->map(fn (array $offer) => [
-            'offer_id' => $offer['offer_id'] ?? $offer['id'] ?? null,
-            'tariff_name' => $offer['details']['tariff_name'] ?? $offer['tariff_name'] ?? 'Яндекс.Доставка',
-            'price' => (float) ($offer['pricing']['total'] ?? $offer['price'] ?? 0),
-            'currency' => $offer['pricing']['currency'] ?? 'RUB',
-            'delivery_date' => $offer['delivery_interval']['to'] ?? $offer['delivery_date'] ?? null,
-            'delivery_interval' => $offer['delivery_interval'] ?? null,
-        ])->filter(fn (array $offer) => $offer['offer_id'])->values()->all();
+        return collect($offers)->map(function (array $offer): array {
+            // Platform API returns these fields inside offer_details. The older
+            // response shape used the top-level pricing/details keys, so keep it
+            // as a fallback for already supported environments.
+            $details = is_array($offer['offer_details'] ?? null) ? $offer['offer_details'] : [];
+            $pricing = $details['pricing_total']
+                ?? $details['pricing']
+                ?? data_get($offer, 'pricing.total')
+                ?? $offer['price']
+                ?? 0;
+            $deliveryInterval = $details['delivery_interval'] ?? $offer['delivery_interval'] ?? null;
+
+            return [
+                'offer_id' => $offer['offer_id'] ?? $offer['id'] ?? null,
+                'tariff_name' => $details['tariff_name'] ?? data_get($offer, 'details.tariff_name') ?? $offer['tariff_name'] ?? 'Яндекс.Доставка',
+                'price' => $this->priceFromApiValue($pricing),
+                'currency' => $details['currency'] ?? data_get($offer, 'pricing.currency') ?? 'RUB',
+                'delivery_date' => data_get($deliveryInterval, 'to') ?? $offer['delivery_date'] ?? null,
+                'delivery_interval' => $deliveryInterval,
+            ];
+        })->filter(fn (array $offer) => $offer['offer_id'])->values()->all();
+    }
+
+    /** Converts Platform API values such as "402.6 RUB" to a ruble amount. */
+    private function priceFromApiValue(mixed $value): float
+    {
+        if (is_numeric($value)) {
+            return (float) $value;
+        }
+
+        if (! is_string($value) || ! preg_match('/[-+]?\d+(?:[.,]\d+)?/', $value, $matches)) {
+            return 0.0;
+        }
+
+        return (float) str_replace(',', '.', $matches[0]);
     }
 }
