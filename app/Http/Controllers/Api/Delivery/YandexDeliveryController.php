@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Services\Delivery\YandexDeliveryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use InvalidArgumentException;
 
 /**
  * Контроллер Platform API Яндекс.Доставки (Доставка по России / NDD).
@@ -97,14 +98,21 @@ class YandexDeliveryController extends Controller
         $recipient    = $validated['recipient'] ?? ['name' => 'Покупатель', 'phone' => '+70000000000'];
         $items        = $validated['items'];
 
-        $offers = $this->service->calculateOffers(
-            deliveryType: $deliveryType,
-            items:        $items,
-            pvzId:        $pvzId,
-            pvzCoords:    $pvzCoords,
-            destination:  $destination,
-            recipient:    $recipient,
-        );
+        try {
+            $offers = $this->service->calculateOffers(
+                deliveryType: $deliveryType,
+                items:        $items,
+                pvzId:        $pvzId,
+                pvzCoords:    $pvzCoords,
+                destination:  $destination,
+                recipient:    $recipient,
+            );
+        } catch (InvalidArgumentException $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+            ], 422);
+        }
 
         return response()->json([
             'success' => true,

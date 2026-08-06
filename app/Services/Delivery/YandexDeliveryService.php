@@ -46,6 +46,15 @@ class YandexDeliveryService extends DeliveryService
         $result = $this->client->request('POST', '/api/b2b/platform/offers/create', $payload, query: ['send_unix' => 'false']);
         if (! $result['successful']) {
             Log::warning('Yandex Delivery offers/create failed', ['status' => $result['status'], 'response' => $result['data']]);
+            if (
+                (int) $result['status'] === 400
+                && data_get($result['data'], 'code') === 'validation_error'
+                && data_get($result['data'], 'message') === "Recipient's phone is invalid"
+            ) {
+                throw new InvalidArgumentException(
+                    'Яндекс.Доставка не приняла номер получателя. Проверьте номер и укажите действующий российский мобильный номер.'
+                );
+            }
             return [];
         }
         $offers = $this->normalizeOffers($result['data']['offers'] ?? []);
