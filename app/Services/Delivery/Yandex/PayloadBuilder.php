@@ -41,6 +41,7 @@ class PayloadBuilder
     public function order(Order $order, array $settings): array
     {
         $data = $order->delivery_data ?? [];
+        $address = $order->loadMissing('address')->address;
         $items = $order->loadMissing('items.product', 'items.variant')->items->map(fn ($item) => [
             'quantity' => $item->quantity,
             'name' => $item->legacy_name ?: $item->product?->name ?: 'Товар',
@@ -54,9 +55,15 @@ class PayloadBuilder
             ],
         ])->all();
 
+        $addressRecipientName = trim(implode(' ', array_filter([
+            $address?->recipient_last_name,
+            $address?->recipient_first_name,
+            $address?->recipient_middle_name,
+        ])));
         $recipient = [
-            'name' => $order->client?->name ?? $order->recipient_name ?? 'Покупатель',
-            'phone' => $order->client?->phone ?? $order->recipient_phone ?? '',
+            // Получатель заказа может отличаться от клиента, оформившего покупку.
+            'name' => $addressRecipientName ?: ($order->client?->name ?? 'Покупатель'),
+            'phone' => $address?->recipient_phone ?? $order->client?->phone ?? '',
             'email' => $order->client?->email ?? $order->email ?? null,
         ];
 

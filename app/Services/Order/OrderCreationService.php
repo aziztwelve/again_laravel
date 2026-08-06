@@ -37,6 +37,12 @@ class OrderCreationService
         $recipient = $orderData['recipient'] ?? [];
         $deliveryMethodData = $orderData['delivery_method'] ?? [];
         $yandexDeliveryData = $this->buildYandexDeliveryData($orderData, $deliveryAddress);
+        // Для Яндекс.Доставки выбранный клиентом интервал хранится в оффере.
+        // Дублируем его начальную дату в обычное поле заказа/адреса, которое
+        // отображает админка и используют остальные интеграции.
+        $deliveryDate = $deliveryAddress['delivery_date']
+            ?? $yandexDeliveryData['scheduled_time']
+            ?? null;
         $itemsTotal = $orderData['total'] ?? $this->calculateTotalFromItems($orderData['items'] ?? []);
         $deliveryCost = $this->resolveDeliveryCost($itemsTotal, $yandexDeliveryData);
         // Если в payload пришёл client_id (админ создаёт заказ за клиента) —
@@ -64,7 +70,7 @@ class OrderCreationService
             'country_code' => $deliveryAddress['country'] ?? null,
             'city_name' => $deliveryAddress['city'] ?? null,
             'delivery_comment' => $deliveryAddress['delivery_comment'] ?? null,
-            'delivery_date' => $this->formatDeliveryDate($deliveryAddress['delivery_date'] ?? null),
+            'delivery_date' => $this->formatDeliveryDate($deliveryDate),
 
             // Заметки
             'notes' => $orderData['notes'] ?? $deliveryAddress['buyer_comment'] ?? null,
@@ -117,7 +123,7 @@ class OrderCreationService
                 'floor' => $deliveryAddress['floor'] ?? null,
                 'intercom' => $deliveryAddress['intercom'] ?? null,
                 'delivery_comment' => $deliveryAddress['delivery_comment'] ?? null,
-                'delivery_date' => $this->formatDeliveryDate($deliveryAddress['delivery_date'] ?? null),
+                'delivery_date' => $this->formatDeliveryDate($deliveryDate),
                 'buyer_comment' => $deliveryAddress['buyer_comment'] ?? null,
             ]);
         }

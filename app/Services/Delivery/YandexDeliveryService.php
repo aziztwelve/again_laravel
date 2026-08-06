@@ -136,11 +136,18 @@ class YandexDeliveryService extends DeliveryService
         if (! $result['successful']) throw new \RuntimeException('Не удалось создать заявку Яндекс.Доставки.');
         $requestId = $result['data']['request_id'] ?? null;
         $statusId = ShipmentStatus::query()->where('code', ShipmentStatus::NEW)->value('id');
+        $address = $order->loadMissing('address')->address;
+        $recipientName = trim(implode(' ', array_filter([
+            $address?->recipient_last_name,
+            $address?->recipient_first_name,
+            $address?->recipient_middle_name,
+        ])));
         return Shipment::updateOrCreate(['order_id' => $order->id], [
             'delivery_method_id' => $order->delivery_method_id, 'status_id' => $statusId,
             'tracking_number' => $requestId, 'provider_data' => $result['data'],
             'shipping_address' => json_encode($order->delivery_address, JSON_UNESCAPED_UNICODE),
-            'recipient_name' => $order->client?->name ?? 'Покупатель', 'recipient_phone' => $order->client?->phone ?? '',
+            'recipient_name' => $recipientName ?: ($order->client?->name ?? 'Покупатель'),
+            'recipient_phone' => $address?->recipient_phone ?? $order->client?->phone ?? '',
             'cost' => $order->delivery_cost ?? 0,
         ]);
     }
