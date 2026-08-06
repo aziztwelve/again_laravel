@@ -138,9 +138,9 @@ class YandexDeliveryService extends DeliveryService
         $statusId = ShipmentStatus::query()->where('code', ShipmentStatus::NEW)->value('id');
         $address = $order->loadMissing('address')->address;
         $recipientName = trim(implode(' ', array_filter([
-            $address?->recipient_last_name,
             $address?->recipient_first_name,
             $address?->recipient_middle_name,
+            $address?->recipient_last_name,
         ])));
         return Shipment::updateOrCreate(['order_id' => $order->id], [
             'delivery_method_id' => $order->delivery_method_id, 'status_id' => $statusId,

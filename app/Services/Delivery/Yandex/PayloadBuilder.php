@@ -56,9 +56,9 @@ class PayloadBuilder
         ])->all();
 
         $addressRecipientName = trim(implode(' ', array_filter([
-            $address?->recipient_last_name,
             $address?->recipient_first_name,
             $address?->recipient_middle_name,
+            $address?->recipient_last_name,
         ])));
         $recipient = [
             // Получатель заказа может отличаться от клиента, оформившего покупку.
