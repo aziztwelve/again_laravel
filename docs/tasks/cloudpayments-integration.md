@@ -1,0 +1,87 @@
+# Задача: интеграция CloudPayments для оплаты заказов
+
+**Статус:** В реализации  
+**Дата:** 2026-08-06  
+**Витрина:** `again_front`  
+**Backend:** `lara_admin`
+
+## Цель
+
+Дать покупателю возможность безопасно оплатить заказ картой на витрине через
+платёжный виджет CloudPayments. Карточные реквизиты вводятся только в iframe
+CloudPayments, а окончательным источником статуса оплаты являются серверные
+уведомления CloudPayments, а не браузерный callback.
+
+## Выбранная схема
+
+Используем одностадийную оплату (`paymentSchema: Single`) через актуальный
+CloudPayments Widget.
+
+```text
+Checkout -> POST /api/public/orders -> заказ pending
+      -> /orders/{view_token} -> POST .../cloudpayments/intent
+      -> CloudPayments Widget (карточные данные не попадают на наш сервер)
+      -> Check webhook: сверяем заказ, сумму и валюту
+      -> Pay webhook: HMAC, идемпотентная фиксация Payment + orders.paid
+      -> OrderObserver -> создание доставки
+```
+
+`oncomplete` виджета используется только для обновления интерфейса. Он не
+выдаёт товар, не меняет статус заказа и не является подтверждением оплаты.
+
+## Контракт и безопасность
+
+| Элемент | Решение |
+|---|---|
+| Форма карты | Только скрипт `https://widget.cloudpayments.ru/bundles/cloudpayments.js`; не бандлим и не проксируем его. |
+| Сумма | Рассчитывается и хранится в `orders` на сервере; клиент её не задаёт. Check отклоняет несовпадение. |
+| Связь попытки с заказом | Для каждого запуска создаётся `payments` со статусом `pending`; его ID передаётся как `externalId` и в `metadata`. |
+| Вебхуки | Принимаются только после проверки `Content-HMAC` **или** `X-Content-HMAC`: HMAC-SHA256 от сырого тела, ключ — API Secret, результат Base64. |
+| Повторы | Pay/Fail идемпотентны по локальному платежу/TransactionId; повтор не создаёт новую доставку. |
+| Секреты | `CLOUDPAYMENTS_API_SECRET` существует только в `.env` сервера, не в Nuxt и не в git. В браузер возвращается только Public ID. |
+| Фискализация | В первую поставку не включаем: чек формируется существующим контуром магазина. Подключение CloudKassir требует отдельного согласования реквизитов, ставки НДС и системы налогообложения. |
+
+## Маршруты
+
+| Метод | URL | Назначение |
+|---|---|---|
+| POST | `/api/public/orders/{viewToken}/cloudpayments/intent` | Возвращает безопасные параметры виджета для неоплаченного заказа с `payment_method=card_ru`. |
+| POST | `/api/webhooks/cloudpayments/check` | До авторизации: проверка существования, статуса, суммы и валюты. Ответ `{"code":0}` только при разрешении. |
+| POST | `/api/webhooks/cloudpayments/pay` | После успешной оплаты: `Payment=completed`, `Order.payment_status=paid`. |
+| POST | `/api/webhooks/cloudpayments/fail` | Регистрирует неудавшуюся попытку, заказ остаётся доступен для повторной оплаты. |
+
+## Настройка в личном кабинете CloudPayments
+
+После выкладки и внесения ключей владелец терминала должен:
+
+1. Передать Public ID и API Secret защищённым способом; включить `CLOUDPAYMENTS_ENABLED=true` только для тестового терминала.
+2. В разделе уведомлений терминала включить HTTPS POST в формате CloudPayments:
+   - Check: `https://againdev3.ru/api/webhooks/cloudpayments/check`
+   - Pay: `https://againdev3.ru/api/webhooks/cloudpayments/pay`
+   - Fail: `https://againdev3.ru/api/webhooks/cloudpayments/fail`
+3. Сверить в ЛК URL и включённость уведомлений; API Secret нельзя помещать в фронтенд.
+4. После тестов перевести терминал в боевой режим и заменить только серверные переменные окружения.
+
+## Тест-план
+
+- Успех: тестовая карта `4242 4242 4242 4242`, любой непросроченный срок и CVV. Заказ становится `paid`, создана ровно одна доставка.
+- Отказ: `4012 8888 8888 1881`. Заказ получает `failed`, доступна повторная попытка.
+- Дублирование Pay и повторный запуск виджета: нет второго платежа со статусом completed, нет второй доставки.
+- Подмена суммы/несуществующий `externalId`: Check отвечает не `code:0`; заказ не оплачен.
+- Неверный HMAC: endpoint отвечает 403, данные и статус заказа не изменяются.
+- Доступность: виджет не открывается без Public ID/при выключенной интеграции; покупатель видит русское сообщение без утечки технических деталей.
+
+## Что не входит в первую поставку
+
+- рекуррентные платежи и сохранение карт;
+- двухстадийные платежи, возвраты из админки;
+- СБП, SberPay, T-Pay, «Долями», иностранные карты;
+- CloudKassir/54-ФЗ — до подтверждения бухгалтерских параметров.
+
+## Документация CloudPayments
+
+- [Widget: установка, параметры и callback-и](https://developers.cloudpayments.ru/#platezhnyy-vidzhet)
+- [Серверные уведомления и HMAC-проверка](https://developers.cloudpayments.ru/#uvedomleniya)
+- [API: Basic Auth и идемпотентность](https://developers.cloudpayments.ru/#api)
+- [Тестовые карты](https://developers.cloudpayments.ru/#testirovanie)
+- [Онлайн-чек / CloudKassir](https://developers.cloudpayments.ru/#onlayn-kassa-dlya-internet-raschetov)

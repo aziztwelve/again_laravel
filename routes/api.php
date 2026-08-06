@@ -30,6 +30,7 @@ use App\Http\Controllers\Api\Admin\MoySkladController;
 use App\Http\Controllers\Api\Admin\NotificationController;
 use App\Http\Controllers\Api\Admin\OrderController;
 use App\Http\Controllers\Api\Public\Order\PublicCheckoutController;
+use App\Http\Controllers\Api\Public\Order\CloudPaymentsController;
 use App\Http\Controllers\Api\Public\Order\PublicOrderController;
 use App\Http\Controllers\Api\Admin\OrderStatsController;
 use App\Http\Controllers\Api\Admin\OrderViewController;
@@ -103,6 +104,12 @@ Route::post('/telegraph/{token}/webhook', [TelegraphWebhookController::class, 'h
 
 Route::post('/webhooks/yookassa', [WebhookController::class, 'yookassa'])
     ->name('api.webhooks.yookassa');
+Route::post('/webhooks/cloudpayments/check', [CloudPaymentsController::class, 'check'])
+    ->name('api.webhooks.cloudpayments.check');
+Route::post('/webhooks/cloudpayments/pay', [CloudPaymentsController::class, 'pay'])
+    ->name('api.webhooks.cloudpayments.pay');
+Route::post('/webhooks/cloudpayments/fail', [CloudPaymentsController::class, 'fail'])
+    ->name('api.webhooks.cloudpayments.fail');
 
 // auth user
 Route::middleware('guest')->group(function () {
@@ -264,6 +271,11 @@ Route::prefix('/public')->group(function () {
     Route::middleware('throttle:30,1')
         ->post('/orders', [PublicCheckoutController::class, 'store'])
         ->name('public.orders.store');
+
+    Route::middleware('throttle:10,1')
+        ->post('/orders/{viewToken}/cloudpayments/intent', [CloudPaymentsController::class, 'intent'])
+        ->where('viewToken', '[a-f0-9]{32}')
+        ->name('public.orders.cloudpayments.intent');
 
 });
 

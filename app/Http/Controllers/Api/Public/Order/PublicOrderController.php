@@ -143,6 +143,12 @@ class PublicOrderController extends Controller
                 'label' => $order->payment_status?->label() ?? null,
             ],
             'payment_method' => $order->payment_method,
+            // Public ID сам по себе не секрет, но фронту не нужен даже он до
+            // включения интеграции. Так кнопка оплаты не показывается, пока
+            // серверный терминал не настроен.
+            'cloudpayments_available' => $order->payment_method === 'card_ru'
+                && (bool) config('payment.providers.cloudpayment.enabled')
+                && filled(config('payment.providers.cloudpayment.public_id')),
             'total_amount' => (float) $order->total_amount,
             // discount_amount уже = total_items_discount + total_promo_discount
             // (см. OrderDiscountService::recalculate), складывать компоненты

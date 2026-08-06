@@ -26,6 +26,7 @@ return [
 
         'cloudpayment' => [
             'class' => \App\Services\Payment\CloudPaymentProvider::class,
+            'enabled' => env('CLOUDPAYMENTS_ENABLED', false),
             'public_id' => env('CLOUDPAYMENT_PUBLIC_ID'),
             'api_secret' => env('CLOUDPAYMENT_API_SECRET'),
             'api_url' => env('CLOUDPAYMENT_API_URL', 'https://api.cloudpayments.ru'),
@@ -56,4 +57,4 @@ return [
             ],
         ],
     ],
-]; 
+];
