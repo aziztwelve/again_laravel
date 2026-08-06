@@ -301,6 +301,7 @@ class OrderCreationService
             'offer_id' => $offerId,
             'price' => $data['price'] ?? null,
             'scheduled_time' => $orderData['scheduled_time'] ?? $data['scheduled_time'] ?? null,
+            'delivery_interval' => $data['delivery_interval'] ?? null,
             'pvz' => $pvzId ? array_filter([
                 'id' => $pvzId,
                 'address' => $orderData['pvz_address'] ?? $data['pvz']['address'] ?? null,
@@ -359,7 +360,9 @@ class OrderCreationService
         }
 
         try {
-            return \Carbon\Carbon::parse($date)->format('Y-m-d H:i:s');
+            return \Carbon\Carbon::parse($date)
+                ->setTimezone(config('app.timezone'))
+                ->format('Y-m-d H:i:s');
         } catch (\Exception $e) {
             Log::warning('Failed to parse delivery_date', [
                 'date' => $date,

@@ -241,7 +241,9 @@ class OrderUpdateService
         }
 
         try {
-            return \Carbon\Carbon::parse($date)->format('Y-m-d H:i:s');
+            return \Carbon\Carbon::parse($date)
+                ->setTimezone(config('app.timezone'))
+                ->format('Y-m-d H:i:s');
         } catch (\Exception $e) {
             Log::warning('Failed to parse delivery_date', [
                 'date' => $date,
