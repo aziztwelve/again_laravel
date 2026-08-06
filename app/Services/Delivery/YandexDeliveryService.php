@@ -193,14 +193,21 @@ class YandexDeliveryService extends DeliveryService
                 ?? $offer['price']
                 ?? 0;
             $deliveryInterval = $details['delivery_interval'] ?? $offer['delivery_interval'] ?? null;
+            $intervalFrom = data_get($deliveryInterval, 'from') ?? data_get($deliveryInterval, 'min');
+            $intervalTo = data_get($deliveryInterval, 'to') ?? data_get($deliveryInterval, 'max');
 
             return [
                 'offer_id' => $offer['offer_id'] ?? $offer['id'] ?? null,
                 'tariff_name' => $details['tariff_name'] ?? data_get($offer, 'details.tariff_name') ?? $offer['tariff_name'] ?? 'Яндекс.Доставка',
                 'price' => $this->priceFromApiValue($pricing),
                 'currency' => $details['currency'] ?? data_get($offer, 'pricing.currency') ?? 'RUB',
-                'delivery_date' => data_get($deliveryInterval, 'to') ?? $offer['delivery_date'] ?? null,
-                'delivery_interval' => $deliveryInterval,
+                // Platform API uses min/max; keep a stable from/to contract for
+                // the checkout and derive the displayed delivery day from it.
+                'delivery_date' => $intervalFrom ?? $intervalTo ?? $offer['delivery_date'] ?? null,
+                'delivery_interval' => $intervalFrom || $intervalTo ? [
+                    'from' => $intervalFrom,
+                    'to' => $intervalTo,
+                ] : null,
             ];
         })->filter(fn (array $offer) => $offer['offer_id'])->values()->all();
     }
