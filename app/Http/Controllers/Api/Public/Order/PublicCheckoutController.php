@@ -19,6 +19,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Database\QueryException;
 
 /**
  * Публичный чекаут: оформление заказа без авторизации (гость) и для
@@ -58,10 +59,25 @@ class PublicCheckoutController extends Controller
             );
         }
 
+        // Один ключ создаётся витриной на всё время оформления. Если ответ
+        // потерялся в сети или запрос пришёл дважды одновременно, возвращаем
+        // уже созданный заказ вместо второго такого же.
+        $idempotencyKey = $this->resolveIdempotencyKey($request);
+        if ($idempotencyKey) {
+            $existingOrder = Order::query()
+                ->where('checkout_idempotency_key', $idempotencyKey)
+                ->first();
+
+            if ($existingOrder) {
+                return $this->createdOrderResponse($existingOrder);
+            }
+        }
+
         DB::beginTransaction();
 
         try {
             $validated = $request->validated();
+            $validated['checkout_idempotency_key'] = $idempotencyKey;
 
             /** @var Client|null $orderClient */
             $orderClient = $authUser instanceof Client ? $authUser : null;
@@ -220,23 +236,33 @@ class PublicCheckoutController extends Controller
 
             DB::commit();
 
-            $order->load([
-                'items.product',
-                'items.variant.optionValues.option',
-                'items.variant.table_color',
-                'promoCode',
-                'giftCard',
-                'address',
+            return $this->createdOrderResponse($order, $containsGiftCard, 201);
+        } catch (QueryException $e) {
+            DB::rollBack();
+
+            // Уникальный индекс — защита от двух одновременных INSERT, когда
+            // оба запроса прошли проверку existingOrder выше.
+            if ($idempotencyKey && $this->isIdempotencyKeyConflict($e)) {
+                $existingOrder = Order::query()
+                    ->where('checkout_idempotency_key', $idempotencyKey)
+                    ->first();
+
+                if ($existingOrder) {
+                    return $this->createdOrderResponse($existingOrder);
+                }
+            }
+
+            Log::error('Public order creation failed', [
+                'error' => $e->getMessage(),
+                'line' => $e->getLine(),
+                'file' => $e->getFile(),
+                'is_guest' => ! ($authUser instanceof Client),
             ]);
 
-            return $this->successResponse(
-                'Заказ успешно создан',
-                [
-                    'order' => $order,
-                    'summary' => $this->orderCreationService->getOrderSummary($order),
-                    'contains_gift_card_product' => $containsGiftCard,
-                ],
-                201
+            return $this->errorResponse(
+                'Ошибка при создании заказа. Пожалуйста, попробуйте позже.',
+                500,
+                ['error_details' => config('app.debug') ? $e->getMessage() : null]
             );
         } catch (\Exception $e) {
             DB::rollBack();
@@ -255,6 +281,48 @@ class PublicCheckoutController extends Controller
                 ]
             );
         }
+    }
+
+    private function createdOrderResponse(Order $order, ?bool $containsGiftCard = null, int $status = 200): JsonResponse
+    {
+        $order->load([
+            'items.product',
+            'items.variant.optionValues.option',
+            'items.variant.table_color',
+            'promoCode',
+            'giftCard',
+            'address',
+        ]);
+
+        return $this->successResponse(
+            'Заказ успешно создан',
+            [
+                'order' => $order,
+                'summary' => $this->orderCreationService->getOrderSummary($order),
+                'contains_gift_card_product' => $containsGiftCard
+                    ?? $this->orderCreationService->containsGiftCardProduct($order->items->map(fn ($item) => [
+                        'product_id' => $item->product_id,
+                        'product_variant_id' => $item->product_variant_id,
+                    ])->all()),
+            ],
+            $status
+        );
+    }
+
+    private function resolveIdempotencyKey(Request $request): ?string
+    {
+        $key = trim((string) $request->header('Idempotency-Key', ''));
+
+        return preg_match(
+            '/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i',
+            $key
+        ) ? strtolower($key) : null;
+    }
+
+    private function isIdempotencyKeyConflict(QueryException $exception): bool
+    {
+        return (string) $exception->getCode() === '23000'
+            && str_contains($exception->getMessage(), 'orders_checkout_idempotency_key_unique');
     }
 
     /**

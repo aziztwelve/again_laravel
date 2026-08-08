@@ -59,6 +59,7 @@ class OrderCreationService
             // после INSERT-а сразу перезаписываем на сам id (см. ниже).
             'order_number' => 'TMP-'.bin2hex(random_bytes(8)),
             'view_token' => $this->generateViewToken(),
+            'checkout_idempotency_key' => $orderData['checkout_idempotency_key'] ?? null,
             'total_amount' => $itemsTotal + $deliveryCost,
             'payment_method' => $orderData['payment_method'] ?? null,
             'source' => $orderData['source'] ?? null,

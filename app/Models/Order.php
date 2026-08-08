@@ -19,6 +19,8 @@ class Order extends Model
     protected $fillable = [
         'order_number',
         'view_token',
+        // Ключ повторной отправки публичного checkout-запроса.
+        'checkout_idempotency_key',
         'client_id',
         'lead_id',
         'status',
