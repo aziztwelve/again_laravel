@@ -101,6 +101,10 @@ class OrderMessageBuilder
 
         return [
             'card_ru' => 'Оплата картой РФ',
+            'cloudpayments_tpay' => 'T-Pay',
+            'cloudpayments_sbp' => 'СБП',
+            'cloudpayments_sberpay' => 'SberPay',
+            'cloudpayments_mirpay' => 'Mir Pay',
             'sberpay' => 'SberPay, рассрочка, иностранная карта',
             'yandex_pay_split' => 'Яндекс Пэй и Сплит',
             'cash_on_delivery' => 'Наличными или картой при получении',

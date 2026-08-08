@@ -146,7 +146,10 @@ class PublicOrderController extends Controller
             // Public ID сам по себе не секрет, но фронту не нужен даже он до
             // включения интеграции. Так кнопка оплаты не показывается, пока
             // серверный терминал не настроен.
-            'cloudpayments_available' => $order->payment_method === 'card_ru'
+            'cloudpayments_available' => array_key_exists(
+                $order->payment_method ?? '',
+                CloudPaymentsController::WIDGET_METHODS,
+            )
                 && (bool) config('payment.providers.cloudpayment.enabled')
                 && filled(config('payment.providers.cloudpayment.public_id')),
             'total_amount' => (float) $order->total_amount,

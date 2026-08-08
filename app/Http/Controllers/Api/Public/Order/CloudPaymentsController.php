@@ -12,6 +12,15 @@ use Illuminate\Support\Facades\Log;
 
 class CloudPaymentsController extends Controller
 {
+    /** Коды CloudPayments Widget: ключ — способ оплаты в заказе. */
+    public const WIDGET_METHODS = [
+        'card_ru' => 'Card',
+        'cloudpayments_tpay' => 'TinkoffPay',
+        'cloudpayments_sbp' => 'Sbp',
+        'cloudpayments_sberpay' => 'SberPay',
+        'cloudpayments_mirpay' => 'MirPay',
+    ];
+
     public function intent(string $viewToken): JsonResponse
     {
         if (! config('payment.providers.cloudpayment.enabled')) {
@@ -19,8 +28,9 @@ class CloudPaymentsController extends Controller
         }
 
         $order = Order::query()->where('view_token', $viewToken)->first();
-        if (! $order || ! $order->canBePaid() || $order->payment_method !== 'card_ru') {
-            return response()->json(['success' => false, 'message' => 'Этот заказ нельзя оплатить картой.'], 422);
+        $widgetMethod = self::WIDGET_METHODS[$order?->payment_method ?? ''] ?? null;
+        if (! $order || ! $order->canBePaid() || ! $widgetMethod) {
+            return response()->json(['success' => false, 'message' => 'Для этого заказа недоступна онлайн-оплата.'], 422);
         }
 
         $amount = round((float) $order->total_amount, 2);
@@ -46,6 +56,13 @@ class CloudPaymentsController extends Controller
                 'externalId' => "payment-{$payment->id}",
                 'paymentSchema' => 'Single',
                 'culture' => 'ru-RU',
+                // Widget показывает только выбранный в checkout способ. Если
+                // он не включён в терминале CloudPayments, Widget сообщит об
+                // этом покупателю и платёж не будет создан.
+                'restrictedPaymentMethods' => array_values(array_filter(
+                    self::WIDGET_METHODS,
+                    fn (string $method): bool => $method !== $widgetMethod,
+                )),
                 'metadata' => ['payment_id' => $payment->id, 'order_id' => $order->id],
                 'receiptEmail' => $order->email ?? $order->client?->email,
             ],
