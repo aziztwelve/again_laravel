@@ -14,9 +14,9 @@ class YandexOrder extends Model
 
     protected $fillable = [
         'order_id', 'shipment_id', 'claim_id', 'claim_version', 'status',
-        'internal_status', 'delivery_type', 'tariff_code', 'price', 'currency',
+        'internal_status', 'customer_status', 'delivery_type', 'tariff_code', 'price', 'currency',
         'offer_id', 'pvz_id', 'scheduled_time', 'performer_info', 'tracking_url',
-        'request_id', 'cancel_state', 'last_synced_at',
+        'tracking_number', 'request_id', 'cancel_state', 'last_synced_at',
     ];
 
     protected $casts = [

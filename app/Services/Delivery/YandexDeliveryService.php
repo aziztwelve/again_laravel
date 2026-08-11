@@ -9,8 +9,10 @@ use App\Models\ShipmentStatus;
 use App\Models\YandexOrder;
 use App\Models\YandexStatusEvent;
 use App\Services\Delivery\Yandex\PayloadBuilder;
+use App\Services\Delivery\Yandex\CustomerStatusMapper;
 use App\Services\Delivery\Yandex\StatusMapper;
 use App\Services\Delivery\Yandex\YandexDeliveryClient;
+use App\Services\Notifications\YandexDeliveryNotificationService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -22,7 +24,13 @@ class YandexDeliveryService extends DeliveryService
     protected array $settings;
     private YandexDeliveryClient $client;
 
-    public function __construct(array $methodSettings = [], private ?PayloadBuilder $payloadBuilder = null, private ?StatusMapper $statusMapper = null)
+    public function __construct(
+        array $methodSettings = [],
+        private ?PayloadBuilder $payloadBuilder = null,
+        private ?StatusMapper $statusMapper = null,
+        private ?CustomerStatusMapper $customerStatusMapper = null,
+        private ?YandexDeliveryNotificationService $notificationService = null,
+    )
     {
         $database = DeliveryServiceSetting::query()->where('service_name', 'yandex')->value('settings') ?? [];
         $config = config('services.yandex_delivery');
@@ -31,6 +39,8 @@ class YandexDeliveryService extends DeliveryService
         $this->settings['base_url'] = $this->settings['base_url'][$mode] ?? null;
         $this->payloadBuilder ??= app(PayloadBuilder::class);
         $this->statusMapper ??= app(StatusMapper::class);
+        $this->customerStatusMapper ??= app(CustomerStatusMapper::class);
+        $this->notificationService ??= app(YandexDeliveryNotificationService::class);
         $this->client = new YandexDeliveryClient($this->settings);
     }
 
@@ -173,13 +183,26 @@ class YandexDeliveryService extends DeliveryService
         $status = $state['status'] ?? $data['status'] ?? 'CREATED';
         $delivery = $order->delivery_data ?? [];
         $previousStatus = $existing?->status;
+        $previousCustomerStatus = $existing?->customer_status;
+        $customerStatus = $this->customerStatusMapper->toCustomer($status);
+        $trackingUrl = $data['sharing_url'] ?? $data['tracking_url'] ?? $existing?->tracking_url;
+        $trackingNumber = $data['tracking_number'] ?? $data['barcode'] ?? $existing?->tracking_number;
         $yandexOrder = YandexOrder::updateOrCreate(['order_id' => $order->id], [
             'claim_id' => $requestId, 'status' => $status, 'internal_status' => $this->statusMapper->toInternal($status),
+            'customer_status' => $customerStatus ?? $previousCustomerStatus,
             'delivery_type' => $delivery['delivery_type'] ?? 'courier', 'tariff_code' => $delivery['tariff_code'] ?? null,
             'price' => $delivery['price'] ?? null, 'offer_id' => $delivery['offer_id'] ?? null,
-            'pvz_id' => $delivery['pvz']['id'] ?? null, 'tracking_url' => $data['sharing_url'] ?? null,
+            'pvz_id' => $delivery['pvz']['id'] ?? null, 'tracking_url' => $trackingUrl,
+            'tracking_number' => $trackingNumber,
             'request_id' => $existing?->request_id ?? (string) \Illuminate\Support\Str::uuid(), 'last_synced_at' => now(),
         ]);
+        $updatedDelivery = array_merge($delivery, ['tracking_url' => $trackingUrl]);
+        if ($trackingNumber) {
+            $updatedDelivery['tracking_number'] = $trackingNumber;
+        }
+        if ($order->delivery_data !== $updatedDelivery) {
+            $order->update(['delivery_data' => $updatedDelivery]);
+        }
         if ($requestId && $order->tracking_number !== $requestId) {
             $order->update(['tracking_number' => $requestId]);
         }
@@ -192,6 +215,18 @@ class YandexDeliveryService extends DeliveryService
                 'payload' => $data,
                 'received_at' => now(),
             ]);
+        }
+        if ($customerStatus !== null && $previousCustomerStatus !== $customerStatus) {
+            try {
+                $this->notificationService->notify($yandexOrder->fresh('order'));
+            } catch (\Throwable $exception) {
+                Log::error('Failed to queue Yandex delivery customer notification', [
+                    'order_id' => $order->id,
+                    'yandex_order_id' => $yandexOrder->id,
+                    'customer_status' => $customerStatus,
+                    'error' => $exception->getMessage(),
+                ]);
+            }
         }
         return $yandexOrder;
     }
