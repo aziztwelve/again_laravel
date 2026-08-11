@@ -46,10 +46,32 @@ class YandexDeliveryClient
         YandexApiLog::create([
             'order_id' => $orderId, 'claim_id' => $requestId, 'direction' => 'request',
             'method' => $method, 'http_method' => $httpMethod, 'url' => $url,
-            'request_body' => $requestBody, 'response_body' => $data ?: ['raw' => $body],
+            'request_body' => $this->maskSensitive($requestBody),
+            'response_body' => $this->maskSensitive($data ?: ['raw' => $body]),
             'status_code' => $status, 'duration_ms' => $duration, 'is_error' => !$successful,
         ]);
 
         return ['successful' => $successful, 'status' => $status, 'data' => $data, 'body' => $body ?? ''];
+    }
+
+    private function maskSensitive(array $value): array
+    {
+        $sensitiveKeys = [
+            'access_token', 'token', 'email', 'phone', 'courier_phone',
+            'first_name', 'last_name', 'patronymic', 'address', 'comment',
+        ];
+
+        foreach ($value as $key => $item) {
+            if (in_array(strtolower((string) $key), $sensitiveKeys, true)) {
+                $value[$key] = '[REDACTED]';
+                continue;
+            }
+
+            if (is_array($item)) {
+                $value[$key] = $this->maskSensitive($item);
+            }
+        }
+
+        return $value;
     }
 }

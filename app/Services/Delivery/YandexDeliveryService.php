@@ -106,7 +106,9 @@ class YandexDeliveryService extends DeliveryService
 
     public function getRequestInfo(string $requestId, ?int $orderId = null): array
     {
-        return $this->client->request('GET', '/api/b2b/platform/request/info', [], $orderId, $requestId, ['request_id' => $requestId, 'slim' => 'true']);
+        // Полный ответ содержит sharing_url для покупательского трекинга.
+        // Обновлённый slim-ответ Яндекса это поле не возвращает.
+        return $this->client->request('GET', '/api/b2b/platform/request/info', [], $orderId, $requestId, ['request_id' => $requestId, 'slim' => 'false']);
     }
 
     public function cancelRequest(string $requestId, ?int $orderId = null): array
