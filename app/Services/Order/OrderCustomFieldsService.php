@@ -39,7 +39,7 @@ class OrderCustomFieldsService
             ],
             [
                 'key' => 'tracking_number',
-                'label' => 'Трек-номер',
+                'label' => 'Трек-номер ЯД',
                 'type' => 'text',
                 'source' => self::SOURCE_COLUMN,
                 'column' => 'tracking_number',
