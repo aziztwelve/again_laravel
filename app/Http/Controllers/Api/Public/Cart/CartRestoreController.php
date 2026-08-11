@@ -58,7 +58,10 @@ class CartRestoreController extends Controller
 
         foreach ($cart->items as $item) {
             if (! is_null($item->product_variant_id)) {
-                $model = ProductVariant::with(['images' => fn ($q) => $q->orderBy('order', 'asc')])
+                $model = ProductVariant::with([
+                    'images' => fn ($q) => $q->orderBy('order', 'asc'),
+                    'product.images' => fn ($q) => $q->orderBy('order', 'asc'),
+                ])
                     ->whereNull('deleted_at')
                     ->where('is_active', true)
                     ->where('id', $item->product_variant_id)
@@ -78,19 +81,36 @@ class CartRestoreController extends Controller
 
             $this->applyDiscountToProduct($model, $customerType);
 
+            // В каталоге название, slug и часто изображения принадлежат
+            // родительскому товару, а вариант хранит только размер/SKU/цену.
+            // Recovery должен вернуть ту же форму, которую карточка кладёт в
+            // localStorage при обычном добавлении товара.
+            $product = $model instanceof ProductVariant ? $model->product : $model;
+            $images = $model->images->isNotEmpty() ? $model->images : $product->images;
+            $mainImage = $images->firstWhere('is_main', true) ?? $images->first();
+
             $items[] = [
                 'product_id' => $item->product_id,
                 'product_variant_id' => $item->product_variant_id,
                 'color_id' => $item->color_id,
                 'qty' => (int) $item->quantity,
-                'name' => $model->name,
-                'slug' => $model->slug,
+                'name' => $product->name,
+                'slug' => $product->slug,
                 'price' => $model->price,
                 'old_price' => $model->old_price,
                 'discount_percentage' => $model->discount_percentage,
                 'total_discount' => $model->total_discount,
                 'currency' => $model->currency,
-                'images' => ImageResource::collection($model->images),
+                'images' => ImageResource::collection($images),
+                'main_image' => $mainImage ? new ImageResource($mainImage) : null,
+                'selected_variant' => $model instanceof ProductVariant ? [
+                    'id' => $model->id,
+                    'name' => $model->name,
+                    'sku' => $model->sku,
+                    'price' => $model->price,
+                    'old_price' => $model->old_price,
+                ] : null,
+                'selected_color' => $item->color,
             ];
         }
 

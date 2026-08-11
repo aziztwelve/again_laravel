@@ -359,6 +359,37 @@ class AbandonedCartTest extends TestCase
             ->assertJsonStructure(['items' => [['product_id', 'qty', 'name', 'price']]]);
     }
 
+    public function test_restore_variant_uses_parent_product_name_and_image(): void
+    {
+        $cart = $this->cart($this->client(), 'abandoned', now()->subHour(), [
+            'abandoned_at' => now()->subHour(),
+            'recovery_token' => 'restore-variant-123',
+        ]);
+        $product = $cart->items()->firstOrFail()->product;
+        $product->images()->save(new Image([
+            'path' => 'products/parent-product.webp',
+            'url' => '/storage/products/parent-product.webp',
+            'order' => 1,
+            'is_main' => true,
+        ]));
+        $variant = ProductVariant::create([
+            'product_id' => $product->id,
+            'name' => 'Размер M',
+            'sku' => 'restore-variant-m',
+            'price' => 1990,
+            'is_active' => true,
+        ]);
+        $cart->items()->update(['product_variant_id' => $variant->id]);
+
+        $this->getJson('/api/public/cart/recovery/restore-variant-123')
+            ->assertOk()
+            ->assertJsonPath('items.0.name', $product->name)
+            ->assertJsonPath('items.0.slug', $product->slug)
+            ->assertJsonPath('items.0.main_image.path', 'products/parent-product.webp')
+            ->assertJsonPath('items.0.selected_variant.id', $variant->id)
+            ->assertJsonPath('items.0.selected_variant.name', 'Размер M');
+    }
+
     public function test_restore_endpoint_404_for_unknown_token(): void
     {
         $this->getJson('/api/public/cart/restore/nope')->assertStatus(404);
