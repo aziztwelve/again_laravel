@@ -24,7 +24,15 @@ return new class extends Migration
                 $table->string('action');
                 $table->text('description')->nullable();
                 $table->timestamps();
-                $table->index(['product_restock_subscription_id', 'created_at']);
+            });
+        }
+
+        if (! Schema::hasIndex('product_restock_subscription_histories', 'prs_history_subscription_created_idx')) {
+            Schema::table('product_restock_subscription_histories', function (Blueprint $table) {
+                $table->index(
+                    ['product_restock_subscription_id', 'created_at'],
+                    'prs_history_subscription_created_idx'
+                );
             });
         }
 
