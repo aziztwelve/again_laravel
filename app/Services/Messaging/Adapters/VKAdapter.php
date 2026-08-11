@@ -15,12 +15,14 @@ class VKAdapter extends AbstractMessageAdapter
 
     public function __construct()
     {
-        $this->settings = VKSettings::first();
+        $settings = VKSettings::first();
 
-        if (!$this->settings) {
+        if (!$settings) {
             Log::error("VKAdapter: VKSettings not found in database");
             throw new \RuntimeException("ВК settings не найдены в БД. Сначала настрой ВК интеграцию в админке.");
         }
+
+        $this->settings = $settings;
 
         if (!$this->settings->access_token) {
             Log::error("VKAdapter: access_token is empty");
