@@ -359,6 +359,26 @@ class AbandonedCartTest extends TestCase
             ->assertJsonStructure(['items' => [['product_id', 'qty', 'name', 'price']]]);
     }
 
+    public function test_restore_link_can_be_opened_more_than_once(): void
+    {
+        $cart = $this->cart($this->client(), 'abandoned', now()->subHour(), [
+            'abandoned_at' => now()->subHour(),
+            'recovery_token' => 'reusable-restore-token',
+        ]);
+
+        $this->getJson('/api/public/cart/recovery/reusable-restore-token')
+            ->assertOk()
+            ->assertJson(['success' => true, 'cart_id' => $cart->id]);
+
+        $cart->refresh();
+        $this->assertSame('reusable-restore-token', $cart->recovery_token);
+        $this->assertSame('active', $cart->status);
+
+        $this->getJson('/api/public/cart/recovery/reusable-restore-token')
+            ->assertOk()
+            ->assertJson(['success' => true, 'cart_id' => $cart->id]);
+    }
+
     public function test_restore_variant_uses_parent_product_name_and_image(): void
     {
         $cart = $this->cart($this->client(), 'abandoned', now()->subHour(), [

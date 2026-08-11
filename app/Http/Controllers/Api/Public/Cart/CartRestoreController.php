@@ -49,7 +49,13 @@ class CartRestoreController extends Controller
         if ($cart->status === 'abandoned') {
             $revive['status'] = 'active';
         }
-        $cart->forceFill($revive)->save();
+        // Восстановление по ссылке не должно инвалидировать саму ссылку.
+        // Обычный observer Cart очищает recovery_token при любой новой
+        // активности, чтобы запустить новый recovery-цикл. Здесь активность
+        // вызвана именно переходом по recovery-ссылке, поэтому сохраняем
+        // состояние тихо: ссылка остаётся повторно используемой до оформления
+        // заказа, а состав корзины не теряется.
+        $cart->forceFill($revive)->saveQuietly();
 
         $items = [];
         $customerType = $cart->client_id
