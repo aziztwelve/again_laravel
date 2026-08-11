@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 
 class UserController extends Controller
@@ -579,13 +580,29 @@ class UserController extends Controller
         }
 
         try {
-            $user->update([
-                'password' => Hash::make($request->password),
-            ]);
+            $validated = $validator->validated();
+
+            DB::transaction(function () use ($user, $validated) {
+                // User has the `hashed` cast: pass the plain value exactly once
+                // and let the model create the hash. Rotate remember_token and
+                // revoke existing API sessions so an old authenticated session
+                // cannot make it look as if the previous password is still valid.
+                $user->forceFill([
+                    'password' => $validated['password'],
+                    'remember_token' => Str::random(60),
+                ])->save();
+
+                $user->tokens()->delete();
+            });
+
+            $user->refresh();
+            if (! Hash::check($validated['password'], $user->password)) {
+                throw new \RuntimeException('Сохранённый пароль не прошёл проверку.');
+            }
 
             return response()->json([
                 'message' => 'Пароль успешно обновлён.',
-                'user' => $user->only('id', 'email') // можно добавить нужные поля
+                'user' => $user->only('id', 'email'),
             ]);
         } catch (\Exception $e) {
             return response()->json([
