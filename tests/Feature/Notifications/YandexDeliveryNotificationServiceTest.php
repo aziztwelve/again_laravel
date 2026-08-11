@@ -73,7 +73,7 @@ class YandexDeliveryNotificationServiceTest extends TestCase
 
         $content = app(YandexDeliveryMessageBuilder::class)->build($yandexOrder, 'delivery_created');
 
-        $this->assertStringContainsString('16 августа, 08:00–17:00', $content['message']);
+        $this->assertStringContainsString('16 августа, 08:00–17:00 (МСК)', $content['message']);
         $this->assertStringNotContainsString('2026-08-16T', $content['message']);
     }
 

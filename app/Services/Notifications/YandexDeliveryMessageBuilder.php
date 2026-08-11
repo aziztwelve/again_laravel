@@ -118,10 +118,10 @@ class YandexDeliveryMessageBuilder
             $end = CarbonImmutable::parse($to)->setTimezone($timezone)->locale('ru');
 
             if ($start->isSameDay($end)) {
-                return $start->translatedFormat('j F').', '.$start->format('H:i').'–'.$end->format('H:i');
+                return $start->translatedFormat('j F').', '.$start->format('H:i').'–'.$end->format('H:i').' (МСК)';
             }
 
-            return $start->translatedFormat('j F, H:i').' — '.$end->translatedFormat('j F, H:i');
+            return $start->translatedFormat('j F, H:i').' — '.$end->translatedFormat('j F, H:i').' (МСК)';
         } catch (\Throwable) {
             return null;
         }
@@ -133,7 +133,7 @@ class YandexDeliveryMessageBuilder
             return CarbonImmutable::parse($value)
                 ->setTimezone(config('app.timezone', 'Europe/Moscow'))
                 ->locale('ru')
-                ->translatedFormat('j F, H:i');
+                ->translatedFormat('j F, H:i').' (МСК)';
         } catch (\Throwable) {
             return null;
         }
