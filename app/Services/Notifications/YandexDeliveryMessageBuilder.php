@@ -3,6 +3,7 @@
 namespace App\Services\Notifications;
 
 use App\Models\YandexOrder;
+use Carbon\CarbonImmutable;
 
 class YandexDeliveryMessageBuilder
 {
@@ -96,10 +97,46 @@ class YandexDeliveryMessageBuilder
         $from = data_get($delivery, 'delivery_interval.from');
         $to = data_get($delivery, 'delivery_interval.to');
         if ($from && $to) {
-            return $from.' — '.$to;
+            $formatted = $this->formatInterval((string) $from, (string) $to);
+
+            return $formatted ?: $from.' — '.$to;
         }
 
-        return $from ?: $to ?: ($delivery['delivery_date'] ?? null);
+        $value = $from ?: $to ?: ($delivery['delivery_date'] ?? null);
+        if (! $value) {
+            return null;
+        }
+
+        return $this->formatMoment((string) $value) ?: (string) $value;
+    }
+
+    private function formatInterval(string $from, string $to): ?string
+    {
+        try {
+            $timezone = config('app.timezone', 'Europe/Moscow');
+            $start = CarbonImmutable::parse($from)->setTimezone($timezone)->locale('ru');
+            $end = CarbonImmutable::parse($to)->setTimezone($timezone)->locale('ru');
+
+            if ($start->isSameDay($end)) {
+                return $start->translatedFormat('j F').', '.$start->format('H:i').'–'.$end->format('H:i');
+            }
+
+            return $start->translatedFormat('j F, H:i').' — '.$end->translatedFormat('j F, H:i');
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function formatMoment(string $value): ?string
+    {
+        try {
+            return CarbonImmutable::parse($value)
+                ->setTimezone(config('app.timezone', 'Europe/Moscow'))
+                ->locale('ru')
+                ->translatedFormat('j F, H:i');
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     private function html(array $lines, ?string $trackingUrl): string

@@ -61,6 +61,22 @@ class YandexDeliveryNotificationServiceTest extends TestCase
         Bus::assertDispatched(SendNotificationJob::class, 1);
     }
 
+    public function test_delivery_interval_is_formatted_for_customer_timezone(): void
+    {
+        [, $yandexOrder] = $this->deliveryWithClient('pickup');
+        $deliveryData = $yandexOrder->order->delivery_data;
+        $deliveryData['delivery_interval'] = [
+            'from' => '2026-08-16T05:00:00.000000Z',
+            'to' => '2026-08-16T14:00:00.000000Z',
+        ];
+        $yandexOrder->order->delivery_data = $deliveryData;
+
+        $content = app(YandexDeliveryMessageBuilder::class)->build($yandexOrder, 'delivery_created');
+
+        $this->assertStringContainsString('16 августа, 08:00–17:00', $content['message']);
+        $this->assertStringNotContainsString('2026-08-16T', $content['message']);
+    }
+
     /** @return array{Order,YandexOrder} */
     private function deliveryWithClient(string $deliveryType = 'courier'): array
     {
