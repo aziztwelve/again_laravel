@@ -8,6 +8,7 @@ use App\Models\YandexOrder;
 use App\Services\Notifications\YandexDeliveryNotificationService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Mockery;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class NotifyYandexDeliveryCreatedJobTest extends TestCase
@@ -23,6 +24,7 @@ class NotifyYandexDeliveryCreatedJobTest extends TestCase
             'internal_status' => 'created',
             'customer_status' => 'delivery_created',
             'delivery_type' => 'courier',
+            'request_id' => (string) Str::uuid(),
         ]);
         $service = Mockery::mock(YandexDeliveryNotificationService::class);
         $service->shouldReceive('notify')
