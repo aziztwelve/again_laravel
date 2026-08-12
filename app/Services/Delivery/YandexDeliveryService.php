@@ -2,6 +2,7 @@
 
 namespace App\Services\Delivery;
 
+use App\Jobs\NotifyYandexDeliveryCreatedJob;
 use App\Models\DeliveryServiceSetting;
 use App\Models\Order;
 use App\Models\Shipment;
@@ -220,7 +221,11 @@ class YandexDeliveryService extends DeliveryService
         }
         if ($customerStatus !== null && $previousCustomerStatus !== $customerStatus) {
             try {
-                $this->notificationService->notify($yandexOrder->fresh('order'));
+                if ($customerStatus === 'delivery_created') {
+                    NotifyYandexDeliveryCreatedJob::dispatch($yandexOrder->id)->delay(now()->addMinutes(10));
+                } else {
+                    $this->notificationService->notify($yandexOrder->fresh('order'));
+                }
             } catch (\Throwable $exception) {
                 Log::error('Failed to queue Yandex delivery customer notification', [
                     'order_id' => $order->id,

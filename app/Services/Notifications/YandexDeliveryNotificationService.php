@@ -13,23 +13,24 @@ class YandexDeliveryNotificationService
         protected TransactionalNotificationDispatcher $dispatcher,
     ) {}
 
-    public function notify(YandexOrder $yandexOrder): void
+    public function notify(YandexOrder $yandexOrder, ?string $customerStatus = null): void
     {
-        if (! $yandexOrder->customer_status) {
+        $customerStatus ??= $yandexOrder->customer_status;
+        if (! $customerStatus) {
             return;
         }
 
         $yandexOrder->loadMissing('order.client.profile');
         $order = $yandexOrder->order;
-        $content = $this->messageBuilder->build($yandexOrder, $yandexOrder->customer_status);
-        $eventKey = 'yandex_delivery.'.$yandexOrder->customer_status;
+        $content = $this->messageBuilder->build($yandexOrder, $customerStatus);
+        $eventKey = 'yandex_delivery.'.$customerStatus;
 
         foreach ($this->channelResolver->resolve($order->client, $order->email) as $recipient) {
             $data = [
                 'type' => $eventKey,
                 'order_id' => $order->id,
                 'yandex_order_id' => $yandexOrder->id,
-                'customer_status' => $yandexOrder->customer_status,
+                'customer_status' => $customerStatus,
                 'tracking_url' => $yandexOrder->tracking_url,
                 'subject' => $content['subject'],
                 'mirror_conversation' => [
@@ -55,7 +56,7 @@ class YandexDeliveryNotificationService
         Log::info('Yandex delivery customer notifications queued', [
             'order_id' => $order->id,
             'yandex_order_id' => $yandexOrder->id,
-            'customer_status' => $yandexOrder->customer_status,
+            'customer_status' => $customerStatus,
         ]);
     }
 }
