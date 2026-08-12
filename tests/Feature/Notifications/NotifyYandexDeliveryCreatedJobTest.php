@@ -22,6 +22,7 @@ class NotifyYandexDeliveryCreatedJobTest extends TestCase
             'status' => 'created',
             'internal_status' => 'created',
             'customer_status' => 'delivery_created',
+            'delivery_type' => 'courier',
         ]);
         $service = Mockery::mock(YandexDeliveryNotificationService::class);
         $service->shouldReceive('notify')
