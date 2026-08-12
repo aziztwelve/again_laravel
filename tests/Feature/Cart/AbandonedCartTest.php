@@ -201,6 +201,28 @@ class AbandonedCartTest extends TestCase
         $this->assertSame(2, CartCommunication::where('cart_id', $cart->id)->count());
     }
 
+    public function test_cart_change_cancels_started_chain_until_it_is_inactive_for_thirty_minutes_again(): void
+    {
+        Queue::fake();
+
+        $cart = $this->cart($this->client(['email' => 'changed@example.com']), 'active', now()->subMinutes(31));
+        $this->assertSame(1, $this->service()->markAbandonedCarts());
+
+        // The cart was changed before the first reminder becomes due.
+        $cart->update(['last_activity_at' => now()]);
+        $cart->refresh();
+
+        $this->assertNull($cart->abandoned_at);
+        $this->assertSame(0, $this->service()->processChain()['sent']);
+        Queue::assertNothingPushed();
+
+        $cart->update(['last_activity_at' => now()->subMinutes(29)]);
+        $this->assertSame(0, $this->service()->markAbandonedCarts());
+
+        $cart->update(['last_activity_at' => now()->subMinutes(31)]);
+        $this->assertSame(1, $this->service()->markAbandonedCarts());
+    }
+
     public function test_cart_becomes_abandoned_only_after_third_step_is_queued(): void
     {
         Queue::fake();

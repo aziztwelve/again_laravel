@@ -234,10 +234,8 @@ class CartController extends Controller
             'total' => $cart->items()->sum('total'),
             'total_original' => $cart->items()->sum('total_original'),
             'total_discount' => $cart->items()->sum('total_discount'),
-            // Фиксируем последнюю активность корзины — на это опирается детект
-            // брошенных корзин (см. docs/tasks/abandoned-cart.md). Модель Cart
-            // не управляет timestamps автоматически.
-            'updated_at' => now(),
+            // Изменение состава корзины отменяет начатую цепочку напоминаний.
+            'last_activity_at' => now(),
         ]);
 
         if ($cart->items()->count() === 0) {
@@ -538,10 +536,8 @@ class CartController extends Controller
             'total' => $cart->items()->sum('total'),
             'total_original' => $cart->items()->sum('total_original'),
             'total_discount' => $cart->items()->sum('total_discount'),
-            // Фиксируем последнюю активность корзины — на это опирается детект
-            // брошенных корзин (см. docs/tasks/abandoned-cart.md). Модель Cart
-            // не управляет timestamps автоматически.
-            'updated_at' => now(),
+            // Новый или изменённый товар начинает 30-минутный период заново.
+            'last_activity_at' => now(),
         ]);
     }
 }
