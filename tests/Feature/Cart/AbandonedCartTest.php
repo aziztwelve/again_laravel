@@ -207,6 +207,7 @@ class AbandonedCartTest extends TestCase
 
         $cart = $this->cart($this->client(['email' => 'changed@example.com']), 'active', now()->subMinutes(31));
         $this->assertSame(1, $this->service()->markAbandonedCarts());
+        $cart->refresh();
 
         // The cart was changed before the first reminder becomes due.
         $cart->update(['last_activity_at' => now()]);
