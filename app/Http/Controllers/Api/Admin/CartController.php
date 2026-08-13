@@ -226,9 +226,14 @@ class CartController extends Controller
         //     ]);
         // }
 
-        if ($item) {
-            $item->delete();
+        if (! $item) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Товар уже отсутствует в корзине.',
+            ]);
         }
+
+        $item->delete();
 
         $cart->update([
             'total' => $cart->items()->sum('total'),
@@ -253,12 +258,7 @@ class CartController extends Controller
         $cart = $this->resolver->resolveActive($request);
 
         if ($cart && $cart->client_id) {
-            $cart->update([
-                // Статус abandoned выставляет только цепочка после третьего
-                // касания. Явная отмена — это действие пользователя, поэтому
-                // фиксируем её как активность и не меняем статус корзины.
-                'last_activity_at' => now(),
-            ]);
+            // Отмена без изменения состава не влияет на цепочку напоминаний.
         }
 
         return response()->json(['success' => true, 'message' => 'Корзина остаётся активной.']);
@@ -279,7 +279,7 @@ class CartController extends Controller
 
         $cart = $this->resolver->resolveOrCreate($request);
 
-        $attributes = ['last_activity_at' => now()];
+        $attributes = [];
 
         if (array_key_exists('email', $validated)) {
             $attributes['email'] = $validated['email'];

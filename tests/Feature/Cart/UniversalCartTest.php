@@ -81,7 +81,7 @@ class UniversalCartTest extends TestCase
         $this->assertNotNull($cart->guest_token);
         $this->assertNull($cart->client_id);
         $this->assertSame('active', $cart->status);
-        $this->assertNotNull($cart->last_activity_at);
+        $this->assertNull($cart->last_activity_at);
 
         // Cookie guest_token поставлена в очередь ответа.
         $queued = collect(Cookie::getQueuedCookies())
@@ -105,6 +105,21 @@ class UniversalCartTest extends TestCase
         $cart = $this->resolver()->resolveOrCreate($request);
 
         $this->assertSame($existing->id, $cart->id);
+    }
+
+    public function test_reading_cart_does_not_update_activity(): void
+    {
+        $activity = now()->subHour();
+        $cart = Cart::create([
+            'guest_token' => 'guest-tok-read-only',
+            'status' => 'active',
+            'created_at' => now()->subDay(),
+            'last_activity_at' => $activity,
+        ]);
+        $request = Request::create('/api/cart', 'GET', [], [$this->cookieName() => $cart->guest_token]);
+
+        $this->assertSame($cart->id, $this->resolver()->resolveActive($request)?->id);
+        $this->assertTrue($activity->equalTo($cart->fresh()->last_activity_at));
     }
 
     public function test_authenticated_client_resolves_client_cart(): void

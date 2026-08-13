@@ -49,7 +49,6 @@ class CartMerger
                 'client_id' => $clientId,
                 'guest_token' => null,
                 'updated_at' => now(),
-                'last_activity_at' => now(),
             ])->save();
 
             return $guestCart->fresh('items');
@@ -115,7 +114,6 @@ class CartMerger
             'total_original' => $cart->items()->sum('total_original'),
             'total_discount' => $cart->items()->sum('total_discount'),
             'updated_at' => now(),
-            'last_activity_at' => now(),
         ])->save();
     }
 }

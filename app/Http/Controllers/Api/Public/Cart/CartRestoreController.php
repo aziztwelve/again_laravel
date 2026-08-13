@@ -40,22 +40,13 @@ class CartRestoreController extends Controller
             ], 404);
         }
 
-        // Открытие ссылки восстановления = активность пользователя: возвращаем
-        // брошенную корзину в active и фиксируем last_activity_at (lifecycle
-        // ABANDONED → ACTIVE). Оформленную (ordered) корзину не трогаем.
-        // См. docs/tasks/universal-cart.md.
-        $revive = ['last_activity_at' => now()];
+        // Открытие ссылки само по себе не перезапускает сценарий. Активность
+        // фиксируется только при изменении состава корзины.
+        $revive = [];
         if (($communicationId = $request->integer('communication')) && $cart->communications()->whereKey($communicationId)->exists()) $revive['recovery_cart_communication_id'] = $communicationId;
-        if ($cart->status === 'abandoned') {
-            $revive['status'] = 'active';
+        if ($revive !== []) {
+            $cart->forceFill($revive)->saveQuietly();
         }
-        // Восстановление по ссылке не должно инвалидировать саму ссылку.
-        // Обычный observer Cart очищает recovery_token при любой новой
-        // активности, чтобы запустить новый recovery-цикл. Здесь активность
-        // вызвана именно переходом по recovery-ссылке, поэтому сохраняем
-        // состояние тихо: ссылка остаётся повторно используемой до оформления
-        // заказа, а состав корзины не теряется.
-        $cart->forceFill($revive)->saveQuietly();
 
         $items = [];
         $customerType = $cart->client_id

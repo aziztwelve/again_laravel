@@ -32,8 +32,6 @@ class CartResolver
                 ['created_at' => now()]
             );
 
-            $this->touch($cart, $request);
-
             return $cart;
         }
 
@@ -54,8 +52,6 @@ class CartResolver
             $this->queueGuestCookie($token);
         }
 
-        $this->touch($cart, $request);
-
         return $cart;
     }
 
@@ -74,10 +70,6 @@ class CartResolver
             $cart = $token
                 ? Cart::where('guest_token', $token)->where('status', 'active')->first()
                 : null;
-        }
-
-        if ($cart) {
-            $this->touch($cart, $request);
         }
 
         return $cart;
@@ -122,24 +114,4 @@ class CartResolver
         ));
     }
 
-    /**
-     * Зафиксировать активность корзины. updated_at не трогаем — он отражает
-     * изменение состава и бампается в путях upsert/remove.
-     */
-    protected function touch(Cart $cart, Request $request): void
-    {
-        $attributes = ['last_activity_at' => now()];
-
-        // Для гостя фиксируем UA/IP один раз (аналитика / фильтр ботов).
-        if (! $cart->client_id) {
-            if (! $cart->user_agent) {
-                $attributes['user_agent'] = substr((string) $request->userAgent(), 0, 255);
-            }
-            if (! $cart->ip_address) {
-                $attributes['ip_address'] = $request->ip();
-            }
-        }
-
-        $cart->forceFill($attributes)->save();
-    }
 }
