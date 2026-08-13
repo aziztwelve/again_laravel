@@ -2,8 +2,6 @@
 
 namespace App\Jobs;
 
-use App\Models\YandexOrder;
-use App\Services\Notifications\YandexDeliveryNotificationService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -18,14 +16,8 @@ class NotifyYandexDeliveryCreatedJob implements ShouldQueue
     {
     }
 
-    public function handle(YandexDeliveryNotificationService $notificationService): void
+    public function handle(): void
     {
-        $yandexOrder = YandexOrder::query()->find($this->yandexOrderId);
-
-        if (! $yandexOrder) {
-            return;
-        }
-
-        $notificationService->notify($yandexOrder, 'delivery_created');
+        // Kept as a no-op so already queued delayed jobs do not notify customers.
     }
 }

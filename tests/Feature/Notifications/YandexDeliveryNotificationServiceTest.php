@@ -22,7 +22,7 @@ class YandexDeliveryNotificationServiceTest extends TestCase
     public function test_it_dispatches_each_available_channel_once(): void
     {
         Bus::fake([SendNotificationJob::class]);
-        [$order, $yandexOrder] = $this->deliveryWithClient();
+        [$order, $yandexOrder] = $this->deliveryWithClient(customerStatus: 'handed_over');
         $service = app(YandexDeliveryNotificationService::class);
 
         $service->notify($yandexOrder);
@@ -32,8 +32,20 @@ class YandexDeliveryNotificationServiceTest extends TestCase
         $this->assertSame(4, NotificationDispatch::query()
             ->where('entity_type', 'yandex_order')
             ->where('entity_id', $yandexOrder->id)
-            ->where('event_key', 'yandex_delivery.delivery_created')
+            ->where('event_key', 'yandex_delivery.handed_over')
             ->count());
+    }
+
+    public function test_it_does_not_dispatch_disabled_status_notifications(): void
+    {
+        Bus::fake([SendNotificationJob::class]);
+        [, $yandexOrder] = $this->deliveryWithClient(customerStatus: 'delivery_created');
+
+        foreach (['delivery_created', 'in_transit', 'delivered', 'cancelled', 'returning'] as $status) {
+            app(YandexDeliveryNotificationService::class)->notify($yandexOrder, $status);
+        }
+
+        Bus::assertNotDispatched(SendNotificationJob::class);
     }
 
     public function test_pickup_message_contains_tracking_and_pickup_wording(): void
@@ -78,7 +90,7 @@ class YandexDeliveryNotificationServiceTest extends TestCase
     }
 
     /** @return array{Order,YandexOrder} */
-    private function deliveryWithClient(string $deliveryType = 'courier'): array
+    private function deliveryWithClient(string $deliveryType = 'courier', string $customerStatus = 'delivery_created'): array
     {
         $client = Client::create(['email' => 'client@example.com']);
         UserProfile::create([
@@ -96,17 +108,17 @@ class YandexDeliveryNotificationServiceTest extends TestCase
             ],
         ]);
 
-        return [$order, $this->createYandexOrder($order, $deliveryType)];
+        return [$order, $this->createYandexOrder($order, $deliveryType, $customerStatus)];
     }
 
-    private function createYandexOrder(Order $order, string $deliveryType = 'courier'): YandexOrder
+    private function createYandexOrder(Order $order, string $deliveryType = 'courier', string $customerStatus = 'delivery_created'): YandexOrder
     {
         return YandexOrder::create([
             'order_id' => $order->id,
             'claim_id' => 'request-'.$order->id,
             'status' => 'created',
             'internal_status' => 'created',
-            'customer_status' => 'delivery_created',
+            'customer_status' => $customerStatus,
             'delivery_type' => $deliveryType,
             'tracking_number' => 'TRACK-123',
             'tracking_url' => 'https://example.test/tracking/123',

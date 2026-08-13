@@ -7,6 +7,13 @@ use Illuminate\Support\Facades\Log;
 
 class YandexDeliveryNotificationService
 {
+    private const NOTIFIABLE_STATUSES = [
+        'handed_over',
+        'ready_for_pickup',
+        'courier_today',
+        'delivery_problem',
+    ];
+
     public function __construct(
         protected YandexDeliveryMessageBuilder $messageBuilder,
         protected CustomerChannelResolver $channelResolver,
@@ -16,7 +23,7 @@ class YandexDeliveryNotificationService
     public function notify(YandexOrder $yandexOrder, ?string $customerStatus = null): void
     {
         $customerStatus ??= $yandexOrder->customer_status;
-        if (! $customerStatus) {
+        if (! in_array($customerStatus, self::NOTIFIABLE_STATUSES, true)) {
             return;
         }
 
