@@ -74,7 +74,7 @@ class PayloadBuilder
             $data['pvz']['id'] ?? null,
             $data['destination'] ?? $this->addressDestination($order),
             $recipient,
-            'order-'.$order->id,
+            (string) ($order->order_number ?: $order->id),
         );
         $payload['info']['comment'] = $order->delivery_comment;
 
