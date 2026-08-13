@@ -46,10 +46,6 @@ return [
         'code_prefix' => env('ABANDONED_CART_PROMO_PREFIX', 'CART'),
     ],
 
-    // База для ссылки восстановления корзины: {recovery_url}/{token}.
-    // По умолчанию — витрина (FRONTEND_URL) + /cart/recovery.
-    'recovery_url' => env(
-        'CART_RECOVERY_URL',
-        rtrim((string) env('FRONTEND_URL', env('APP_URL')), '/').'/cart/recovery'
-    ),
+    // Recovery-ссылки должны использовать единый публичный домен приложения.
+    'recovery_url' => rtrim((string) env('APP_URL'), '/').'/cart/recovery',
 ];
