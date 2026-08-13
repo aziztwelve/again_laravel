@@ -66,7 +66,7 @@ class YandexDeliveryNotificationServiceTest extends TestCase
     {
         Bus::fake([SendNotificationJob::class]);
         $order = Order::factory()->create(['client_id' => null, 'email' => 'guest@example.com']);
-        $yandexOrder = $this->createYandexOrder($order);
+        $yandexOrder = $this->createYandexOrder($order, customerStatus: 'handed_over');
 
         app(YandexDeliveryNotificationService::class)->notify($yandexOrder);
 

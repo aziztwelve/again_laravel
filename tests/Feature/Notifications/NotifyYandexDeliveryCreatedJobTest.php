@@ -24,6 +24,6 @@ class NotifyYandexDeliveryCreatedJobTest extends TestCase
             'delivery_type' => 'courier',
             'request_id' => (string) Str::uuid(),
         ]);
-        (new NotifyYandexDeliveryCreatedJob($yandexOrder->id))->handle();
+        $this->assertNull((new NotifyYandexDeliveryCreatedJob($yandexOrder->id))->handle());
     }
 }
