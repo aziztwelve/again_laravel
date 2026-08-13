@@ -325,6 +325,7 @@ Route::prefix('/cart-items')->group(function () {
 // период. См. docs/tasks/universal-cart.md.
 Route::prefix('/cart')->group(function () {
     Route::get('/', [CartController::class, 'cart_items']);
+    Route::delete('/', [CartController::class, 'clear_cart']);
     Route::post('/items', [CartController::class, 'add_item_to_cart']);
     Route::post('/items/bulk', [CartController::class, 'add_multiple_items_to_cart']);
     Route::patch('/items', [CartController::class, 'add_item_to_cart']);

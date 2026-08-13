@@ -253,6 +253,18 @@ class CartController extends Controller
         ]);
     }
 
+    public function clear_cart(Request $request)
+    {
+        $cart = $this->resolver->resolveActive($request);
+
+        if ($cart) {
+            $cart->items()->delete();
+            $cart->delete();
+        }
+
+        return response()->json(['success' => true]);
+    }
+
     public function cancel_cart(Request $request)
     {
         $cart = $this->resolver->resolveActive($request);

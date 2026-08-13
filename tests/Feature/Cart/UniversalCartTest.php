@@ -226,6 +226,26 @@ class UniversalCartTest extends TestCase
         ]);
     }
 
+    public function test_guest_can_clear_server_cart(): void
+    {
+        $product = $this->product();
+        $cart = Cart::create([
+            'guest_token' => 'guest-clear-cart',
+            'status' => 'active',
+            'created_at' => now(),
+            'last_activity_at' => now(),
+        ]);
+        $this->addItem($cart, $product->id, 1, 1000);
+
+        $this->withCookie($this->cookieName(), 'guest-clear-cart')
+            ->deleteJson('/api/cart')
+            ->assertOk()
+            ->assertJson(['success' => true]);
+
+        $this->assertDatabaseMissing('cart', ['id' => $cart->id]);
+        $this->assertDatabaseMissing('cart_items', ['cart_id' => $cart->id]);
+    }
+
     // ===================== GC гостевых корзин + сегменты аналитики (Фаза 5) =====================
 
     private function guestCartRow(string $status, \DateTimeInterface $activity, bool $withItem): Cart
