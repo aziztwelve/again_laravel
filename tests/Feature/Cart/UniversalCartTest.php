@@ -226,18 +226,19 @@ class UniversalCartTest extends TestCase
         ]);
     }
 
-    public function test_guest_can_clear_server_cart(): void
+    public function test_client_can_clear_server_cart(): void
     {
         $product = $this->product();
+        $client = $this->client();
         $cart = Cart::create([
-            'guest_token' => 'guest-clear-cart',
+            'client_id' => $client->id,
             'status' => 'active',
             'created_at' => now(),
             'last_activity_at' => now(),
         ]);
         $this->addItem($cart, $product->id, 1, 1000);
 
-        $this->withCookie($this->cookieName(), 'guest-clear-cart')
+        $this->actingAs($client, 'sanctum')
             ->deleteJson('/api/cart')
             ->assertOk()
             ->assertJson(['success' => true]);
