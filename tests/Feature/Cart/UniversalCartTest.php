@@ -119,7 +119,7 @@ class UniversalCartTest extends TestCase
         $request = Request::create('/api/cart', 'GET', [], [$this->cookieName() => $cart->guest_token]);
 
         $this->assertSame($cart->id, $this->resolver()->resolveActive($request)?->id);
-        $this->assertTrue($activity->equalTo($cart->fresh()->last_activity_at));
+        $this->assertSame($activity->format('Y-m-d H:i:s'), $cart->fresh()->last_activity_at?->format('Y-m-d H:i:s'));
     }
 
     public function test_authenticated_client_resolves_client_cart(): void

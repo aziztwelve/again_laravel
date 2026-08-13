@@ -44,6 +44,9 @@ class CartRestoreController extends Controller
         // фиксируется только при изменении состава корзины.
         $revive = [];
         if (($communicationId = $request->integer('communication')) && $cart->communications()->whereKey($communicationId)->exists()) $revive['recovery_cart_communication_id'] = $communicationId;
+        if ($cart->status === 'abandoned') {
+            $revive['status'] = 'active';
+        }
         if ($revive !== []) {
             $cart->forceFill($revive)->saveQuietly();
         }
