@@ -9,8 +9,10 @@ use App\Models\Order;
 use App\Models\Shipment;
 use App\Models\ShipmentStatus;
 use App\Services\Delivery\Cdek\CdekClient;
+use App\Services\Notifications\CdekDeliveryNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -18,10 +20,11 @@ class CdekDeliveryService extends DeliveryService
 {
     private CdekClient $client;
 
-    public function __construct(array $methodSettings = [])
+    public function __construct(array $methodSettings = [], private ?CdekDeliveryNotificationService $notificationService = null)
     {
         $database = DeliveryServiceSetting::query()->where('service_name', 'cdek')->value('settings') ?? [];
         $this->settings = array_replace_recursive(config('services.cdek_delivery'), $database, $methodSettings);
+        $this->notificationService ??= app(CdekDeliveryNotificationService::class);
         $this->client = new CdekClient($this->settings);
     }
 
@@ -108,18 +111,19 @@ class CdekDeliveryService extends DeliveryService
         else $payload['to_location'] = ['code' => (int) ($destination['city_code'] ?? 0), 'address' => $destination['address'] ?? $address?->address];
         if (empty($payload['delivery_point']) && $isPickup) throw new InvalidArgumentException('Не выбран ПВЗ СДЭК.');
 
-        return $this->client->request('POST', '/v2/orders', $payload);
+        return $this->client->request('POST', '/v2/orders', $payload, cdekOrderId: $cdekOrder->id);
     }
 
     public function sync(CdekOrder $cdekOrder): void
     {
-        $result = $this->client->request('GET', '/v2/orders', query: ['im_number' => $cdekOrder->external_order_number]);
+        $result = $this->client->request('GET', '/v2/orders', query: ['im_number' => $cdekOrder->external_order_number], cdekOrderId: $cdekOrder->id);
         if (! $result['successful']) return;
         $order = $result['data']['entity'] ?? $result['data'];
         if (! is_array($order) || empty($order['uuid'])) return;
 
         $latest = collect($order['statuses'] ?? [])->reject(fn (array $status) => $status['deleted'] ?? false)->sortByDesc('date_time')->first() ?? [];
         $statusCode = (string) ($latest['code'] ?? 'CREATED');
+        $previousStatus = $cdekOrder->status_code;
         $tracking = ! empty($order['cdek_number']) ? 'https://www.cdek.ru/ru/tracking?order_id='.$order['cdek_number'] : null;
         $cdekOrder->update([
             'cdek_uuid' => $order['uuid'], 'cdek_number' => $order['cdek_number'] ?? null,
@@ -137,6 +141,18 @@ class CdekDeliveryService extends DeliveryService
             ]);
         }
         $this->upsertShipment($cdekOrder->fresh(), $order);
+        if ($previousStatus !== $statusCode) {
+            try {
+                $this->notificationService->notify($cdekOrder->fresh('order'), $statusCode);
+            } catch (\Throwable $exception) {
+                Log::error('Failed to queue CDEK delivery customer notification', [
+                    'order_id' => $cdekOrder->order_id,
+                    'cdek_order_id' => $cdekOrder->id,
+                    'status_code' => $statusCode,
+                    'error' => $exception->getMessage(),
+                ]);
+            }
+        }
     }
 
     public function calculateRate(Order $order): Collection { return collect(); }
@@ -145,7 +161,7 @@ class CdekDeliveryService extends DeliveryService
     public function cancel(CdekOrder $cdekOrder): array
     {
         if (! $cdekOrder->cdek_uuid) throw new InvalidArgumentException('Заявка СДЭК ещё не создана.');
-        return $this->client->request('DELETE', '/v2/orders/'.$cdekOrder->cdek_uuid);
+        return $this->client->request('DELETE', '/v2/orders/'.$cdekOrder->cdek_uuid, cdekOrderId: $cdekOrder->id);
     }
     public function webhooks(): array
     {
@@ -185,10 +201,26 @@ class CdekDeliveryService extends DeliveryService
     private function senderLocation(): array { $sender = $this->settings['sender']; return array_filter(['code' => (int) $sender['city_code'], 'postal_code' => $sender['postal_code'] ?? null, 'address' => $sender['address']]); }
     private function package(array $items, string $number): array
     {
-        $weight = max(1, (int) collect($items)->sum(fn (array $item) => (float) ($item['weight'] ?? 500) * (int) ($item['quantity'] ?? 1)));
-        return ['number' => Str::limit($number, 30, ''), 'weight' => $weight, 'length' => 20, 'width' => 10, 'height' => 10, 'items' => array_map(fn (array $item) => ['name' => Str::limit((string) ($item['name'] ?? 'Товар'), 255, ''), 'ware_key' => (string) ($item['sku'] ?? $item['id'] ?? 'item'), 'payment' => ['value' => (float) ($item['price'] ?? 0)], 'cost' => (float) ($item['price'] ?? 0), 'amount' => (int) ($item['quantity'] ?? 1), 'weight' => max(1, (int) ($item['weight'] ?? 500))], $items)];
+        $items = array_values($items);
+        $measurements = array_map(fn (array $item) => $this->measurement($item), $items);
+        $weight = max(1, (int) collect($measurements)->sum(fn (array $item) => $item['weight'] * $item['quantity']));
+        $length = max(1, (int) collect($measurements)->max('length'));
+        $width = max(1, (int) collect($measurements)->max('width'));
+        $height = max(1, (int) collect($measurements)->sum(fn (array $item) => $item['height'] * $item['quantity']));
+
+        return ['number' => Str::limit($number, 30, ''), 'weight' => $weight, 'length' => $length, 'width' => $width, 'height' => $height, 'items' => array_map(fn (array $item, int $index) => ['name' => Str::limit((string) ($item['name'] ?? 'Товар'), 255, ''), 'ware_key' => (string) ($item['sku'] ?? $item['id'] ?? 'item'), 'payment' => ['value' => (float) ($item['price'] ?? 0)], 'cost' => (float) ($item['price'] ?? 0), 'amount' => $measurements[$index]['quantity'], 'weight' => $measurements[$index]['weight']], $items, array_keys($items))];
     }
-    private function orderItems(Order $order): array { return $order->loadMissing('items.product', 'items.variant')->items->map(fn ($item) => ['id' => $item->id, 'name' => $item->product?->name ?? $item->legacy_name ?? 'Товар', 'sku' => $item->product?->sku ?? $item->variant?->sku ?? $item->id, 'price' => (float) $item->price, 'quantity' => (int) $item->quantity])->all(); }
+    private function measurement(array $item): array
+    {
+        return [
+            'weight' => max(1, (int) (($item['weight'] ?? null) ?: 500)),
+            'length' => max(1, (int) (($item['length'] ?? null) ?: 20)),
+            'width' => max(1, (int) (($item['width'] ?? null) ?: 10)),
+            'height' => max(1, (int) (($item['height'] ?? null) ?: 10)),
+            'quantity' => max(1, (int) ($item['quantity'] ?? 1)),
+        ];
+    }
+    private function orderItems(Order $order): array { return $order->loadMissing('items.product', 'items.variant')->items->map(fn ($item) => ['id' => $item->id, 'name' => $item->product?->name ?? $item->legacy_name ?? 'Товар', 'sku' => $item->variant?->sku ?? $item->product?->sku ?? $item->id, 'price' => (float) $item->price, 'quantity' => (int) $item->quantity, 'weight' => $item->variant?->weight ?: $item->product?->weight, 'length' => $item->variant?->length ?: $item->product?->length, 'width' => $item->variant?->width ?: $item->product?->width, 'height' => $item->variant?->height ?: $item->product?->height])->all(); }
     private function internalStatus(string $status): string { return match ($status) { 'DELIVERED' => ShipmentStatus::DELIVERED, 'NOT_DELIVERED', 'RETURNED_TO_SENDER' => ShipmentStatus::RETURNED, 'ACCEPTED', 'CREATED' => ShipmentStatus::NEW, default => ShipmentStatus::IN_TRANSIT }; }
     private function upsertShipment(CdekOrder $cdekOrder, array $payload): void
     {
