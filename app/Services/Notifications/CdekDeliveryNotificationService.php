@@ -12,6 +12,7 @@ class CdekDeliveryNotificationService
     private const CUSTOMER_STATUSES = [
         'ACCEPTED' => 'handed_over',
         'RECEIVED_AT_SHIPMENT_WAREHOUSE' => 'handed_over',
+        'IN_TRANSIT' => 'courier_in_transit',
         'READY_FOR_PICKUP' => 'ready_for_pickup',
         'ACCEPTED_AT_PICKUP_POINT' => 'ready_for_pickup',
         'DELIVERED' => 'delivered',
@@ -29,6 +30,9 @@ class CdekDeliveryNotificationService
     {
         $statusCode ??= $cdekOrder->status_code;
         $customerStatus = self::CUSTOMER_STATUSES[$statusCode] ?? null;
+        if ($customerStatus === 'courier_in_transit' && $cdekOrder->delivery_type !== 'courier') {
+            return;
+        }
         if (! $customerStatus) return;
 
         $cdekOrder->loadMissing('order.client.profile');

@@ -8,6 +8,7 @@ class CdekDeliveryMessageBuilder
 {
     private const TITLES = [
         'handed_over' => 'Заказ передан в доставку',
+        'courier_in_transit' => 'Заказ в пути к вам',
         'ready_for_pickup' => 'Заказ можно получить',
         'delivered' => 'Заказ доставлен',
         'delivery_problem' => 'Возникла проблема с доставкой',
