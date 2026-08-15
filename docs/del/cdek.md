@@ -47,8 +47,8 @@
 
 ### Текущий backlog
 
-- [ ] Заполнить production `CDEK_DELIVERY_SENDER_NAME` и
-  `CDEK_DELIVERY_SENDER_PHONE`.
+- [x] Заполнены production `CDEK_DELIVERY_SENDER_NAME` и
+  `CDEK_DELIVERY_SENDER_PHONE` данными ООО «ЭГЕЙН» с сайта.
 - [ ] Провести реальный E2E: оплаченный заказ, `ACCEPTED → SUCCESSFUL`, номер
   СДЭК, callback `ORDER_STATUS` и отмена.
 - [ ] Реализовать PDF накладной и клиентский возврат.
