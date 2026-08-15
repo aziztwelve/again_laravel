@@ -29,10 +29,10 @@ class CdekClientTest extends TestCase
             'enabled' => true, 'mode' => 'sandbox', 'account' => 'account', 'secure_password' => 'secret',
             'base_url' => ['sandbox' => 'https://api.edu.cdek.ru'],
         ]);
-        $result = $client->request('GET', '/v2/location/suggest/cities', query: ['query' => 'Москва']);
+        $result = $client->request('GET', '/v2/location/suggest/cities', query: ['name' => 'Москва']);
 
         $this->assertTrue($result['successful']);
-        Http::assertSent(fn (Request $request) => $request->url() === 'https://api.edu.cdek.ru/v2/location/suggest/cities?query=%D0%9C%D0%BE%D1%81%D0%BA%D0%B2%D0%B0'
+        Http::assertSent(fn (Request $request) => $request->url() === 'https://api.edu.cdek.ru/v2/location/suggest/cities?name=%D0%9C%D0%BE%D1%81%D0%BA%D0%B2%D0%B0'
             && $request->hasHeader('Authorization', 'Bearer test-token'));
     }
 

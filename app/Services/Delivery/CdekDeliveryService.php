@@ -28,7 +28,7 @@ class CdekDeliveryService extends DeliveryService
     public function cities(string $query, string $countryCode = 'RU'): array
     {
         $result = $this->client->request('GET', '/v2/location/suggest/cities', query: [
-            'query' => $query, 'country_code' => strtoupper($countryCode),
+            'name' => $query, 'country_code' => strtoupper($countryCode),
         ]);
         return $result['successful'] ? ($result['data'] ?? []) : [];
     }
