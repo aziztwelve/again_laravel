@@ -80,6 +80,7 @@ use App\Http\Controllers\Api\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Api\Auth\RegisteredUserController;
 use App\Http\Controllers\Api\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\DeliveryController;
+use App\Http\Controllers\Api\Delivery\CdekDeliveryController;
 use App\Http\Controllers\Api\Delivery\YandexDeliveryController;
 use App\Http\Controllers\WebhookController;
 use App\Http\Controllers\Api\PromoCodeController;
@@ -219,6 +220,7 @@ Route::prefix('/public')->group(function () {
     Route::post('/vk/webhook', [VKWebhookController::class, 'webhook']);
     Route::post('/whatsapp/webhook', [WhatsAppWebhookController::class, 'webhook']);
     Route::post('/max/webhook', [MaxWebhookController::class, 'webhook']);
+    Route::post('/webhooks/cdek', [CdekDeliveryController::class, 'webhook']);
 
     Route::prefix('/conversations')->group(function () {
         Route::get('/client', [PublicConversationController::class, 'getOrCreateForClient']);
@@ -255,6 +257,12 @@ Route::prefix('/public')->group(function () {
             Route::post('/calculate', [YandexDeliveryController::class, 'calculate'])->name('calculate');
             Route::post('/offers/confirm', [YandexDeliveryController::class, 'confirmOffer'])->name('offers.confirm');
             Route::get('/request/{requestId}', [YandexDeliveryController::class, 'requestInfo'])->name('request.info');
+        });
+
+        Route::prefix('cdek')->name('cdek.')->group(function () {
+            Route::get('/cities', [CdekDeliveryController::class, 'cities']);
+            Route::get('/pvz', [CdekDeliveryController::class, 'pickupPoints']);
+            Route::post('/calculate', [CdekDeliveryController::class, 'calculate']);
         });
 
     });
@@ -625,7 +633,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::get('/locations', [CDEKController::class, 'get_cdek_locations']);
             Route::get('/locations-cities', [CDEKController::class, 'get_cdek_cities']);
             Route::get('/locations-regions', [CDEKController::class, 'get_cdek_regions']);
-            Route::get('/tariffs', [CDEKController::class, '']);
+            Route::get('/tariffs', [CDEKController::class, 'get_tariffs']);
         });
     });
 

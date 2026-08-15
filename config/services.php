@@ -77,6 +77,27 @@ return [
         'logs_retention_days' => env('YANDEX_DELIVERY_LOGS_RETENTION_DAYS', 30),
     ],
 
+    'cdek_delivery' => [
+        'enabled' => env('CDEK_DELIVERY_ENABLED', false),
+        'mode' => env('CDEK_DELIVERY_MODE', 'sandbox'),
+        'account' => env('CDEK_DELIVERY_ACCOUNT'),
+        'secure_password' => env('CDEK_DELIVERY_SECURE_PASSWORD'),
+        'order_type' => (int) env('CDEK_DELIVERY_ORDER_TYPE', 1),
+        'sender' => [
+            'city_code' => env('CDEK_DELIVERY_SENDER_CITY_CODE'),
+            'postal_code' => env('CDEK_DELIVERY_SENDER_POSTAL_CODE'),
+            'address' => env('CDEK_DELIVERY_SENDER_ADDRESS'),
+            'name' => env('CDEK_DELIVERY_SENDER_NAME'),
+            'phone' => env('CDEK_DELIVERY_SENDER_PHONE'),
+            'shipment_point' => env('CDEK_DELIVERY_SHIPMENT_POINT'),
+        ],
+        'webhook_url' => env('CDEK_DELIVERY_WEBHOOK_URL'),
+        'base_url' => [
+            'sandbox' => 'https://api.edu.cdek.ru',
+            'production' => 'https://api.cdek.ru',
+        ],
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Публичные имена ботов/сообществ для deeplink-привязки чата

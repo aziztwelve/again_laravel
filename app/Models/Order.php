@@ -117,6 +117,11 @@ class Order extends Model
         return $this->hasOne(YandexOrder::class);
     }
 
+    public function cdekOrder(): HasOne
+    {
+        return $this->hasOne(CdekOrder::class);
+    }
+
     public function deliveryTarget()
     {
         return $this->belongsTo(DeliveryTarget::class, 'delivery_target_id');

@@ -37,6 +37,7 @@ class PublicOrderController extends Controller
                 'client.profile',
                 'promoCode',
                 'yandexOrder',
+                'cdekOrder',
             ])
             ->where('view_token', $viewToken)
             ->first();
@@ -180,7 +181,11 @@ class PublicOrderController extends Controller
                 'status' => $order->yandexOrder->internal_status,
                 'status_raw' => $order->yandexOrder->status,
                 'tracking_url' => $order->yandexOrder->tracking_url,
-            ] : null,
+            ] : ($order->cdekOrder ? [
+                'status' => $order->cdekOrder->internal_status,
+                'status_raw' => $order->cdekOrder->status_code,
+                'tracking_url' => $order->cdekOrder->tracking_url,
+            ] : null),
         ];
     }
 }
