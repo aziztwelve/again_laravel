@@ -1,9 +1,9 @@
 # СДЭК — архитектура интеграции (API v2)
 
-> **Статус:** проектный документ, актуализирован 2026-08-15 по OpenAPI v2 из
-> `/home/aziz/tmp/openapi_api_v2_integration.json`. Существующий
-> `CdekDeliveryService` является неполной legacy-реализацией на SDK и не
-> выполняет оформление, отслеживание или отмену отправлений end-to-end.
+> **Статус:** частично реализовано и включено в production 2026-08-15.
+> Реализованы расчёт, checkout, создание после оплаты, polling, `ORDER_STATUS`
+> webhook, трекинг и базовые действия админки. Оставшиеся задачи перечислены в
+> разделе «Текущий backlog».
 
 ## 1. Подтверждённые условия
 
@@ -28,6 +28,33 @@
 Не использовать тестовые учётные данные из публичной документации в production,
 `.env`, БД или исходном коде. Устаревший `CdekSDK2` не расширять: новый клиент
 работает через Laravel HTTP client непосредственно с документированным API v2.
+
+### Текущее состояние production
+
+- `CDEK_DELIVERY_MODE=production`; OAuth-авторизация и расчёт тарифов проверены
+  на реальном API: курьерский расчёт для Москвы вернул 7 тарифов.
+- Витрина поддерживает `cdek_courier`, `cdek_pickup` и `cdek_postamat`: поиск
+  города СДЭК, выбор ПВЗ/постамата, расчёт и сохранение выбранного тарифа.
+- После оплаты создаётся асинхронная заявка; polling каждые 10 минут и webhook
+  обновляют данные через авторитетный `GET /v2/orders`.
+- Зарегистрирована ровно одна production-подписка `ORDER_STATUS` на
+  `https://againdev3.ru/api/public/webhooks/cdek`. Команда
+  `php artisan cdek:register-webhook` сверяет существующие записи, создаёт
+  отсутствующую и удаляет только дубли с тем же URL.
+- В документации СДЭК для callback не описаны подпись, секрет или список IP.
+  Endpoint ограничен `throttle:60,1` и не доверяет payload: он лишь ставит
+  синхронизацию заказа в очередь, а статус читается из API СДЭК.
+
+### Текущий backlog
+
+- [ ] Заполнить production `CDEK_DELIVERY_SENDER_NAME` и
+  `CDEK_DELIVERY_SENDER_PHONE`.
+- [ ] Провести реальный E2E: оплаченный заказ, `ACCEPTED → SUCCESSFUL`, номер
+  СДЭК, callback `ORDER_STATUS` и отмена.
+- [ ] Реализовать PDF накладной и клиентский возврат.
+- [ ] Заменить фиксированные габариты на общий `PackagingResolver`.
+- [ ] Добавить `cdek_api_logs` с маскированием токенов и персональных данных.
+- [ ] При получении официальных IP СДЭК добавить allowlist в nginx/firewall.
 
 ## 2. Контуры и авторизация
 
@@ -64,8 +91,8 @@ CDEK_DELIVERY_WEBHOOK_URL=https://example.ru/api/webhooks/cdek
     'enabled' => env('CDEK_DELIVERY_ENABLED', false),
     'mode' => env('CDEK_DELIVERY_MODE', 'sandbox'),
     // Account and Secure password are CDEK's names for OAuth client credentials.
-    'client_id' => env('CDEK_DELIVERY_ACCOUNT'),
-    'client_secret' => env('CDEK_DELIVERY_SECURE_PASSWORD'),
+    'account' => env('CDEK_DELIVERY_ACCOUNT'),
+    'secure_password' => env('CDEK_DELIVERY_SECURE_PASSWORD'),
     'order_type' => (int) env('CDEK_DELIVERY_ORDER_TYPE', 1),
     'sender' => [
         'city_code' => env('CDEK_DELIVERY_SENDER_CITY_CODE'),
@@ -236,11 +263,12 @@ legacy-вызовы `CdekSDK2` и жёстко заданный `setTest(true)` 
 конфигурации. Не создавать подписку без сверки: API разрешает несколько
 одинаковых подписок.
 
-Endpoint `POST /api/webhooks/cdek` быстро валидирует полезную нагрузку,
-сохраняет событие идемпотентно и ставит `ProcessCdekStatusWebhookJob` в очередь.
-Схему и способ верификации входящего webhook нужно подтвердить с менеджером
-СДЭК до production; endpoint не должен считать публичный запрос доверенным
-только по наличию номера заказа.
+Endpoint `POST /api/public/webhooks/cdek` ограничен `throttle:60,1`; payload не
+считается доверенным. Если номер заказа известен, endpoint ставит
+`SyncCdekOrderJob` в очередь, который получает авторитетный статус через API
+СДЭК. Документация управления webhook не описывает подпись, секрет или IP
+источника; при получении официальных диапазонов IP ограничить endpoint также на
+nginx/firewall.
 
 Команда `cdek:poll-statuses` каждые 10-15 минут выбирает незавершённые заказы,
 а также запросы со состоянием `ACCEPTED`, получает заказ по `im_number`, пишет
