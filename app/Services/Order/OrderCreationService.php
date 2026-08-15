@@ -36,15 +36,15 @@ class OrderCreationService
         $userData = $orderData['user'] ?? [];
         $recipient = $orderData['recipient'] ?? [];
         $deliveryMethodData = $orderData['delivery_method'] ?? [];
-        $yandexDeliveryData = $this->buildYandexDeliveryData($orderData, $deliveryAddress);
+        $deliveryData = $this->buildDeliveryData($orderData, $deliveryAddress);
         // Для Яндекс.Доставки выбранный клиентом интервал хранится в оффере.
         // Дублируем его начальную дату в обычное поле заказа/адреса, которое
         // отображает админка и используют остальные интеграции.
         $deliveryDate = $deliveryAddress['delivery_date']
-            ?? $yandexDeliveryData['scheduled_time']
+            ?? $deliveryData['scheduled_time']
             ?? null;
         $itemsTotal = $orderData['total'] ?? $this->calculateTotalFromItems($orderData['items'] ?? []);
-        $deliveryCost = $this->resolveDeliveryCost($itemsTotal, $yandexDeliveryData);
+        $deliveryCost = $this->resolveDeliveryCost($itemsTotal, $deliveryData);
         // Если в payload пришёл client_id (админ создаёт заказ за клиента) —
         // он имеет приоритет. Если в payload его нет — берём переданный.
         // Для гостевого заказа оба источника пусты и client_id остаётся NULL.
@@ -64,7 +64,7 @@ class OrderCreationService
             'payment_method' => $orderData['payment_method'] ?? null,
             'source' => $orderData['source'] ?? null,
             'delivery_method_id' => $deliveryMethodId,
-            'delivery_data' => $yandexDeliveryData,
+            'delivery_data' => $deliveryData,
             'delivery_cost' => $deliveryCost,
 
             // Адрес доставки
@@ -278,11 +278,28 @@ class OrderCreationService
             ->value('id');
     }
 
-    private function buildYandexDeliveryData(array $orderData, array $deliveryAddress): ?array
+    private function buildDeliveryData(array $orderData, array $deliveryAddress): ?array
     {
         $data = $orderData['delivery_data'] ?? [];
         if (! is_array($data)) {
             $data = [];
+        }
+
+        // CDEK data is calculated by its own public endpoint and must retain its
+        // city code, tariff and pickup point instead of being normalized as Yandex.
+        if (($data['provider'] ?? null) === 'cdek') {
+            return array_filter([
+                'provider' => 'cdek',
+                'delivery_type' => $data['delivery_type'] ?? null,
+                'tariff_code' => $data['tariff_code'] ?? null,
+                'tariff_name' => $data['tariff_name'] ?? null,
+                'delivery_mode' => $data['delivery_mode'] ?? null,
+                'price' => $data['price'] ?? null,
+                'currency' => $data['currency'] ?? 'RUB',
+                'period' => $data['period'] ?? null,
+                'destination' => $data['destination'] ?? null,
+                'pvz' => $data['pvz'] ?? null,
+            ], fn ($value) => $value !== null);
         }
 
         $offerId = $orderData['yandex_offer'] ?? $data['offer_id'] ?? null;
@@ -316,13 +333,16 @@ class OrderCreationService
         ], fn ($value) => $value !== null);
     }
 
-    private function resolveDeliveryCost(float $itemsTotal, ?array $yandexDeliveryData): float
+    private function resolveDeliveryCost(float $itemsTotal, ?array $deliveryData): float
     {
-        if (! $yandexDeliveryData) return 0.0;
-        $type = $yandexDeliveryData['delivery_type'] ?? 'courier';
+        if (! $deliveryData) return 0.0;
+        if (($deliveryData['provider'] ?? null) === 'cdek') {
+            return (float) ($deliveryData['price'] ?? 0);
+        }
+        $type = $deliveryData['delivery_type'] ?? 'courier';
         $freeFrom = $type === 'courier' ? 7900 : 4500;
         if ($itemsTotal >= $freeFrom) return 0.0;
-        return (float) ($yandexDeliveryData['price'] ?? 0);
+        return (float) ($deliveryData['price'] ?? 0);
     }
 
     private function resolveOrderStatus(?string $status): string

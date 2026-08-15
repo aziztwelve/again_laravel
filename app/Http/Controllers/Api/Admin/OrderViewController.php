@@ -4,7 +4,10 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Client;
+use App\Models\CdekOrder;
 use App\Models\Order;
+use App\Jobs\CreateCdekOrderJob;
+use App\Services\Delivery\CdekDeliveryService;
 use App\Services\Order\OrderAuthorizationService;
 use App\Services\Order\OrderCreationService;
 use App\Services\Order\OrderCustomFieldsService;
@@ -60,6 +63,7 @@ class OrderViewController extends Controller
             'assignedUser.profile',
             'assignedUser.roles',
             'yandexOrder.statusEvents',
+            'cdekOrder',
         ]);
 
         $summary = $this->orderCreationService->getOrderSummary($order);
@@ -190,6 +194,59 @@ class OrderViewController extends Controller
         $yandexOrder->update(['cancel_state' => 'requested']);
         $service->sync($yandexOrder->fresh());
         return $this->successResponse('Отмена заявки отправлена в Яндекс.Доставку.');
+    }
+
+    public function createCdekDelivery(Request $request, Order $order): JsonResponse
+    {
+        if (! $this->orderAuthorizationService->canView($request->user(), $order)) {
+            return $this->errorResponse('Доступ запрещён', 403);
+        }
+        if (! str_starts_with((string) $order->deliveryMethod?->code, 'cdek_')) {
+            return $this->errorResponse('Для заказа не выбрана доставка СДЭК.', 422);
+        }
+        if (! $order->isPaid()) {
+            return $this->errorResponse('Заявка СДЭК создаётся только после успешной оплаты.', 422);
+        }
+
+        $cdekOrder = CdekOrder::firstOrCreate(['order_id' => $order->id], [
+            'external_order_number' => 'order-'.$order->id,
+            'delivery_type' => $order->delivery_data['delivery_type'] ?? 'courier',
+            'delivery_mode' => $order->delivery_data['delivery_mode'] ?? null,
+            'tariff_code' => $order->delivery_data['tariff_code'] ?? 0,
+            'price' => $order->delivery_data['price'] ?? null,
+            'currency' => $order->delivery_data['currency'] ?? 'RUB',
+            'pvz_code' => $order->delivery_data['pvz']['code'] ?? null,
+            'creation_state' => 'NEW',
+        ]);
+        if ($cdekOrder->cdek_uuid) {
+            app(CdekDeliveryService::class)->sync($cdekOrder);
+            return $this->successResponse('Статус заявки СДЭК обновлён.', ['cdek_order' => $cdekOrder->fresh()]);
+        }
+        if ($cdekOrder->creation_state === 'INVALID') {
+            return $this->errorResponse('Заявка СДЭК отклонена. Исправьте сохранённую ошибку перед повторной отправкой.', 422, ['cdek_order' => $cdekOrder]);
+        }
+
+        CreateCdekOrderJob::dispatch($order->id);
+        return $this->successResponse('Заявка СДЭК поставлена в очередь на создание.', ['cdek_order' => $cdekOrder->fresh()]);
+    }
+
+    public function cancelCdekDelivery(Request $request, Order $order, CdekDeliveryService $service): JsonResponse
+    {
+        if (! $this->orderAuthorizationService->canView($request->user(), $order)) {
+            return $this->errorResponse('Доступ запрещён', 403);
+        }
+        $cdekOrder = $order->cdekOrder;
+        if (! $cdekOrder?->cdek_uuid) return $this->errorResponse('Заявка СДЭК ещё не создана.', 422);
+
+        try {
+            $result = $service->cancel($cdekOrder);
+        } catch (\InvalidArgumentException $exception) {
+            return $this->errorResponse($exception->getMessage(), 422);
+        }
+        if (! $result['successful']) return $this->errorResponse('СДЭК не подтвердил отмену заявки.', 422, $result['data'] ?? []);
+
+        $service->sync($cdekOrder->fresh());
+        return $this->successResponse('Запрос на отмену заявки СДЭК отправлен.');
     }
 
     /**

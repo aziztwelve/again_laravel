@@ -142,6 +142,11 @@ class CdekDeliveryService extends DeliveryService
     public function calculateRate(Order $order): Collection { return collect(); }
     public function createShipment(Order $order): Shipment { throw new \RuntimeException('Оформление СДЭК выполняется после подтверждения оплаты.'); }
     public function getTrackingInfo(string $trackingNumber): array { return $this->client->request('GET', '/v2/orders', query: ['cdek_number' => $trackingNumber])['data']; }
+    public function cancel(CdekOrder $cdekOrder): array
+    {
+        if (! $cdekOrder->cdek_uuid) throw new InvalidArgumentException('Заявка СДЭК ещё не создана.');
+        return $this->client->request('DELETE', '/v2/orders/'.$cdekOrder->cdek_uuid);
+    }
     public function cancelShipment(Shipment $shipment): bool { return false; }
     public function printLabel(Shipment $shipment): string { return ''; }
 

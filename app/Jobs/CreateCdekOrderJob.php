@@ -37,6 +37,12 @@ class CreateCdekOrderJob implements ShouldQueue
             'creation_state' => 'NEW',
         ]);
         if ($cdekOrder->cdek_uuid || $cdekOrder->creation_state === 'INVALID') return;
+        // POST /orders is asynchronous. While CDEK is still processing the first
+        // request, poll it instead of registering the same shop order again.
+        if ($cdekOrder->request_uuid) {
+            SyncCdekOrderJob::dispatch($cdekOrder->id);
+            return;
+        }
 
         $result = $service->createExternalOrder($order, $cdekOrder);
         if (! $result['successful']) throw new RuntimeException('CDEK order registration failed with HTTP '.$result['status']);
