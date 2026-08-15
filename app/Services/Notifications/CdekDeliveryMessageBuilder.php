@@ -7,12 +7,11 @@ use App\Models\CdekOrder;
 class CdekDeliveryMessageBuilder
 {
     private const TITLES = [
-        'ACCEPTED' => 'Заказ передан в доставку',
-        'IN_TRANSIT' => 'Заказ в пути',
-        'READY_FOR_PICKUP' => 'Заказ можно получить',
-        'DELIVERED' => 'Заказ доставлен',
-        'NOT_DELIVERED' => 'Не удалось доставить заказ',
-        'RETURNED_TO_SENDER' => 'Заказ возвращается отправителю',
+        'handed_over' => 'Заказ передан в доставку',
+        'ready_for_pickup' => 'Заказ можно получить',
+        'delivered' => 'Заказ доставлен',
+        'delivery_problem' => 'Возникла проблема с доставкой',
+        'returning' => 'Заказ возвращается отправителю',
     ];
 
     /** @return array{message:string,html:string,subject:string} */
@@ -24,16 +23,19 @@ class CdekDeliveryMessageBuilder
         $title = self::TITLES[$statusCode] ?? 'Статус доставки изменился';
         $lines = ["{$title} - заказ №{$orderNumber}"];
 
-        if ($statusCode !== 'DELIVERED' && $cdekOrder->cdek_number) {
+        if ($statusCode !== 'delivered' && $cdekOrder->cdek_number) {
             $lines[] = 'Номер отправления: '.$cdekOrder->cdek_number;
         }
         if ($cdekOrder->tracking_url) {
             $lines[] = 'Отследить доставку: '.$cdekOrder->tracking_url;
         }
-        if (in_array($statusCode, ['NOT_DELIVERED', 'RETURNED_TO_SENDER'], true)) {
+        if ($statusCode === 'ready_for_pickup' && data_get($order->delivery_data, 'pvz.address')) {
+            $lines[] = 'Пункт выдачи: '.data_get($order->delivery_data, 'pvz.address');
+        }
+        if (in_array($statusCode, ['delivery_problem', 'returning'], true)) {
             $lines[] = 'Если потребуется помощь, ответьте на это сообщение.';
         }
-        if ($statusCode === 'DELIVERED') {
+        if ($statusCode === 'delivered') {
             $lines[] = 'Спасибо за покупку в again8.ru.';
         }
 
