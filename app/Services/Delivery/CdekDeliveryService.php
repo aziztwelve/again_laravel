@@ -69,7 +69,10 @@ class CdekDeliveryService extends DeliveryService
         $result = $this->client->request('POST', '/v2/calculator/tarifflist', $payload);
         if (! $result['successful']) return [];
 
-        return collect($result['data']['tariff_codes'] ?? [])->map(fn (array $tariff) => [
+        $deliveryMode = $deliveryType === 'courier' ? 1 : 2;
+        return collect($result['data']['tariff_codes'] ?? [])
+            ->filter(fn (array $tariff) => (int) ($tariff['delivery_mode'] ?? 0) === $deliveryMode)
+            ->map(fn (array $tariff) => [
             'tariff_code' => $tariff['tariff_code'],
             'tariff_name' => $tariff['tariff_name'],
             'delivery_mode' => $tariff['delivery_mode'],
@@ -77,7 +80,7 @@ class CdekDeliveryService extends DeliveryService
             'currency' => 'RUB',
             'period' => ['min' => $tariff['period_min'], 'max' => $tariff['period_max']],
             'delivery_date_range' => $tariff['delivery_date_range'] ?? null,
-        ])->values()->all();
+            ])->values()->all();
     }
 
     public function createExternalOrder(Order $order, CdekOrder $cdekOrder): array
