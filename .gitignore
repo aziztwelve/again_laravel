@@ -9,6 +9,7 @@
 /vendor
 .env
 .env.backup
+.env.backup-*
 .env.ion
 .phpactor.json
 .phpunit.result.cache
