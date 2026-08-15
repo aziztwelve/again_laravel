@@ -147,6 +147,15 @@ class CdekDeliveryService extends DeliveryService
         if (! $cdekOrder->cdek_uuid) throw new InvalidArgumentException('Заявка СДЭК ещё не создана.');
         return $this->client->request('DELETE', '/v2/orders/'.$cdekOrder->cdek_uuid);
     }
+    public function webhooks(): array
+    {
+        $result = $this->client->request('GET', '/v2/webhooks');
+        if (! $result['successful']) return $result;
+        $result['data'] = array_is_list($result['data']) ? $result['data'] : ($result['data']['webhooks'] ?? []);
+        return $result;
+    }
+    public function registerWebhook(string $url): array { return $this->client->request('POST', '/v2/webhooks', ['type' => 'ORDER_STATUS', 'url' => $url]); }
+    public function deleteWebhook(string $uuid): array { return $this->client->request('DELETE', '/v2/webhooks/'.$uuid); }
     public function cancelShipment(Shipment $shipment): bool { return false; }
     public function printLabel(Shipment $shipment): string { return ''; }
 

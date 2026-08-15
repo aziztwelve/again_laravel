@@ -220,7 +220,9 @@ Route::prefix('/public')->group(function () {
     Route::post('/vk/webhook', [VKWebhookController::class, 'webhook']);
     Route::post('/whatsapp/webhook', [WhatsAppWebhookController::class, 'webhook']);
     Route::post('/max/webhook', [MaxWebhookController::class, 'webhook']);
-    Route::post('/webhooks/cdek', [CdekDeliveryController::class, 'webhook']);
+    // CDEK has no documented callback signature. A notification only queues a
+    // subsequent authoritative API read, while this limit prevents queue abuse.
+    Route::middleware('throttle:60,1')->post('/webhooks/cdek', [CdekDeliveryController::class, 'webhook']);
 
     Route::prefix('/conversations')->group(function () {
         Route::get('/client', [PublicConversationController::class, 'getOrCreateForClient']);
