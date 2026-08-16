@@ -10,6 +10,7 @@ use App\Models\Shipment;
 use App\Models\ShipmentStatus;
 use App\Services\Delivery\Cdek\CdekClient;
 use App\Services\Notifications\CdekDeliveryNotificationService;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
@@ -132,10 +133,13 @@ class CdekDeliveryService extends DeliveryService
             'tracking_url' => $tracking, 'last_synced_at' => now(), 'last_error' => null,
         ]);
         if ($statusCode !== '') {
+            $statusAt = filled($latest['date_time'] ?? null)
+                ? CarbonImmutable::parse($latest['date_time'])->format('Y-m-d H:i:s')
+                : null;
             CdekStatusEvent::firstOrCreate([
                 'cdek_order_id' => $cdekOrder->id,
                 'status_code' => $statusCode,
-                'status_at' => $latest['date_time'] ?? null,
+                'status_at' => $statusAt,
             ], [
                 'source' => 'polling', 'status_name' => $latest['name'] ?? null, 'payload' => $order,
             ]);
