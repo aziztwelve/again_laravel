@@ -22,6 +22,16 @@ class FreeShippingTest extends TestCase
 {
     use DatabaseTransactions;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // В окружении могут быть засеянные правила (FreeShippingRuleSeeder) —
+        // выключаем их, чтобы тесты не зависели от данных БД. Транзакция теста
+        // откатит изменение.
+        FreeShippingRule::query()->update(['is_active' => false]);
+    }
+
     // === Матчинг условий ===
 
     public function test_rule_without_conditions_applies_to_any_delivery(): void
