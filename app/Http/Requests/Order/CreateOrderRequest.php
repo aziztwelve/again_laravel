@@ -289,6 +289,15 @@ class CreateOrderRequest extends FormRequest
             'delivery_address.delivery_comment' => 'nullable|string|max:1000',
             'delivery_address.delivery_date' => 'nullable|date',
             'delivery_address.buyer_comment' => 'nullable|string|max:1000',
+            // Идентификаторы справочников географии — витрина присылает их из
+            // селектов «Страна»/«Город». Нужны для точного матчинга правил
+            // бесплатной доставки (см. docs/tasks/free-shipping.md).
+            // В order_addresses не пишутся: используются только при расчёте.
+            // ВАЖНО: id = 0 валиден (Россия / «Москва и Московская обл.»),
+            // поэтому min:0, а не min:1.
+            'delivery_address.country_id' => 'nullable|integer|min:0',
+            'delivery_address.region_id' => 'nullable|integer|min:0',
+            'delivery_address.city_id' => 'nullable|integer|min:0',
 
             // Получатель (имя/фамилия/телефон обязательны, отчество опционально)
             'recipient' => 'required|array',

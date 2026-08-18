@@ -95,14 +95,75 @@ class OrderValidationService
         ];
     }
 
+    /**
+     * Пересчитать цены позиций корзины для ОЦЕНКИ (без проверок остатков,
+     * активности и совпадения цены с фронтом).
+     *
+     * Нужен публичным «прикидочным» расчётам — например, бесплатной доставке
+     * (docs/tasks/free-shipping.md): там важна актуальная сумма выкупа после
+     * товарных скидок и промокода, а не право оформить заказ. Цены с фронта
+     * игнорируются полностью — источником правды остаётся бэкенд.
+     *
+     * @param  array  $items  [['product_id'=>int,'product_variant_id'=>?int,'quantity'=>int], ...]
+     * @return array<int, array{product_id:int, quantity:int, price:float, is_gift:bool}>
+     */
+    public function priceItemsForEstimate(
+        array $items,
+        ?PromoCode $promoCode = null,
+        ?Client $client = null
+    ): array {
+        $priced = [];
+
+        foreach ($items as $item) {
+            $productId = (int) ($item['product_id'] ?? 0);
+            $variantId = $item['product_variant_id'] ?? $item['variant_id'] ?? null;
+            $quantity = max(0, (int) ($item['quantity'] ?? 0));
+
+            if ($productId <= 0 || $quantity === 0) {
+                continue;
+            }
+
+            $modelResult = $this->loadProductModel($productId, $variantId ? (int) $variantId : null);
+
+            if (! $modelResult['success']) {
+                continue;
+            }
+
+            try {
+                $priceData = $this->calculateItemPrice(
+                    $modelResult['model'],
+                    $productId,
+                    $variantId ? (int) $variantId : null,
+                    $promoCode,
+                    $client
+                );
+            } catch (\Exception $e) {
+                Log::warning('priceItemsForEstimate: failed to calculate price', [
+                    'product_id' => $productId,
+                    'error' => $e->getMessage(),
+                ]);
+
+                continue;
+            }
+
+            $priced[] = [
+                'product_id' => $productId,
+                'quantity' => $quantity,
+                'price' => round((float) $priceData['final_price'], 2),
+                'is_gift' => false,
+            ];
+        }
+
+        return $priced;
+    }
+
     private function validateSingleItem(
         array $item,
         int $index,
         ?PromoCode $promoCode = null,
         ?Client $client = null
     ): array
-    {
-        $productId = $item['product_id'];
+    {        $productId = $item['product_id'];
         $variantId = $item['product_variant_id'] ?? null;
         $frontendPrice = (float) $item['price'];
         $quantity = (int) $item['quantity'];

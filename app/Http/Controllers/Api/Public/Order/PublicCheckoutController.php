@@ -5,10 +5,13 @@ namespace App\Http\Controllers\Api\Public\Order;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Order\CreateOrderRequest;
 use App\Models\Client;
+use App\Models\DeliveryMethod;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
 use App\Services\Client\GuestClientService;
+use App\Services\Delivery\CdekDeliveryService;
+use App\Services\Delivery\FreeShippingService;
 use App\Services\GiftCard\GiftCardService;
 use App\Services\Notifications\OrderNotificationService;
 use App\Services\Order\OrderCreationService;
@@ -39,6 +42,8 @@ class PublicCheckoutController extends Controller
         protected GiftCardService $giftCardService,
         protected OrderNotificationService $orderNotificationService,
         protected GuestClientService $guestClientService,
+        protected CdekDeliveryService $cdekDeliveryService,
+        protected FreeShippingService $freeShippingService,
     ) {}
 
     public function store(CreateOrderRequest $request): JsonResponse
@@ -171,6 +176,30 @@ class PublicCheckoutController extends Controller
                 return $this->validationErrorResponse($itemsValidation['errors']);
             }
 
+            if (($validated['delivery_data']['provider'] ?? null) === 'cdek') {
+                $deliveryMethod = DeliveryMethod::query()
+                    ->where('name', $validated['delivery_method']['name'] ?? '')
+                    ->whereIn('code', ['cdek_courier', 'cdek_pickup', 'cdek_postamat'])
+                    ->first();
+
+                if (! $deliveryMethod) {
+                    DB::rollBack();
+
+                    return $this->errorResponse('Выберите способ доставки СДЭК.', 422);
+                }
+
+                try {
+                    $validated['delivery_data'] = $this->cdekDeliveryService->revalidateCheckout(
+                        $validated['delivery_data'],
+                        $itemsValidation['validated_items'],
+                    );
+                } catch (\InvalidArgumentException $exception) {
+                    DB::rollBack();
+
+                    return $this->errorResponse($exception->getMessage(), 422);
+                }
+            }
+
             // 4. Создаём заказ (client_id берётся из $validated['client_id'] или NULL)
             $order = $this->orderCreationService->createOrder(
                 $validated,
@@ -201,6 +230,19 @@ class PublicCheckoutController extends Controller
             if (! empty($promotions)) {
                 $this->orderCreationService->applyPromotionsToOrder($order, $promotions);
             }
+
+            // 7.5 Бесплатная доставка. Считается ПОСЛЕ промокода и акций: сумма
+            // выкупа берётся из финальных цен позиций (order_items.price), т.е.
+            // уже со всеми скидками. Если сумма ниже порога правила — доставка
+            // остаётся платной. См. docs/tasks/free-shipping.md
+            $this->freeShippingService->applyToOrder(
+                $order->refresh()->load('items'),
+                [
+                    'country_id' => $validated['delivery_address']['country_id'] ?? null,
+                    'region_id' => $validated['delivery_address']['region_id'] ?? null,
+                    'city_id' => $validated['delivery_address']['city_id'] ?? null,
+                ]
+            );
 
             // 8. Подарочная карта как способ оплаты
             if ($giftCard) {

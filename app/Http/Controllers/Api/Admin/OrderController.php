@@ -46,7 +46,8 @@ class OrderController extends Controller
         protected OrderAuthorizationService $orderAuthorizationService,
         protected PromoCodeValidationService $promoValidationService,
         protected OrderFilterService $orderFilterService,
-        protected OrderNotificationService $orderNotificationService
+        protected OrderNotificationService $orderNotificationService,
+        protected \App\Services\Delivery\FreeShippingService $freeShippingService
     ) {}
 
     /**
@@ -263,6 +264,18 @@ class OrderController extends Controller
             if (! empty($promotions)) {
                 $this->orderCreationService->applyPromotionsToOrder($order, $promotions);
             }
+
+            // 7.6. Бесплатная доставка по правилам — после промокода и акций,
+            // т.к. порог сравнивается с суммой выкупа после всех скидок.
+            // См. docs/tasks/free-shipping.md
+            $this->freeShippingService->applyToOrder(
+                $order->refresh()->load('items'),
+                [
+                    'country_id' => $validated['delivery_address']['country_id'] ?? null,
+                    'region_id' => $validated['delivery_address']['region_id'] ?? null,
+                    'city_id' => $validated['delivery_address']['city_id'] ?? null,
+                ]
+            );
 
             //  8. Применяем подарочную карту (если есть)
             $giftCardAmount = 0;

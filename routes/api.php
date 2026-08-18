@@ -267,6 +267,15 @@ Route::prefix('/public')->group(function () {
             Route::post('/calculate', [CdekDeliveryController::class, 'calculate']);
         });
 
+        // Бесплатная доставка: оценка правил для показанных покупателю
+        // вариантов доставки + подсказка «до бесплатной осталось N ₽».
+        // Только чтение; итоговая цена доставки считается при создании заказа.
+        // См. docs/tasks/free-shipping.md
+        Route::middleware('throttle:60,1')->post(
+            '/free-shipping/evaluate',
+            [\App\Http\Controllers\Api\Public\Delivery\FreeShippingController::class, 'evaluate']
+        )->name('free-shipping.evaluate');
+
     });
 
     // Публичный просмотр заказа по view_token (используется на витрине /orders/{token})
@@ -1021,6 +1030,20 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::put('/shipments/{shipment}', [ShipmentController::class, 'update'])->name('shipments.update');
         Route::get('/shipments/{shipment}/print-label', [ShipmentController::class, 'printLabel'])->name('shipments.print-label');
         Route::post('/shipments/{shipment}/cancel', [ShipmentController::class, 'cancel'])->name('shipments.cancel');
+    });
+
+    // Бесплатная доставка: гибкие правила (Настройки → Бесплатная доставка).
+    // См. docs/tasks/free-shipping.md
+    Route::prefix('free-shipping-rules')->name('free-shipping-rules.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\Admin\FreeShippingRuleController::class, 'index'])->name('index');
+        // options ДО /{rule}, иначе «options» попадёт в биндинг модели.
+        Route::get('/options', [\App\Http\Controllers\Api\Admin\FreeShippingRuleController::class, 'options'])->name('options');
+        Route::get('/products', [\App\Http\Controllers\Api\Admin\FreeShippingRuleController::class, 'products'])->name('products');
+        Route::post('/', [\App\Http\Controllers\Api\Admin\FreeShippingRuleController::class, 'store'])->name('store');
+        Route::get('/{rule}', [\App\Http\Controllers\Api\Admin\FreeShippingRuleController::class, 'show'])->name('show');
+        Route::put('/{rule}', [\App\Http\Controllers\Api\Admin\FreeShippingRuleController::class, 'update'])->name('update');
+        Route::post('/{rule}/toggle', [\App\Http\Controllers\Api\Admin\FreeShippingRuleController::class, 'toggle'])->name('toggle');
+        Route::delete('/{rule}', [\App\Http\Controllers\Api\Admin\FreeShippingRuleController::class, 'destroy'])->name('destroy');
     });
 
     Route::prefix('/third-party-integrations')->group(function () {

@@ -333,16 +333,21 @@ class OrderCreationService
         ], fn ($value) => $value !== null);
     }
 
+    /**
+     * Стоимость доставки при создании заказа — это цена выбранного тарифа.
+     *
+     * Бесплатная доставка здесь НЕ определяется: её условия зависят от суммы
+     * выкупа после скидок, промокода и акций, которые применяются позже.
+     * Обнуление выполняет FreeShippingService::applyToOrder() уже после этих
+     * шагов (см. docs/tasks/free-shipping.md).
+     */
     private function resolveDeliveryCost(float $itemsTotal, ?array $deliveryData): float
     {
-        if (! $deliveryData) return 0.0;
-        if (($deliveryData['provider'] ?? null) === 'cdek') {
-            return (float) ($deliveryData['price'] ?? 0);
+        if (! $deliveryData) {
+            return 0.0;
         }
-        $type = $deliveryData['delivery_type'] ?? 'courier';
-        $freeFrom = $type === 'courier' ? 7900 : 4500;
-        if ($itemsTotal >= $freeFrom) return 0.0;
-        return (float) ($deliveryData['price'] ?? 0);
+
+        return round((float) ($deliveryData['price'] ?? 0), 2);
     }
 
     private function resolveOrderStatus(?string $status): string

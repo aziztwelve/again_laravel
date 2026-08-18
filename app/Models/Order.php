@@ -58,6 +58,10 @@ class Order extends Model
         'delivery_zone_id',
         'delivery_address',
         'delivery_cost',
+        // Бесплатная доставка: правило, обнулившее стоимость, и исходная цена
+        // тарифа до обнуления (см. docs/tasks/free-shipping.md).
+        'free_shipping_rule_id',
+        'delivery_cost_original',
         'delivery_data',
         'delivery_comment',
         'delivery_target_id',
@@ -90,6 +94,7 @@ class Order extends Model
         'paid_at' => 'datetime',
         'delivery_date' => 'datetime',
         'delivery_data' => 'array',
+        'delivery_cost_original' => 'decimal:2',
 
         'gift_card_amount' => 'decimal:2',
 
@@ -125,6 +130,15 @@ class Order extends Model
     public function deliveryTarget()
     {
         return $this->belongsTo(DeliveryTarget::class, 'delivery_target_id');
+    }
+
+    /**
+     * Правило, по которому доставка стала бесплатной
+     * (см. docs/tasks/free-shipping.md). NULL — доставка платная.
+     */
+    public function freeShippingRule(): BelongsTo
+    {
+        return $this->belongsTo(FreeShippingRule::class);
     }
 
     public function getDeliveryAddressAttribute($value): ?array
