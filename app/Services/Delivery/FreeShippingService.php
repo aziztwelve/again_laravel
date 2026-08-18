@@ -138,8 +138,12 @@ class FreeShippingService
      *
      * @param  array{country_id?:int|null, region_id?:int|null, city_id?:int|null}  $geoOverrides
      *         Идентификаторы гео из payload чекаута (точнее, чем матч по названиям).
+     * @param  float|null  $baseCostOverride
+     *         Новая тарифная база. Передаётся, когда стоимость доставки изменил
+     *         менеджер в админке: иначе при уже бесплатной доставке его цена
+     *         потерялась бы, а вернулся бы прежний тариф из delivery_cost_original.
      */
-    public function applyToOrder(Order $order, array $geoOverrides = []): ?FreeShippingMatch
+    public function applyToOrder(Order $order, array $geoOverrides = [], ?float $baseCostOverride = null): ?FreeShippingMatch
     {
         $order->loadMissing(['items', 'address', 'deliveryMethod']);
 
@@ -148,9 +152,9 @@ class FreeShippingService
 
         // Базовая (тарифная) цена доставки: если правило уже применялось,
         // она лежит в delivery_cost_original.
-        $base = $order->delivery_cost_original !== null
+        $base = $baseCostOverride ?? ($order->delivery_cost_original !== null
             ? (float) $order->delivery_cost_original
-            : (float) ($order->delivery_cost ?? 0);
+            : (float) ($order->delivery_cost ?? 0));
 
         if ($match !== null) {
             $order->forceFill([
@@ -158,9 +162,11 @@ class FreeShippingService
                 'delivery_cost' => 0,
                 'free_shipping_rule_id' => $match->ruleId,
             ])->save();
-        } elseif ($order->free_shipping_rule_id !== null || $order->delivery_cost_original !== null) {
-            // Условия перестали выполняться (например, акция уронила сумму
-            // выкупа ниже порога) — возвращаем платную доставку.
+        } elseif ($order->free_shipping_rule_id !== null
+            || $order->delivery_cost_original !== null
+            || $baseCostOverride !== null) {
+            // Условия перестали выполняться (например, из заказа убрали товары
+            // и сумма выкупа упала ниже порога) — возвращаем платную доставку.
             $order->forceFill([
                 'delivery_cost' => $base,
                 'delivery_cost_original' => null,

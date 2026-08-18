@@ -18,6 +18,7 @@ class OrderUpdateService
         protected PromoCodeValidationService $promoValidationService,
         protected OrderValidationService $orderValidationService,
         protected OrderCustomFieldsService $customFieldsService,
+        protected \App\Services\Delivery\FreeShippingService $freeShippingService,
     ) {}
 
     /**
@@ -170,6 +171,12 @@ class OrderUpdateService
             }
 
             $order->update($filteredData);
+
+            // Пересчёт бесплатной доставки: состав заказа, промокод, способ
+            // доставки/оплаты или сама цена доставки могли измениться, а порог
+            // сравнивается с актуальной суммой выкупа. Убрали половину товаров —
+            // доставка снова становится платной (см. docs/tasks/free-shipping.md).
+            $this->recalculateFreeShipping($order, $data);
 
             // Пишем в историю diff отслеживаемых полей
             $order->refresh();
@@ -363,6 +370,60 @@ class OrderUpdateService
         $giftCard   = (float) ($order->gift_card_amount ?? 0);
         $total = max(0, $itemsTotal + $delivery - $giftCard);
         $order->update(['total_amount' => $total]);
+    }
+
+    /**
+     * Переприменить правила бесплатной доставки после изменения заказа.
+     *
+     * Дёргается только когда менялось что-то, влияющее на условия правил, —
+     * чтобы правка комментария или статуса не трогала стоимость доставки.
+     *
+     * Если менеджер сам изменил `delivery_cost`, его значение становится новой
+     * тарифной базой: при сработавшем правиле доставка будет 0, но в
+     * `delivery_cost_original` ляжет именно введённая сумма, и она вернётся,
+     * когда правило перестанет подходить.
+     */
+    private function recalculateFreeShipping(Order $order, array $data): void
+    {
+        $affectingKeys = [
+            'items',
+            'promo_code',
+            'delivery_method_id',
+            'payment_method',
+            'delivery_cost',
+            'delivery_data',
+            'gift_card_amount',
+        ];
+
+        $affected = false;
+        foreach ($affectingKeys as $key) {
+            if (array_key_exists($key, $data)) {
+                $affected = true;
+                break;
+            }
+        }
+
+        if (! $affected) {
+            return;
+        }
+
+        $baseOverride = array_key_exists('delivery_cost', $data) && is_numeric($data['delivery_cost'])
+            ? (float) $data['delivery_cost']
+            : null;
+
+        try {
+            $this->freeShippingService->applyToOrder(
+                $order->refresh()->load(['items', 'address', 'deliveryMethod']),
+                [],
+                $baseOverride
+            );
+        } catch (\Throwable $e) {
+            // Пересчёт доставки не должен ломать сохранение заказа.
+            Log::error('Failed to recalculate free shipping on order update', [
+                'order_id' => $order->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

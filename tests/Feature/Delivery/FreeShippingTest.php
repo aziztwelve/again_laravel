@@ -10,6 +10,7 @@ use App\Models\PromoCode;
 use App\Models\User;
 use App\Services\Delivery\FreeShipping\FreeShippingContext;
 use App\Services\Delivery\FreeShippingService;
+use App\Services\Order\OrderUpdateService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
@@ -281,6 +282,109 @@ class FreeShippingTest extends TestCase
         $this->assertSame(390.0, (float) $order->delivery_cost);
         $this->assertNull($order->free_shipping_rule_id);
         $this->assertSame(4390.0, (float) $order->total_amount);
+    }
+
+    // === Пересчёт при редактировании заказа в админке ===
+
+    /**
+     * Менеджер убрал товары из заказа — сумма выкупа упала ниже порога,
+     * доставка снова платная (решение заказчика от 2026-08-18).
+     */
+    public function test_order_update_recalculates_free_shipping_when_items_change(): void
+    {
+        $this->rule(['min_order_amount' => 5000, 'services' => ['cdek'], 'delivery_types' => ['pickup']]);
+        $product = $this->product(1000);
+        $order = $this->order($product, 1000, 390);
+
+        // 5 × 1000 = 5000 → доставка бесплатна
+        $order->items()->update(['quantity' => 5]);
+        $this->service()->applyToOrder($order->refresh()->load('items'));
+        $this->assertSame(0.0, (float) $order->refresh()->delivery_cost);
+
+        // Менеджер оставил 2 штуки: 2000 < 5000 → доставка снова платная
+        app(OrderUpdateService::class)->update($order, [
+            'items' => [[
+                'product_id' => $product->id,
+                'quantity' => 2,
+                'price' => 1000,
+            ]],
+        ]);
+
+        $order->refresh();
+        $this->assertSame(390.0, (float) $order->delivery_cost);
+        $this->assertNull($order->free_shipping_rule_id);
+        $this->assertNull($order->delivery_cost_original);
+        $this->assertSame(2390.0, (float) $order->total_amount);
+    }
+
+    /** Добавили товаров — порог взят, доставка становится бесплатной. */
+    public function test_order_update_makes_delivery_free_when_items_grow(): void
+    {
+        $this->rule(['min_order_amount' => 5000, 'services' => ['cdek'], 'delivery_types' => ['pickup']]);
+        $product = $this->product(1000);
+        $order = $this->order($product, 1000, 390);
+
+        app(OrderUpdateService::class)->update($order, [
+            'items' => [[
+                'product_id' => $product->id,
+                'quantity' => 6,
+                'price' => 1000,
+            ]],
+        ]);
+
+        $order->refresh();
+        $this->assertSame(0.0, (float) $order->delivery_cost);
+        $this->assertSame(390.0, (float) $order->delivery_cost_original);
+        $this->assertNotNull($order->free_shipping_rule_id);
+        $this->assertSame(6000.0, (float) $order->total_amount);
+    }
+
+    /**
+     * Менеджер вручную поменял стоимость доставки: она становится новой
+     * тарифной базой и возвращается, когда правило перестаёт подходить.
+     */
+    public function test_manual_delivery_cost_becomes_new_tariff_base(): void
+    {
+        $this->rule(['min_order_amount' => 5000, 'services' => ['cdek'], 'delivery_types' => ['pickup']]);
+        $product = $this->product(1000);
+        $order = $this->order($product, 1000, 390);
+
+        // 6000 ₽ + менеджер выставил доставку 800 ₽ → правило сработало (0 ₽),
+        // но в базе сохранено 800 как тариф.
+        app(OrderUpdateService::class)->update($order, [
+            'items' => [['product_id' => $product->id, 'quantity' => 6, 'price' => 1000]],
+            'delivery_cost' => 800,
+        ]);
+
+        $order->refresh();
+        $this->assertSame(0.0, (float) $order->delivery_cost);
+        $this->assertSame(800.0, (float) $order->delivery_cost_original);
+
+        // Убрали товары → возвращается именно 800, а не первоначальные 390.
+        app(OrderUpdateService::class)->update($order, [
+            'items' => [['product_id' => $product->id, 'quantity' => 1, 'price' => 1000]],
+        ]);
+
+        $order->refresh();
+        $this->assertSame(800.0, (float) $order->delivery_cost);
+        $this->assertNull($order->free_shipping_rule_id);
+        $this->assertSame(1800.0, (float) $order->total_amount);
+    }
+
+    /** Правка полей, не влияющих на условия, стоимость доставки не трогает. */
+    public function test_unrelated_order_update_keeps_delivery_cost(): void
+    {
+        $this->rule(['min_order_amount' => 100000, 'services' => ['cdek']]);
+        $product = $this->product(1000);
+        $order = $this->order($product, 1000, 390);
+
+        app(OrderUpdateService::class)->update($order, [
+            'seller_comment' => 'Позвонить после 18:00',
+        ]);
+
+        $order->refresh();
+        $this->assertSame(390.0, (float) $order->delivery_cost);
+        $this->assertNull($order->delivery_cost_original);
     }
 
     // === Публичный endpoint оценки ===
