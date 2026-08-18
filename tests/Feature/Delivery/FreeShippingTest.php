@@ -299,11 +299,11 @@ class FreeShippingTest extends TestCase
         ]);
 
         $response->assertOk()
-            ->assertJsonPath('qualifying_amount', 5000.0)
+            ->assertJsonPath('qualifying_amount', fn ($value) => (float) $value === 5000.0)
             ->assertJsonPath('candidates.0.is_free', true)
-            ->assertJsonPath('candidates.0.price', 0.0)
+            ->assertJsonPath('candidates.0.price', fn ($value) => (float) $value === 0.0)
             ->assertJsonPath('candidates.1.is_free', false)
-            ->assertJsonPath('candidates.1.price', 590.0);
+            ->assertJsonPath('candidates.1.price', fn ($value) => (float) $value === 590.0);
     }
 
     // === Админский CRUD ===
@@ -339,7 +339,7 @@ class FreeShippingTest extends TestCase
         ]);
 
         $updated->assertOk()
-            ->assertJsonPath('data.min_order_amount', 7900.0)
+            ->assertJsonPath('data.min_order_amount', fn ($value) => (float) $value === 7900.0)
             ->assertJsonPath('data.services', [])
             ->assertJsonPath('data.product_ids', []);
 
