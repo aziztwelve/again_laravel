@@ -6,6 +6,7 @@
 **Раздел сайта:** Чекаут → «Способ доставки», корзина → прогресс-бар (`again_front`)
 **Backend:** `lara_admin`
 **Связанные документы:**
+[`free-shipping-architecture.md`](./free-shipping-architecture.md) — диаграммы,
 [`promotions.md`](./promotions.md),
 [`promotions-multi-tier-gifts.md`](./promotions-multi-tier-gifts.md),
 [`guest-checkout.md`](./guest-checkout.md),
