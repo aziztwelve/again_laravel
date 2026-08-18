@@ -2,6 +2,8 @@
 
 namespace Tests\Unit\Services\Delivery;
 
+use App\Models\Product;
+use App\Services\Delivery\CdekDeliveryService;
 use App\Services\Delivery\Cdek\CdekClient;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
@@ -42,5 +44,43 @@ class CdekClientTest extends TestCase
 
         $this->assertFalse($result['successful']);
         $this->assertSame(503, $result['status']);
+    }
+
+    public function test_it_revalidates_the_selected_pickup_tariff_with_server_item_data(): void
+    {
+        Http::fake([
+            'https://api.edu.cdek.ru/v2/oauth/token' => Http::response([
+                'access_token' => 'test-token', 'expires_in' => 3600,
+            ]),
+            'https://api.edu.cdek.ru/v2/deliverypoints*' => Http::response([[
+                'code' => 'MSK1', 'type' => 'PVZ',
+                'location' => ['address' => 'Тестовый адрес', 'longitude' => 37.6, 'latitude' => 55.7],
+            ]]),
+            'https://api.edu.cdek.ru/v2/calculator/tarifflist' => Http::response([
+                'tariff_codes' => [[
+                    'tariff_code' => 136, 'tariff_name' => 'Посылка склад-склад',
+                    'delivery_mode' => 2, 'delivery_sum' => 420,
+                    'period_min' => 2, 'period_max' => 4,
+                ]],
+            ]),
+        ]);
+
+        $service = new CdekDeliveryService([
+            'enabled' => true, 'mode' => 'sandbox', 'account' => 'account', 'secure_password' => 'secret',
+            'base_url' => ['sandbox' => 'https://api.edu.cdek.ru'],
+            'sender' => ['city_code' => 44, 'address' => 'Москва'],
+        ]);
+        $product = new Product(['name' => 'Товар', 'weight' => 1000, 'length' => 30, 'width' => 20, 'height' => 10]);
+
+        $delivery = $service->revalidateCheckout([
+            'delivery_type' => 'pickup', 'tariff_code' => 136,
+            'destination' => ['city_code' => 44], 'pvz' => ['code' => 'MSK1'],
+        ], [[
+            'model' => $product, 'name' => 'Товар', 'final_price' => 1000, 'quantity' => 1,
+        ]]);
+
+        $this->assertSame(420.0, $delivery['price']);
+        $this->assertSame('MSK1', $delivery['pvz']['code']);
+        $this->assertSame('Тестовый адрес', $delivery['pvz']['address']);
     }
 }

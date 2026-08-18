@@ -87,6 +87,57 @@ class CdekDeliveryService extends DeliveryService
             ])->values()->all();
     }
 
+    /**
+     * Recalculate the client-selected option with product data from the server
+     * so delivery cost and the pickup point cannot be forged at checkout.
+     */
+    public function revalidateCheckout(array $delivery, array $items): array
+    {
+        $deliveryType = (string) ($delivery['delivery_type'] ?? '');
+        $destination = $delivery['destination'] ?? [];
+        $pickupCode = $delivery['pvz']['code'] ?? null;
+        $tariffCode = (int) ($delivery['tariff_code'] ?? 0);
+
+        if (! in_array($deliveryType, ['courier', 'pickup'], true) || ! is_array($destination) || $tariffCode < 1) {
+            throw new InvalidArgumentException('Выберите актуальный тариф СДЭК.');
+        }
+
+        if ($deliveryType === 'pickup') {
+            $point = collect($this->pickupPoints([
+                'city_code' => $destination['city_code'] ?? null,
+                'type' => 'ALL',
+            ]))->firstWhere('code', $pickupCode);
+
+            if (! $point) {
+                throw new InvalidArgumentException('Выбранный пункт выдачи СДЭК недоступен.');
+            }
+        }
+
+        $tariff = collect($this->calculateTariffs(
+            $deliveryType,
+            $destination,
+            array_map(fn (array $item) => $this->checkoutItem($item), $items),
+            $pickupCode,
+        ))->firstWhere('tariff_code', $tariffCode);
+
+        if (! $tariff) {
+            throw new InvalidArgumentException('Выбранный тариф СДЭК больше недоступен. Выберите другой тариф.');
+        }
+
+        return array_filter([
+            'provider' => 'cdek',
+            'delivery_type' => $deliveryType,
+            ...$tariff,
+            'destination' => $destination,
+            'pvz' => $deliveryType === 'pickup' ? [
+                'code' => $point['code'],
+                'type' => $point['type'] ?? null,
+                'address' => data_get($point, 'location.address') ?? data_get($point, 'location.address_full'),
+                'coordinates' => [data_get($point, 'location.longitude'), data_get($point, 'location.latitude')],
+            ] : null,
+        ], fn ($value) => $value !== null);
+    }
+
     public function createExternalOrder(Order $order, CdekOrder $cdekOrder): array
     {
         $this->assertSenderConfigured();
@@ -222,6 +273,23 @@ class CdekDeliveryService extends DeliveryService
             'width' => max(1, (int) (($item['width'] ?? null) ?: 10)),
             'height' => max(1, (int) (($item['height'] ?? null) ?: 10)),
             'quantity' => max(1, (int) ($item['quantity'] ?? 1)),
+        ];
+    }
+    private function checkoutItem(array $item): array
+    {
+        $model = $item['model'] ?? null;
+        $product = $model?->product;
+
+        return [
+            'id' => $model?->id,
+            'name' => $item['name'] ?? $model?->name ?? $product?->name ?? 'Товар',
+            'sku' => $model?->sku ?? $product?->sku,
+            'price' => (float) ($item['final_price'] ?? 0),
+            'quantity' => (int) ($item['quantity'] ?? 1),
+            'weight' => $model?->weight ?: $product?->weight,
+            'length' => $model?->length ?: $product?->length,
+            'width' => $model?->width ?: $product?->width,
+            'height' => $model?->height ?: $product?->height,
         ];
     }
     private function orderItems(Order $order): array { return $order->loadMissing('items.product', 'items.variant')->items->map(fn ($item) => ['id' => $item->id, 'name' => $item->product?->name ?? $item->legacy_name ?? 'Товар', 'sku' => $item->variant?->sku ?? $item->product?->sku ?? $item->id, 'price' => (float) $item->price, 'quantity' => (int) $item->quantity, 'weight' => $item->variant?->weight ?: $item->product?->weight, 'length' => $item->variant?->length ?: $item->product?->length, 'width' => $item->variant?->width ?: $item->product?->width, 'height' => $item->variant?->height ?: $item->product?->height])->all(); }
