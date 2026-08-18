@@ -120,7 +120,7 @@ class ProductPublicResource extends JsonResource
             'default_unit' => $this->defaultUnit ? new UnitResource($this->defaultUnit) : null,
 
             // Дополнительно
-            'marketplace_links' => $this->marketplace_links ? json_decode($this->marketplace_links, true) : null,
+            'marketplace_links' => $this->marketplace_links ?: null,
         ];
     }
 }

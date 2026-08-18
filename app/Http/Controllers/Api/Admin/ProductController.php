@@ -228,6 +228,7 @@ class ProductController extends Controller
     public function store(Request $request)
     {
         $validated = $this->validate_of_product($request);
+        $validated = $this->decodeMarketplaceLinks($validated);
 
         DB::beginTransaction();
 
@@ -360,10 +361,29 @@ class ProductController extends Controller
         return \Validator::make($request->all(), $rules)->validate();
     }
 
+    /**
+     * Фронт (FormData) шлёт marketplace_links как JSON-строку, так как
+     * multipart-запрос не умеет передавать объекты. Модель Product кастует
+     * это поле как 'array' и сама сериализует значение при сохранении —
+     * если передать уже сериализованную строку, получится двойной
+     * json_encode (строка внутри строки). Декодируем один раз здесь, чтобы
+     * до модели дошёл обычный массив.
+     */
+    private function decodeMarketplaceLinks(array $validated): array
+    {
+        if (array_key_exists('marketplace_links', $validated) && is_string($validated['marketplace_links'])) {
+            $decoded = json_decode($validated['marketplace_links'], true);
+            $validated['marketplace_links'] = json_last_error() === JSON_ERROR_NONE ? $decoded : null;
+        }
+
+        return $validated;
+    }
+
 
     public function update(Request $request, $id)
     {
         $validated = $this->validate_of_product_update($request, $id);
+        $validated = $this->decodeMarketplaceLinks($validated);
 
 
         DB::beginTransaction();

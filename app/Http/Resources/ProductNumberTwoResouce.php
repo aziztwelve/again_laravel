@@ -73,7 +73,7 @@ class ProductNumberTwoResouce extends JsonResource
             // Your custom structure based on the JSON you shared
             'id' => $this->id,
             'name' => $this->name,
-            'marketplace_links' => $this->marketplace_links ? json_decode($this->marketplace_links, true) : null,
+            'marketplace_links' => $this->marketplace_links ?: null,
             'display_order' => (int)$this->display_order,
             'absorbency_level' => (int)$this->absorbency_level,
             'slug' => $this->slug,
