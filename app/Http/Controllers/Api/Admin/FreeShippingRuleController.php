@@ -139,7 +139,9 @@ class FreeShippingRuleController extends Controller
             return $rule;
         });
 
-        $rule->load(['products:id,name', 'countries:id,name', 'regions:id,name']);
+        // refresh(): часть значений приходит из дефолтов БД (is_active),
+        // без него ответ покажет свежее правило выключенным.
+        $rule->refresh()->load(['products:id,name', 'countries:id,name', 'regions:id,name']);
 
         return response()->json([
             'success' => true,

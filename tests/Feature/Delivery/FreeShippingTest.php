@@ -328,7 +328,9 @@ class FreeShippingTest extends TestCase
         $created->assertCreated()
             ->assertJsonPath('data.services', ['cdek'])
             ->assertJsonPath('data.product_ids', [$product->id])
-            ->assertJsonPath('data.country_ids', [$countryId]);
+            ->assertJsonPath('data.country_ids', [$countryId])
+            // Дефолт БД: новое правило сразу активно (в ответе тоже).
+            ->assertJsonPath('data.is_active', true);
 
         $ruleId = $created->json('data.id');
 
