@@ -183,8 +183,11 @@ class CatalogService
             });
         }
 
-        // Для ручной подборки «Новинки» порядок задаётся в админке категории.
-        $isManualNewCategory = $category?->slug === 'novinki' && !$category->is_new_product;
+        // Для ручных подборок («Новинки», «Новинки 8») порядок задаётся
+        // позицией товара в категории (админка), а не полем display_order.
+        $isManualNewCategory = $category
+            && in_array($category->slug, ['novinki', 'novinki-8'], true)
+            && !$category->is_new_product;
         if ($isManualNewCategory) {
             $query->join('category_product as category_sort', function ($join) use ($category) {
                 $join->on('category_sort.product_id', '=', 'products.id')
