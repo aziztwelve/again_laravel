@@ -179,11 +179,25 @@ class ProductsAndVariantsSyncWithMoySkladService
         $unit = $this->findLocalUnit($moyskladUnits[$data->uom->meta->href ?? null] ?? null);
 
         $barcode = $this->extractBarcode($data);
+        $code = $data->code ?? null;
 
-        // Сначала ищем по UUID, потом по slug
+        // Порядок поиска существующего товара: UUID -> code -> slug/barcode.
+        // code — самый надёжный текстовый идентификатор при переносе на
+        // новый аккаунт МойСклад (там UUID всегда новые, но артикулы
+        // (code/sku) обычно переносятся или совпадают с тем, что уже
+        // сохранено на сайте).
         $product = Product::withTrashed()
             ->where('uuid', $data->id)
             ->first();
+
+        if (!$product && $code !== null && $code !== '') {
+            $product = Product::withTrashed()
+                ->where(function ($query) use ($code) {
+                    $query->where('code', $code)
+                        ->orWhere('sku', $code);
+                })
+                ->first();
+        }
 
         if (!$product) {
             $product = Product::withTrashed()
@@ -335,10 +349,19 @@ class ProductsAndVariantsSyncWithMoySkladService
             $slug = Str::slug($variant_name);
             $sku = $slug . '-' . $product->id;
 
-            // Сначала ищем по UUID, потом по SKU
+            // Сначала ищем по UUID, потом по коду модификации (SKU) внутри
+            // этого же товара — актуально при переносе на новый аккаунт
+            // МойСклад, где UUID вариантов всегда новые.
             $variant = ProductVariant::withTrashed()
                 ->where('uuid', $data->id)
                 ->first();
+
+            if (!$variant && !empty($data->code)) {
+                $variant = ProductVariant::withTrashed()
+                    ->where('product_id', $product->id)
+                    ->where('sku', $data->code)
+                    ->first();
+            }
 
 
             $stockQty = $this->normalizeIntValue($stock[$data->id]['stock'] ?? 0);
