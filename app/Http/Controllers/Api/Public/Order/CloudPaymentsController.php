@@ -143,6 +143,51 @@ class CloudPaymentsController extends Controller
         return response()->json(['code' => 0]);
     }
 
+    /**
+     * Уведомление о возврате (Refund), выполненном по нашей инициативе через
+     * API/refundPayment() или через личный кабинет CloudPayments. Асинхронное
+     * подтверждение факта возврата — на момент вызова refundPayment() ответ
+     * API уже мог сообщить об успехе, здесь только фиксируем финальный статус
+     * и связанные данные (RRN и т.д.) на случай сверки.
+     *
+     * Поиск платежа — по PaymentTransactionId (номер ОРИГИНАЛЬНОЙ транзакции
+     * оплаты в CloudPayments), а не по метаданным/ExternalId, которые в
+     * Refund-уведомлении не гарантированы.
+     */
+    public function refund(Request $request): JsonResponse
+    {
+        if (! $this->isValidSignature($request)) {
+            return response()->json(['code' => 13], 403);
+        }
+
+        $originalTransactionId = (string) $request->input('PaymentTransactionId');
+        $payment = Payment::where('provider', 'cloudpayment')
+            ->where('provider_payment_id', $originalTransactionId)
+            ->first();
+
+        if (! $payment) {
+            Log::warning('CloudPayments refund webhook: платёж не найден', [
+                'payment_transaction_id' => $originalTransactionId,
+                'invoice_id' => $request->input('InvoiceId'),
+            ]);
+
+            // Отвечаем 0, чтобы CloudPayments не повторял доставку уведомления
+            // бесконечно — при отсутствии платежа повторные попытки не помогут.
+            return response()->json(['code' => 0]);
+        }
+
+        if (! $payment->isRefunded()) {
+            $payment->update([
+                'status' => Payment::STATUS_REFUNDED,
+                'provider_data' => array_merge($payment->provider_data ?? [], [
+                    'refund_webhook' => $request->all(),
+                ]),
+            ]);
+        }
+
+        return response()->json(['code' => 0]);
+    }
+
     private function isValidSignature(Request $request): bool
     {
         $secret = (string) config('payment.providers.cloudpayment.api_secret');

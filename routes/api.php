@@ -111,6 +111,8 @@ Route::post('/webhooks/cloudpayments/pay', [CloudPaymentsController::class, 'pay
     ->name('api.webhooks.cloudpayments.pay');
 Route::post('/webhooks/cloudpayments/fail', [CloudPaymentsController::class, 'fail'])
     ->name('api.webhooks.cloudpayments.fail');
+Route::post('/webhooks/cloudpayments/refund', [CloudPaymentsController::class, 'refund'])
+    ->name('api.webhooks.cloudpayments.refund');
 
 // auth user
 Route::middleware('guest')->group(function () {
@@ -928,6 +930,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Дополнительные действия
         Route::put('/{order}/status', [OrderController::class, 'updateStatus'])->name('update-status');
         Route::post('/{order}/cancel', [OrderController::class, 'cancel'])->name('cancel');
+        Route::post('/{order}/refund-payment', [OrderController::class, 'refundPayment'])->name('refund-payment');
         Route::post('/{order}/items', [OrderController::class, 'addItems'])->name('add-items');
         Route::delete('/{order}/items/{item}', [OrderController::class, 'removeItem'])->name('remove-item');
         Route::post('/{order}/send-email', [OrderController::class, 'sendEmail'])->name('send-email');

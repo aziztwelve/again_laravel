@@ -649,6 +649,64 @@ class OrderController extends Controller
     }
 
     /**
+     * Ручной возврат оплаты (кнопка «Отменить оплату» в карточке заказа).
+     * Клиент отказался от покупки после оплаты — менеджер инициирует возврат
+     * денег через API платёжного провайдера. При успехе заказ переводится в
+     * статус «Возврат оплаты».
+     *
+     * См. docs/tasks/order-status-actualization.md, пункт 5.
+     */
+    public function refundPayment(Request $request, Order $order): JsonResponse
+    {
+        $user = $request->user();
+
+        if (! $this->orderAuthorizationService->canUpdate($user)) {
+            return $this->errorResponse('Доступ запрещён', 403);
+        }
+
+        if (! $order->isPaid()) {
+            return $this->errorResponse('Заказ не оплачен — возврат невозможен', 422);
+        }
+
+        $payment = \App\Models\Payment::where('order_id', $order->id)
+            ->where('status', \App\Models\Payment::STATUS_COMPLETED)
+            ->latest()
+            ->first();
+
+        if (! $payment) {
+            return $this->errorResponse('Не найден завершённый платёж для возврата', 422);
+        }
+
+        try {
+            $success = app(\App\Services\PaymentService::class)->refundPayment($payment);
+
+            if (! $success) {
+                return $this->errorResponse('Платёжный провайдер отклонил возврат', 500);
+            }
+
+            $order->update(['status' => \App\Enums\OrderStatus::RETURN_PAYMENT]);
+
+            Log::info('Payment refunded manually', [
+                'order_id' => $order->id,
+                'payment_id' => $payment->id,
+            ]);
+
+            return $this->successResponse(
+                'Оплата успешно возвращена',
+                ['order' => $order->fresh()]
+            );
+        } catch (\Exception $e) {
+            Log::error('Failed to refund payment', [
+                'order_id' => $order->id,
+                'payment_id' => $payment->id ?? null,
+                'error' => $e->getMessage(),
+            ]);
+
+            return $this->errorResponse('Ошибка при возврате оплаты: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
      * Удаление заказа
      */
     public function destroy(Request $request, Order $order): JsonResponse
