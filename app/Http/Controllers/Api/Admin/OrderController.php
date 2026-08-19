@@ -678,7 +678,7 @@ class OrderController extends Controller
         }
 
         try {
-            $success = app(\App\Services\PaymentService::class)->refundPayment($payment);
+            $success = app('payment')->refundPayment($payment);
 
             if (! $success) {
                 return $this->errorResponse('Платёжный провайдер отклонил возврат', 500);
