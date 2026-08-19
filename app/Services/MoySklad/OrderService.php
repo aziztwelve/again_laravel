@@ -77,6 +77,16 @@ class OrderService
             $payload['shipmentAddress'] = $shipmentAddress;
         }
 
+        // Статус документа в МойСклад — сопоставляем по названию статуса
+        // заказа на сайте (OrderStatus::label()) с настроенными статусами
+        // документа «Заказ покупателя» в конкретном аккаунте МойСклад.
+        // Если совпадения нет (аккаунт не настроен под наши статусы) —
+        // просто не передаём state, МойСклад оставит текущий/дефолтный.
+        $stateMeta = $this->resolveStateMeta($order->status);
+        if ($stateMeta) {
+            $payload['state'] = ['meta' => $stateMeta];
+        }
+
         // Планируемая дата доставки
         if ($order->delivery_date) {
             $payload['deliveryPlannedMoment'] = $order->delivery_date->format('Y-m-d H:i:s');
@@ -173,6 +183,40 @@ class OrderService
         }
 
         return $response->json('rows.0.meta');
+    }
+
+    /**
+     * Найти meta статуса документа «Заказ покупателя» в МойСклад, название
+     * которого совпадает с label() текущего статуса заказа на сайте.
+     * Список статусов кэшируется на 10 минут — он специфичен для аккаунта
+     * и почти никогда не меняется, а дёргать API на каждый pushOrder()
+     * избыточно.
+     *
+     * @return array|null meta статуса, либо null если совпадения не нашлось
+     *                     (аккаунт МойСклад не настроен под наши статусы)
+     */
+    private function resolveStateMeta(\App\Enums\OrderStatus $status): ?array
+    {
+        $states = \Illuminate\Support\Facades\Cache::remember(
+            'moysklad:customerorder:states',
+            600,
+            function () {
+                $response = Http::withHeaders([
+                    'Authorization'   => 'Bearer ' . $this->token,
+                    'Accept-Encoding' => 'gzip',
+                ])->get("{$this->baseURL}/entity/customerorder/metadata");
+
+                if (! $response->successful()) {
+                    return [];
+                }
+
+                return collect($response->json('states') ?? [])
+                    ->mapWithKeys(fn ($state) => [$state['name'] => $state['meta']])
+                    ->all();
+            }
+        );
+
+        return $states[$status->label()] ?? null;
     }
 
     /**

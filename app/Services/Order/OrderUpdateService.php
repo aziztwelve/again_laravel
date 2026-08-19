@@ -193,6 +193,14 @@ class OrderUpdateService
             ];
             $this->historyService->logUpdated($order, $originalSnapshot, $updatedSnapshot);
 
+            // Если заказ уже выгружен в МойСклад и менялось что-то значимое
+            // для документа там (состав заказа, статус, оплата, доставка,
+            // комментарий) — обновляем документ. Изменение состава (items)
+            // напрямую влияет на количество/позиции в МойСклад.
+            if ($order->moysklad_order_uuid && $this->affectsMoySkladDocument($data)) {
+                \App\Jobs\SyncOrderToMoySkladJob::dispatch($order->id);
+            }
+
             Log::info('Order updated', [
                 'order_id' => $order->id,
                 'updated_fields' => array_keys($filteredData),
@@ -370,6 +378,32 @@ class OrderUpdateService
         $giftCard   = (float) ($order->gift_card_amount ?? 0);
         $total = max(0, $itemsTotal + $delivery - $giftCard);
         $order->update(['total_amount' => $total]);
+    }
+
+    /**
+     * Проверить, содержит ли payload обновления заказа поля, которые нужно
+     * отразить в документе МойСклад: состав заказа (количество/позиции),
+     * статус, оплату, доставку или комментарий.
+     */
+    private function affectsMoySkladDocument(array $data): bool
+    {
+        $affectingKeys = [
+            'items',
+            'status',
+            'payment_status',
+            'delivery_method_id',
+            'delivery_date',
+            'delivery_comment',
+            'notes',
+        ];
+
+        foreach ($affectingKeys as $key) {
+            if (array_key_exists($key, $data)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
