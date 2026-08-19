@@ -403,6 +403,11 @@ class OrderUpdateService
             }
         }
 
+        if (isset($data['custom_fields']) && is_array($data['custom_fields'])) {
+            return array_key_exists('no_receipt', $data['custom_fields'])
+                || array_key_exists('export_country', $data['custom_fields']);
+        }
+
         return false;
     }
 

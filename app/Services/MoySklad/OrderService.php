@@ -87,6 +87,14 @@ class OrderService
             $payload['state'] = ['meta' => $stateMeta];
         }
 
+        // Дополнительные поля заказа покупателя в МойСклад. Чек передаём
+        // только при значении «Не пробивать»; пустую страну экспорта не
+        // отправляем, чтобы не затирать значение без явного выбора.
+        $attributes = $this->buildCustomAttributes($order);
+        if ($attributes !== []) {
+            $payload['attributes'] = $attributes;
+        }
+
         // Планируемая дата доставки
         if ($order->delivery_date) {
             $payload['deliveryPlannedMoment'] = $order->delivery_date->format('Y-m-d H:i:s');
@@ -217,6 +225,68 @@ class OrderService
         );
 
         return $states[$status->label()] ?? null;
+    }
+
+    /**
+     * Собирает дополнительные поля «Заказа покупателя» из существующих
+     * атрибутов аккаунта МойСклад.
+     *
+     * @return array<int, array{meta: array, value: bool|string}>
+     */
+    private function buildCustomAttributes(Order $order): array
+    {
+        $metas = $this->resolveCustomAttributeMetas();
+        $attributes = [];
+
+        if ($order->no_receipt && isset($metas['Чек не пробивать'])) {
+            $attributes[] = [
+                'meta' => $metas['Чек не пробивать'],
+                'value' => true,
+            ];
+        }
+
+        if ($order->export_country && isset($metas['Страна экспорта'])) {
+            $attributes[] = [
+                'meta' => $metas['Страна экспорта'],
+                'value' => $order->export_country,
+            ];
+        }
+
+        return $attributes;
+    }
+
+    /**
+     * Возвращает метаданные атрибутов «Заказа покупателя», индексированные
+     * по названию. Список кэшируется, поскольку он редко меняется.
+     *
+     * @return array<string, array>
+     */
+    private function resolveCustomAttributeMetas(): array
+    {
+        return \Illuminate\Support\Facades\Cache::remember(
+            'moysklad:customerorder:attributes',
+            600,
+            function () {
+                $response = Http::withHeaders([
+                    'Authorization' => 'Bearer ' . $this->token,
+                    'Accept-Encoding' => 'gzip',
+                ])->get("{$this->baseURL}/entity/customerorder/metadata/attributes");
+
+                if (! $response->successful()) {
+                    Log::warning('MoySklad: не удалось получить метаданные атрибутов заказа', [
+                        'status' => $response->status(),
+                        'body' => $response->body(),
+                    ]);
+
+                    return [];
+                }
+
+                return collect($response->json('rows') ?? [])
+                    ->filter(fn (array $attribute) => isset($attribute['name'], $attribute['meta']))
+                    ->mapWithKeys(fn (array $attribute) => [$attribute['name'] => $attribute['meta']])
+                    ->all();
+            }
+        );
     }
 
     /**
