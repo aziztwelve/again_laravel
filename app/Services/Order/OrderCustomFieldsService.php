@@ -87,15 +87,10 @@ class OrderCustomFieldsService
                 'column' => 'export_country',
                 'options' => [
                     ['value' => '', 'label' => '—'],
-                    ['value' => 'RU', 'label' => 'Россия'],
+                    ['value' => 'AM', 'label' => 'Армения'],
                     ['value' => 'BY', 'label' => 'Беларусь'],
                     ['value' => 'KZ', 'label' => 'Казахстан'],
                     ['value' => 'KG', 'label' => 'Киргизия'],
-                    ['value' => 'AM', 'label' => 'Армения'],
-                    ['value' => 'UZ', 'label' => 'Узбекистан'],
-                    ['value' => 'AZ', 'label' => 'Азербайджан'],
-                    ['value' => 'TJ', 'label' => 'Таджикистан'],
-                    ['value' => 'MD', 'label' => 'Молдова'],
                 ],
             ],
         ];
