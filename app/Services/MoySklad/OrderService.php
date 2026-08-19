@@ -41,10 +41,13 @@ class OrderService
     // -------------------------------------------------------------------------
 
     /**
-     * Выгрузить заказ в МойСклад.
+     * Выгрузить заказ в МойСклад: создаёт документ «Заказ покупателя» при
+     * первой синхронизации либо обновляет существующий (если у заказа уже
+     * сохранён moysklad_order_uuid). Сохраняет результат в
+     * order.moysklad_order_uuid / order.moysklad_synced_at.
      *
      * @param  Order  $order  Заказ с подгруженными items и address
-     * @return string UUID созданного заказа в МойСклад
+     * @return string UUID заказа в МойСклад
      *
      * @throws Exception
      */
@@ -55,6 +58,8 @@ class OrderService
         $organizationMeta = $this->getOrganizationMeta();
         $agentMeta        = $this->resolveAgentMeta($order);
         $positions        = $this->buildPositions($order);
+
+        $this->logIncompletePositionsIfAny($order, $positions);
 
         $payload = [
             'organization' => ['meta' => $organizationMeta],
@@ -77,14 +82,20 @@ class OrderService
             $payload['deliveryPlannedMoment'] = $order->delivery_date->format('Y-m-d H:i:s');
         }
 
-        $response = Http::withHeaders([
+        $isUpdate = ! empty($order->moysklad_order_uuid);
+
+        $request = Http::withHeaders([
             'Authorization'   => 'Bearer ' . $this->token,
             'Accept-Encoding' => 'gzip',
             'Content-Type'    => 'application/json',
-        ])->post("{$this->baseURL}/entity/customerorder", $payload);
+        ]);
+
+        $response = $isUpdate
+            ? $request->put("{$this->baseURL}/entity/customerorder/{$order->moysklad_order_uuid}", $payload)
+            : $request->post("{$this->baseURL}/entity/customerorder", $payload);
 
         if (! $response->successful()) {
-            Log::error('MoySklad: ошибка создания заказа', [
+            Log::error('MoySklad: ошибка ' . ($isUpdate ? 'обновления' : 'создания') . ' заказа', [
                 'order_id' => $order->id,
                 'status'   => $response->status(),
                 'body'     => $response->body(),
@@ -92,18 +103,51 @@ class OrderService
             ]);
 
             throw new Exception(
-                'МойСклад: не удалось создать заказ. ' . ($response->json('errors.0.error') ?? $response->body())
+                'МойСклад: не удалось ' . ($isUpdate ? 'обновить' : 'создать') . ' заказ. '
+                . ($response->json('errors.0.error') ?? $response->body())
             );
         }
 
         $msOrderId = $response->json('id');
 
-        Log::info('MoySklad: заказ успешно создан', [
+        $order->forceFill([
+            'moysklad_order_uuid' => $msOrderId,
+            'moysklad_synced_at' => now(),
+        ])->save();
+
+        Log::info('MoySklad: заказ успешно ' . ($isUpdate ? 'обновлён' : 'создан'), [
             'order_id'    => $order->id,
             'ms_order_id' => $msOrderId,
         ]);
 
         return $msOrderId;
+    }
+
+    /**
+     * Позиции без uuid варианта (товар не синхронизирован с МойСклад)
+     * тихо пропускаются в buildPositions(). Логируем это явно как
+     * предупреждение — иначе в МойСклад уйдёт заказ с неполным составом
+     * без каких-либо следов проблемы.
+     */
+    private function logIncompletePositionsIfAny(Order $order, array $positions): void
+    {
+        $totalItems = $order->items->count();
+
+        if ($totalItems > 0 && count($positions) < $totalItems) {
+            $skippedItems = $order->items->filter(fn ($item) => ! ($item->variant?->uuid));
+
+            Log::warning('MoySklad: заказ выгружается с неполным составом — часть позиций не синхронизирована', [
+                'order_id'      => $order->id,
+                'total_items'   => $totalItems,
+                'synced_items'  => count($positions),
+                'skipped_items' => $skippedItems->map(fn ($item) => [
+                    'order_item_id' => $item->id,
+                    'product_id'    => $item->product_id,
+                    'product_variant_id' => $item->product_variant_id,
+                    'product_name'  => $item->product?->name,
+                ])->values()->all(),
+            ]);
+        }
     }
 
     // -------------------------------------------------------------------------

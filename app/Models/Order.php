@@ -84,6 +84,10 @@ class Order extends Model
         'landing_last',
         'legacy_meta',
         'legacy_delivery_method',
+
+        // Синхронизация с МойСклад (см. App\Jobs\SyncOrderToMoySkladJob)
+        'moysklad_order_uuid',
+        'moysklad_synced_at',
     ];
 
     protected $casts = [
@@ -99,6 +103,7 @@ class Order extends Model
         'gift_card_amount' => 'decimal:2',
 
         'created_at' => 'datetime',
+        'moysklad_synced_at' => 'datetime',
 
         // Легаси-импорт
         'bonuses_credited' => 'decimal:2',

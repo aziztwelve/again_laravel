@@ -671,6 +671,12 @@ class OrderCreationService
 
             $this->refundGiftCardOnCancellation($order);
 
+            // Если заказ уже выгружен в МойСклад — обновляем документ там же,
+            // чтобы отражённая в МойСклад информация не расходилась с сайтом.
+            if ($order->moysklad_order_uuid) {
+                \App\Jobs\SyncOrderToMoySkladJob::dispatch($order->id);
+            }
+
             Log::info('Order cancelled', [
                 'order_id' => $order->id,
                 'reason' => $reason,
@@ -706,6 +712,11 @@ class OrderCreationService
             // Специальные действия для определенных статусов
             if ($status === OrderStatus::DELIVERED) {
                 $order->update(['delivered_at' => now()]);
+            }
+
+            // Если заказ уже выгружен в МойСклад — обновляем документ там же.
+            if ($order->moysklad_order_uuid) {
+                \App\Jobs\SyncOrderToMoySkladJob::dispatch($order->id);
             }
 
             Log::info('Order status updated', [
