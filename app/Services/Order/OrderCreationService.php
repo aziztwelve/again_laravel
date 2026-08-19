@@ -672,6 +672,12 @@ class OrderCreationService
                 \App\Jobs\SyncOrderToMoySkladJob::dispatch($order->id);
             }
 
+            // Возвращаем товар на склад МойСклад, если он был списан через
+            // отгрузку (demand) при создании заказа.
+            if ($order->moysklad_demand_uuid) {
+                \App\Jobs\ReturnOrderStockToMoySkladJob::dispatch($order->id);
+            }
+
             Log::info('Order cancelled', [
                 'order_id' => $order->id,
                 'reason' => $reason,

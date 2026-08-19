@@ -171,7 +171,7 @@ class OrderService
      *
      * @throws Exception
      */
-    private function getOrganizationMeta(): array
+    public function getOrganizationMeta(): array
     {
         $response = Http::withHeaders([
             'Authorization'   => 'Bearer ' . $this->token,
@@ -246,17 +246,6 @@ class OrderService
     {
         $positions = [];
 
-        // Резервируем полное количество, пока заказ активен (не отменён и не
-        // доставлен). После доставки товар уже передан клиенту — резерв не
-        // нужен. После отмены МойСклад сам снимает резерв при переходе
-        // документа в статус с stateType=Unsuccessful, но явный 0 не
-        // помешает и на случай, если статус в конкретном аккаунте не
-        // сопоставлен (resolveStateMeta() не нашёл соответствие).
-        $reserveQuantity = in_array($order->status, [
-            \App\Enums\OrderStatus::CANCELLED,
-            \App\Enums\OrderStatus::DELIVERED,
-        ], true);
-
         foreach ($order->items as $item) {
             $variantUuid = $item->variant?->uuid ?? null;
 
@@ -298,9 +287,6 @@ class OrderService
                 'quantity' => (float) $item->quantity,
                 // Скидка в процентах (0 если нет скидки)
                 'discount' => $discountPct,
-                // Резерв: полное количество для активных заказов, 0 для
-                // отменённых/доставленных.
-                'reserve'  => $reserveQuantity ? 0 : (float) $item->quantity,
             ];
         }
 

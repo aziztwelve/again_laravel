@@ -88,6 +88,7 @@ class Order extends Model
         // Синхронизация с МойСклад (см. App\Jobs\SyncOrderToMoySkladJob)
         'moysklad_order_uuid',
         'moysklad_synced_at',
+        'moysklad_demand_uuid',
     ];
 
     protected $casts = [

@@ -38,6 +38,14 @@ Schedule::command('cart:gc-guest-carts')
     ->withoutOverlapping()
     ->runInBackground();
 
+// Автоотмена неоплаченных заказов через 2 часа после создания — возвращает
+// товар на склад МойСклад (если был списан через demand). См.
+// docs/tasks/order-status-actualization.md.
+Schedule::command('orders:cancel-unpaid')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // У NDD Platform API нет вебхуков: обновляем незавершённые заявки опросом.
 Schedule::job(new PollYandexDeliveryStatusesJob())
     ->everyTenMinutes()
