@@ -720,6 +720,16 @@ class OrderCreationService
                 \App\Jobs\SyncOrderToMoySkladJob::dispatch($order->id);
             }
 
+            // «Возврат товара»: клиент не забрал заказ, товар вернулся
+            // отправителю. Списание в МойСклад произошло сразу при создании
+            // заказа (см. SyncOrderToMoySkladJob), поэтому нужно физически
+            // вернуть товар на склад — распровести demand. Срабатывает и
+            // при ручной смене статуса менеджером, и при автоматической
+            // (см. YandexOrderObserver/CdekOrderObserver).
+            if ($status === OrderStatus::PRODUCT_RETURN && $order->moysklad_demand_uuid) {
+                \App\Jobs\ReturnOrderStockToMoySkladJob::dispatch($order->id);
+            }
+
             Log::info('Order status updated', [
                 'order_id' => $order->id,
                 'status' => $status->value,

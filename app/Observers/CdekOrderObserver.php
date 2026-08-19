@@ -19,6 +19,10 @@ use Illuminate\Support\Facades\Log;
  *   DELIVERED  -> DELIVERED (доставлено получателю/в ПВЗ)
  *   RETURNED   -> PRODUCT_RETURN (не забрали/не было дома, вернулся отправителю)
  *
+ * Возврат товара на склад МойСклад при PRODUCT_RETURN обрабатывается
+ * централизованно в OrderCreationService::updateOrderStatus() (общий путь
+ * для ручной и автоматической смены статуса) — здесь не дублируется.
+ *
  * CANCELLED здесь не обрабатывается — отмена заказа управляется отдельно
  * через OrderCreationService::cancelOrder(), чтобы не создавать двух
  * источников истины.

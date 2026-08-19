@@ -17,6 +17,10 @@ use Illuminate\Support\Facades\Log;
  * (ReturnOrderStockToMoySkladJob, если товар был списан через demand при
  * создании заказа — см. SyncOrderToMoySkladJob).
  *
+ * Проверяются заказы в статусах «Новый» и «В работе» — если менеджер
+ * перевёл заказ в работу, но оплата так и не поступила за 2 часа,
+ * он тоже подлежит автоотмене.
+ *
  * См. docs/tasks/order-status-actualization.md.
  */
 class CancelUnpaidOrdersCommand extends Command
@@ -30,7 +34,7 @@ class CancelUnpaidOrdersCommand extends Command
     public function handle(OrderCreationService $orderCreationService): int
     {
         $orders = Order::query()
-            ->where('status', OrderStatus::NEW->value)
+            ->whereIn('status', [OrderStatus::NEW->value, OrderStatus::PROCESSING->value])
             ->where('payment_status', '!=', PaymentStatus::PAID->value)
             ->where('created_at', '<=', now()->subHours(self::UNPAID_TIMEOUT_HOURS))
             ->get();
