@@ -74,29 +74,66 @@ class MoySkladHelperService
         return $modifications;
     }
 
+    /**
+     * Остатки товаров/вариантов из МойСклад.
+     *
+     * Использует /report/stock/all (не /report/stock/all/current), потому
+     * что только этот отчёт отдаёт поле reserve и посчитанное доступное
+     * количество (quantity = stock - reserve). Ключ 'stock' в результате —
+     * ДОСТУПНОЕ количество (с учётом резерва по активным заказам), а не
+     * физический остаток на полке: именно оно должно попадать на витрину,
+     * иначе резервирование товара под заказ (см. OrderService::pushOrder())
+     * не защищает от продажи того же товара другому покупателю.
+     * Физический остаток сохранён отдельно в 'physical_stock'.
+     *
+     * @return array<string, array{stock: int, physical_stock: int, reserve: int}>
+     */
     public function check_stock()
     {
-        $response = Http::withHeaders([
-            'Authorization' => 'Bearer ' . $this->token,
-            'Accept-Encoding' => 'gzip',
-            'Content-Type' => 'application/json',
-        ])->get("{$this->baseURL}/report/stock/all/current");
-
-        if (!$response->successful()) {
-            return response()->json([
-                'success' => false,
-                'message' => $response->body(),
-            ], $response->getStatusCode());
-        }
-
-        $stocks = $response->json();
-
         $result = [];
-        if ($stocks) {
-            foreach ($stocks as $key => $value) {
-                $result[$value['assortmentId']] = $value;
+        $offset = 0;
+        $limit = 1000;
+
+        do {
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $this->token,
+                'Accept-Encoding' => 'gzip',
+                'Content-Type' => 'application/json',
+            ])->get("{$this->baseURL}/report/stock/all", [
+                'limit' => $limit,
+                'offset' => $offset,
+            ]);
+
+            if (!$response->successful()) {
+                \Illuminate\Support\Facades\Log::error('MoySklad: не удалось получить отчёт по остаткам', [
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+
+                return $result;
             }
-        }
+
+            $rows = $response->json('rows') ?? [];
+
+            foreach ($rows as $row) {
+                $href = $row['meta']['href'] ?? null;
+                $assortmentId = $href ? basename(strtok($href, '?')) : null;
+
+                if (!$assortmentId) {
+                    continue;
+                }
+
+                $result[$assortmentId] = [
+                    'assortmentId' => $assortmentId,
+                    'stock' => (float) ($row['quantity'] ?? 0),
+                    'physical_stock' => (float) ($row['stock'] ?? 0),
+                    'reserve' => (float) ($row['reserve'] ?? 0),
+                ];
+            }
+
+            $total = $response->json('meta.size') ?? count($rows);
+            $offset += $limit;
+        } while ($offset < $total);
 
         return $result;
     }

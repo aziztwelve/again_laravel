@@ -438,10 +438,10 @@ class OrderCreationService
                     //                'original_price' => $item['original_price'],
                 ]);
 
-                // Уменьшаем остатки товара
-                //            $model = $item['model'];
-                //            $newQuantity = max(0, $model->stock_quantity - $quantity);
-                //            $model->update(['stock_quantity' => $newQuantity]);
+                // stock_quantity не уменьшаем здесь: это зеркало остатка
+                // из МойСклад (см. ProductsAndVariantsSyncWithMoySkladService),
+                // сайт его не трогает. Резервирование под заказ выполняется
+                // на стороне МойСклад (см. OrderService::pushOrder()).
 
                 // Суммируем итоги
                 $orderTotal += $subtotal;
@@ -631,18 +631,13 @@ class OrderCreationService
     public function cancelOrder(Order $order, ?string $reason = null): bool
     {
         try {
-            // Возвращаем товары на склад
-            foreach ($order->items as $item) {
-                if ($item->product_variant_id) {
-                    $model = \App\Models\ProductVariant::find($item->product_variant_id);
-                } else {
-                    $model = \App\Models\Product::find($item->product_id);
-                }
-
-                if ($model) {
-                    $model->increment('stock_quantity', $item->quantity);
-                }
-            }
+            // stock_quantity — зеркало остатка из МойСклад (см.
+            // ProductsAndVariantsSyncWithMoySkladService), сайт его больше не
+            // трогает: раньше здесь был incrementMoney без симметричного
+            // decrement при создании заказа, что при повторных заказ/отмена
+            // раздувало остаток на сайте относительно реального. Актуальное
+            // доступное количество (с учётом резерва под активные заказы)
+            // приходит из МойСклад при следующей синхронизации.
 
             // Возвращаем использование промокода (если был применен)
             if ($order->promo_code_id) {

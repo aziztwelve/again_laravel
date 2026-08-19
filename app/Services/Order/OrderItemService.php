@@ -4,9 +4,6 @@ namespace App\Services\Order;
 
 use App\Enums\OrderStatus;
 use App\Models\Order;
-use App\Models\OrderItem;
-use App\Models\Product;
-use App\Models\ProductVariant;
 use Illuminate\Support\Facades\Log;
 
 class OrderItemService
@@ -111,9 +108,6 @@ class OrderItemService
                 return false;
             }
 
-            // Возвращаем товар на склад
-            $this->returnItemToStock($item);
-
             // Пишем в историю до удаления, чтобы данные позиции были доступны
             $this->historyService->logItemRemoved($order, $item);
 
@@ -138,23 +132,6 @@ class OrderItemService
             ]);
 
             return false;
-        }
-    }
-
-    /**
-     * Вернуть товар на склад
-     *
-     * @param OrderItem $item
-     * @return void
-     */
-    protected function returnItemToStock(OrderItem $item): void
-    {
-        $model = $item->product_variant_id
-            ? ProductVariant::find($item->product_variant_id)
-            : Product::find($item->product_id);
-
-        if ($model) {
-            $model->increment('stock_quantity', $item->quantity);
         }
     }
 
