@@ -37,6 +37,11 @@ class AppServiceProvider extends ServiceProvider
         \App\Models\Product::observe(\App\Observers\ProductObserver::class);
         \App\Models\ProductVariant::observe(\App\Observers\ProductVariantObserver::class);
 
+        // Автоматическое переключение статуса заказа по статусу доставки
+        // (см. docs/tasks/order-status-actualization.md, пункт 2).
+        \App\Models\YandexOrder::observe(\App\Observers\YandexOrderObserver::class);
+        \App\Models\CdekOrder::observe(\App\Observers\CdekOrderObserver::class);
+
         // Прокси для всех Http:: запросов — Telegram иначе недоступен с RU-хостинга.
         // CURLPROXY_SOCKS5_HOSTNAME (7) = socks5h — DNS резолвится на стороне прокси.
         if (env('TELEGRAM_PROXY')) {
