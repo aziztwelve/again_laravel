@@ -278,6 +278,12 @@ class PublicCheckoutController extends Controller
 
             DB::commit();
 
+            // Выгружаем заказ в МойСклад сразу при создании, независимо от
+            // оплаты. Асинхронно — ошибка МойСклад не должна блокировать
+            // клиента. Повторно выгружается (обновляется) после оплаты через
+            // SyncOrderToMoySkladAfterPayment listener на OrderPaid.
+            \App\Jobs\SyncOrderToMoySkladJob::dispatch($order->id);
+
             return $this->createdOrderResponse($order, $containsGiftCard, 201);
         } catch (QueryException $e) {
             DB::rollBack();

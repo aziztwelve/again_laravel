@@ -325,6 +325,10 @@ class OrderController extends Controller
 
             DB::commit();
 
+            // Выгружаем заказ в МойСклад сразу при создании (в т.ч. заказ,
+            // созданный менеджером в админке), независимо от оплаты.
+            \App\Jobs\SyncOrderToMoySkladJob::dispatch($order->id);
+
             // Загружаем заказ со всеми связями для ответа
             $order->load(['items.product', 'items.variant.optionValues.option', 'items.variant.table_color', 'promoCode', 'giftCard', 'address']);
 
