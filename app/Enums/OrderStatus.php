@@ -7,10 +7,10 @@ enum OrderStatus: string
     case NEW = 'new';
     case PROCESSING = 'processing';
     case SHIPPED = 'shipped';
-    case SHIPPED_EXPORT = 'shipped_export';
     case DELIVERED = 'delivered';
     case CANCELLED = 'cancelled';
     case PRODUCT_RETURN = 'product_return';
+    case RETURN_PAYMENT = 'return_payment';
 
 //    case ASSEMBLED = 'assembled';
 //    case TSD_CONTROL = 'tsd_control';
@@ -23,10 +23,10 @@ enum OrderStatus: string
             self::NEW => 'Новый',
             self::PROCESSING => 'В работе',
             self::SHIPPED => 'Отгружен',
-            self::SHIPPED_EXPORT => 'Отгружен на экспорт',
             self::DELIVERED => 'Доставлен',
             self::CANCELLED => 'Отменен',
             self::PRODUCT_RETURN => 'Возврат товара',
+            self::RETURN_PAYMENT => 'Возврат оплаты',
 
 
 //            self::ASSEMBLED => 'Собран',
@@ -42,10 +42,10 @@ enum OrderStatus: string
             self::NEW => '#fb7878',
             self::PROCESSING => '#efd49c',
             self::SHIPPED => '#7391ec',
-            self::SHIPPED_EXPORT => '#9333ea', // фиолетовый для экспорта
             self::DELIVERED => '#6fbaba',
             self::CANCELLED => '#f88686',
             self::PRODUCT_RETURN => '#f59e0b', // оранжевый для возврата
+            self::RETURN_PAYMENT => '#9333ea', // фиолетовый для возврата оплаты
 
 
 //            self::ASSEMBLED => '#558f5a',
