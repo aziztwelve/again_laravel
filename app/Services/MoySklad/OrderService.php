@@ -248,11 +248,21 @@ class OrderService
         if ($order->export_country && isset($metas['Страна экспорта'])) {
             $attributes[] = [
                 'meta' => $metas['Страна экспорта'],
-                'value' => $order->export_country,
+                'value' => $this->exportCountryLabel($order->export_country),
             ];
         }
 
         return $attributes;
+    }
+
+    private function exportCountryLabel(string $country): string
+    {
+        return [
+            'AM' => 'Армения',
+            'BY' => 'Беларусь',
+            'KZ' => 'Казахстан',
+            'KG' => 'Киргизия',
+        ][$country] ?? $country;
     }
 
     /**
