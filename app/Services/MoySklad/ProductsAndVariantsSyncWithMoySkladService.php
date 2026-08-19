@@ -236,7 +236,11 @@ class ProductsAndVariantsSyncWithMoySkladService
         ];
 
         if ($product) {
-            unset($attributes['uuid']);
+            // uuid НЕ убираем из атрибутов: если товар найден по uuid, значение
+            // не изменится; если найден по code/slug/barcode (например, после
+            // переноса на новый аккаунт МойСклад), uuid должен обновиться на
+            // актуальный — иначе removeDeletedProducts() посчитает товар
+            // "пропавшим" и удалит его на следующем шаге синхронизации.
             $product->update($attributes);
             return $product;
         }
@@ -389,7 +393,9 @@ class ProductsAndVariantsSyncWithMoySkladService
 
             if ($variant) {
 
-                unset($attributes['uuid']);
+                // Аналогично upsertProduct: uuid должен обновиться, если
+                // вариант найден по sku (а не по uuid), иначе он попадёт
+                // под удаление как "пропавший" из МойСклад.
                 $variant->update($attributes);
                 if ($productData->name == 'Подарочный сертификат') {
 
