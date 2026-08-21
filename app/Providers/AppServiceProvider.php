@@ -41,6 +41,7 @@ class AppServiceProvider extends ServiceProvider
         // (см. docs/tasks/order-status-actualization.md, пункт 2).
         \App\Models\YandexOrder::observe(\App\Observers\YandexOrderObserver::class);
         \App\Models\CdekOrder::observe(\App\Observers\CdekOrderObserver::class);
+        \App\Models\Order::observe(\App\Observers\OrderObserver::class);
 
         // Прокси для всех Http:: запросов — Telegram иначе недоступен с RU-хостинга.
         // CURLPROXY_SOCKS5_HOSTNAME (7) = socks5h — DNS резолвится на стороне прокси.
