@@ -80,7 +80,8 @@ class FreeShippingRuleController extends Controller
      * Лёгкий поиск товаров для мультивыбора в форме правила.
      *
      * Отдельно от общего /api/products: тот тянет остатки МоегоСклада и
-     * скидки — для селекта это лишний вес.
+     * скидки — для селекта это лишний вес. В основной список попадают только
+     * товары, доступные в онлайн-каталоге: активные и с остатком.
      */
     public function products(Request $request): JsonResponse
     {
@@ -88,14 +89,17 @@ class FreeShippingRuleController extends Controller
 
         $query = \App\Models\Product::query()
             ->select(['id', 'name', 'price'])
+            ->where('is_active', true)
+            ->where('stock_quantity', '>', 0)
             ->orderBy('name');
 
         if ($search !== '') {
             $query->where('name', 'like', "%{$search}%");
         }
 
-        // Явно выбранные товары должны приходить даже если не попали в поиск,
-        // иначе форма не сможет показать их названия.
+        // Явно выбранные ранее товары должны приходить даже если больше не
+        // доступны онлайн, иначе при редактировании нельзя будет увидеть и
+        // убрать сохранённое условие.
         $selected = array_filter(array_map('intval', (array) $request->get('ids', [])));
 
         $products = $query->limit(30)->get();
