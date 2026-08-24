@@ -153,6 +153,8 @@ class PublicOrderController extends Controller
             )
                 && (bool) config('payment.providers.cloudpayment.enabled')
                 && filled(config('payment.providers.cloudpayment.public_id')),
+            'yandex_pay_available' => in_array($order->payment_method, ['yandex_pay', 'yandex_pay_split'], true)
+                && app(\App\Services\Payment\YandexPayService::class)->isAvailable(),
             'total_amount' => (float) $order->total_amount,
             // discount_amount уже = total_items_discount + total_promo_discount
             // (см. OrderDiscountService::recalculate), складывать компоненты

@@ -15,13 +15,12 @@ return [
         ],
 
         'yandexpay' => [
-            'class' => \App\Services\Payment\YandexPayProvider::class,
-            'merchant_id' => env('YANDEXPAY_MERCHANT_ID'),
-            'api_key' => env('YANDEXPAY_API_KEY'),
-            'merchant_name' => env('YANDEXPAY_MERCHANT_NAME'),
-            'merchant_url' => env('APP_URL'),
-            'api_url' => env('YANDEXPAY_API_URL', 'https://pay.yandex.ru/api/v3'),
-            'vat_code' => env('YANDEXPAY_VAT_CODE', 1),
+            'enabled' => env('YANDEX_PAY_ENABLED', false),
+            'env' => env('YANDEX_PAY_ENV', 'sandbox'),
+            'merchant_id' => env('YANDEX_PAY_MERCHANT_ID'),
+            'api_key' => env('YANDEX_PAY_API_KEY'),
+            'api_url' => env('YANDEX_PAY_API_URL', 'https://sandbox.pay.yandex.ru'),
+            'callback_url' => env('YANDEX_PAY_CALLBACK_URL'),
         ],
 
         'cloudpayment' => [
