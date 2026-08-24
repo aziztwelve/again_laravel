@@ -112,4 +112,39 @@ class CDEKController extends Controller
             'settings' => $cdek_settings
         ]);
     }
+    public function settings()
+    {
+        $settings = DeliveryServiceSetting::query()->where('service_name', 'cdek')->value('settings') ?? [];
+        unset($settings['secure_password']);
+
+        return response()->json(['success' => true, 'settings' => $settings]);
+    }
+
+    public function saveSettings(Request $request)
+    {
+        $data = $request->validate([
+            'settings' => ['required', 'array'],
+            'settings.enabled' => ['boolean'],
+            'settings.account' => ['nullable', 'string', 'max:255'],
+            'settings.secure_password' => ['nullable', 'string', 'max:255'],
+            'settings.sender' => ['nullable', 'array'],
+            'settings.sender.city_code' => ['nullable', 'integer'],
+            'settings.sender.address' => ['nullable', 'string', 'max:255'],
+            'settings.sender.name' => ['nullable', 'string', 'max:255'],
+            'settings.sender.postal_code' => ['nullable', 'string', 'max:20'],
+            'settings.sender.phone' => ['nullable', 'string', 'max:50'],
+            'settings.tariff_codes' => ['nullable', 'array'],
+            'settings.tariff_codes.*' => ['integer'],
+            'settings.status_mapping' => ['nullable', 'array'],
+        ]);
+
+        $record = DeliveryServiceSetting::firstOrCreate(['service_name' => 'cdek']);
+        $newSettings = $data['settings'];
+        if (blank($newSettings['secure_password'] ?? null)) unset($newSettings['secure_password']);
+        $settings = array_replace_recursive($record->settings ?? [], $newSettings);
+        $record->update(['settings' => $settings]);
+
+        unset($settings['secure_password']);
+        return response()->json(['success' => true, 'message' => 'Настройки СДЭК сохранены', 'settings' => $settings]);
+    }
 }
