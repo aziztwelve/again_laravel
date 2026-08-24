@@ -54,17 +54,23 @@ class FreeShippingRuleController extends Controller
      */
     public function options(): JsonResponse
     {
+        $countryCodes = config('free_shipping.country_codes', []);
+
         return response()->json([
             'success' => true,
             'services' => $this->dictionary(config('free_shipping.services', [])),
             'delivery_types' => $this->dictionary(config('free_shipping.delivery_types', [])),
             'payment_methods' => $this->dictionary(config('free_shipping.payment_methods', [])),
             'countries' => Country::query()
+                ->whereIn('code', $countryCodes)
                 ->orderBy('name')
                 ->get(['id', 'name', 'code'])
                 ->map(fn ($c) => ['id' => (int) $c->id, 'name' => $c->name, 'code' => $c->code])
                 ->all(),
             'regions' => Region::query()
+                ->whereIn('country_id', Country::query()
+                    ->select('id')
+                    ->whereIn('code', $countryCodes))
                 ->orderBy('name')
                 ->get(['id', 'name', 'country_id'])
                 ->map(fn ($r) => [
