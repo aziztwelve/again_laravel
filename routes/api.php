@@ -1095,6 +1095,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
         Route::prefix('/cdek')->group(function () {
             Route::get('/settings', [CDEKController::class, 'settings']);
+            Route::get('/tariffs', [CDEKController::class, 'tariffs']);
             Route::put('/settings', [CDEKController::class, 'saveSettings']);
             Route::post('/settings', [CDEKController::class, 'update_cdek_settings']);
         });

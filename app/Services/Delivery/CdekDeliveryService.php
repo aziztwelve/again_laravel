@@ -49,6 +49,24 @@ class CdekDeliveryService extends DeliveryService
         return $result['successful'] ? ($result['data'] ?? []) : [];
     }
 
+    /** Tariffs available under the connected CDEK contract for the admin setup form. */
+    public function availableTariffs(): array
+    {
+        $result = $this->client->request('GET', '/v2/calculator/alltariffs');
+        if (! $result['successful']) return [];
+
+        return collect($result['data'] ?? [])
+            ->map(fn (array $tariff) => [
+                'code' => (int) ($tariff['tariff_code'] ?? 0),
+                'name' => trim(implode(' ', array_filter([
+                    $tariff['tariff_name'] ?? null,
+                    $tariff['delivery_mode_name'] ?? null,
+                ]))),
+            ])
+            ->filter(fn (array $tariff) => $tariff['code'] > 0 && $tariff['name'] !== '')
+            ->sortBy('name')->values()->all();
+    }
+
     public function calculateTariffs(string $deliveryType, array $destination, array $items, ?string $pickupPoint = null): array
     {
         $this->assertSenderConfigured();
@@ -74,15 +92,18 @@ class CdekDeliveryService extends DeliveryService
         if (! $result['successful']) return [];
 
         $deliveryMode = $deliveryType === 'courier' ? 1 : 2;
+        $allowedCodes = array_map('intval', $this->settings['tariff_codes'] ?? []);
+        $daysOffset = max(0, (int) ($this->settings['delivery_days_offset'] ?? 0));
         return collect($result['data']['tariff_codes'] ?? [])
             ->filter(fn (array $tariff) => (int) ($tariff['delivery_mode'] ?? 0) === $deliveryMode)
+            ->filter(fn (array $tariff) => $allowedCodes === [] || in_array((int) ($tariff['tariff_code'] ?? 0), $allowedCodes, true))
             ->map(fn (array $tariff) => [
             'tariff_code' => $tariff['tariff_code'],
             'tariff_name' => $tariff['tariff_name'],
             'delivery_mode' => $tariff['delivery_mode'],
             'price' => (float) $tariff['delivery_sum'],
             'currency' => 'RUB',
-            'period' => ['min' => $tariff['period_min'], 'max' => $tariff['period_max']],
+            'period' => ['min' => (int) $tariff['period_min'] + $daysOffset, 'max' => (int) $tariff['period_max'] + $daysOffset],
             'delivery_date_range' => $tariff['delivery_date_range'] ?? null,
             ])->values()->all();
     }
@@ -267,11 +288,12 @@ class CdekDeliveryService extends DeliveryService
     }
     private function measurement(array $item): array
     {
+        $fallback = $this->settings['default_package'] ?? [];
         return [
-            'weight' => max(1, (int) (($item['weight'] ?? null) ?: 500)),
-            'length' => max(1, (int) (($item['length'] ?? null) ?: 20)),
-            'width' => max(1, (int) (($item['width'] ?? null) ?: 10)),
-            'height' => max(1, (int) (($item['height'] ?? null) ?: 10)),
+            'weight' => max(1, (int) (($item['weight'] ?? null) ?: ($fallback['weight'] ?? 500))),
+            'length' => max(1, (int) (($item['length'] ?? null) ?: ($fallback['length'] ?? 20))),
+            'width' => max(1, (int) (($item['width'] ?? null) ?: ($fallback['width'] ?? 10))),
+            'height' => max(1, (int) (($item['height'] ?? null) ?: ($fallback['height'] ?? 10))),
             'quantity' => max(1, (int) ($item['quantity'] ?? 1)),
         ];
     }

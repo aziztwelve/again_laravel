@@ -80,7 +80,7 @@ class CDEKController extends Controller
 
     public function get_tariffs()
     {
-        // return 
+        return response()->json(['tariffs' => (new CdekDeliveryService())->availableTariffs()]);
     }
 
     public function check_address()
@@ -120,6 +120,11 @@ class CDEKController extends Controller
         return response()->json(['success' => true, 'settings' => $settings]);
     }
 
+    public function tariffs()
+    {
+        return response()->json(['tariffs' => (new CdekDeliveryService())->availableTariffs()]);
+    }
+
     public function saveSettings(Request $request)
     {
         $data = $request->validate([
@@ -136,6 +141,11 @@ class CDEKController extends Controller
             'settings.tariff_codes' => ['nullable', 'array'],
             'settings.tariff_codes.*' => ['integer'],
             'settings.status_mapping' => ['nullable', 'array'],
+            'settings.default_package' => ['nullable', 'array'],
+            'settings.default_package.weight' => ['nullable', 'numeric', 'min:1'],
+            'settings.default_package.length' => ['nullable', 'numeric', 'min:0.1'],
+            'settings.default_package.width' => ['nullable', 'numeric', 'min:0.1'],
+            'settings.default_package.height' => ['nullable', 'numeric', 'min:0.1'],
         ]);
 
         $record = DeliveryServiceSetting::firstOrCreate(['service_name' => 'cdek']);
