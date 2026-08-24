@@ -63,6 +63,7 @@ class FreeShippingRuleController extends Controller
             'payment_methods' => $this->dictionary(config('free_shipping.payment_methods', [])),
             'countries' => Country::query()
                 ->whereIn('code', $countryCodes)
+                ->orderByRaw("CASE WHEN code = 'RU' THEN 0 ELSE 1 END")
                 ->orderBy('name')
                 ->get(['id', 'name', 'code'])
                 ->map(fn ($c) => ['id' => (int) $c->id, 'name' => $c->name, 'code' => $c->code])
