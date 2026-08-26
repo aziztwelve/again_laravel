@@ -3,6 +3,7 @@
 namespace App\Services\Notifications;
 
 use App\Models\Order;
+use App\Support\PublicUrl;
 use Illuminate\Support\Number;
 
 class OrderMessageBuilder
@@ -20,7 +21,7 @@ class OrderMessageBuilder
 
         $lines = [
             'Новый заказ №' . ($order->order_number ?? $order->id),
-            'Магазин again8.ru',
+            'Магазин '.PublicUrl::shopHost(),
             'Клиент: ' . $this->customerLine($order),
             'Способ доставки: ' . ($this->deliveryMethodLine($order) ?: 'Не указан'),
             'Адрес доставки: ' . ($this->deliveryAddressLine($order) ?: 'Не указан'),

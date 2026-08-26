@@ -37,7 +37,7 @@ class OtoBannerResourceTest extends TestCase
         $image->setRawAttributes([
             'id' => 109,
             'path' => '865878fb-0398-4495-b871-bbea9eada70c.png',
-            'url' => 'https://againdev.ru/storage/oto-banners/1/865878fb-0398-4495-b871-bbea9eada70c.png',
+            'url' => 'https://old.example.com/storage/oto-banners/1/865878fb-0398-4495-b871-bbea9eada70c.png',
         ]);
         $banner->setRelation('mainImage', $image);
 

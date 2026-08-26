@@ -56,7 +56,7 @@ class MaxService
      * Получить полный URL для webhook
      * Автоматически добавляет /api/public/max/webhook к базовому URL
      */
-    protected function getWebhookUrl(): string
+    public function getWebhookUrl(): string
     {
         $baseUrl = config('services.max.webhook_url');
 

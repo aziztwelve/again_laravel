@@ -3,6 +3,7 @@
 namespace App\Services\Notifications;
 
 use App\Models\YandexOrder;
+use App\Support\PublicUrl;
 use Carbon\CarbonImmutable;
 
 class YandexDeliveryMessageBuilder
@@ -62,7 +63,7 @@ class YandexDeliveryMessageBuilder
         }
 
         if ($customerStatus === 'delivered') {
-            $lines[] = 'Спасибо за покупку в again8.ru.';
+            $lines[] = 'Спасибо за покупку в '.PublicUrl::shopHost().'.';
         } elseif (in_array($customerStatus, ['delivery_problem', 'cancelled', 'returning'], true)) {
             $lines[] = 'Если потребуется помощь, ответьте на это сообщение.';
         }

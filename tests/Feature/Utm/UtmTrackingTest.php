@@ -138,19 +138,23 @@ class UtmTrackingTest extends TestCase
         $link = $service->create([
             'name' => 'VK Body',
             'marketing_channel_id' => $channel->id,
-            'target_url' => 'https://againdev3.ru/catalog/'.$product->uuid.'?color=black',
+            'target_url' => 'https://shop.example.com/catalog/'.$product->uuid.'?color=black',
             'utm_medium' => 'ver1',
         ]);
 
         $this->assertSame(
-            'https://againdev3.ru/catalog/menstrualnye-trusy-body-again-1?color=black',
+            'https://shop.example.com/catalog/menstrualnye-trusy-body-again-1?color=black',
             $link->target_url
         );
     }
 
     public function test_link_creation_replaces_retired_storefront_domain(): void
     {
-        config(['utm.tracking_base_url' => 'https://againdev3.ru']);
+        // Прежние хосты живут в конфиге (LEGACY_HOSTS), домен не зашит в код.
+        config([
+            'app.frontend_url' => 'https://shop.example.com',
+            'app.legacy_hosts' => ['old.example.com'],
+        ]);
 
         $channel = $this->channel();
 
@@ -160,11 +164,35 @@ class UtmTrackingTest extends TestCase
         $link = $service->create([
             'name' => 'Old domain',
             'marketing_channel_id' => $channel->id,
-            'target_url' => 'https://sub.againdev2.ru/catalog?foo=bar',
+            'target_url' => 'https://old.example.com/catalog?foo=bar',
             'utm_medium' => 'manual',
         ]);
 
-        $this->assertSame('https://againdev3.ru/catalog?foo=bar', $link->target_url);
+        $this->assertSame('https://shop.example.com/catalog?foo=bar', $link->target_url);
+    }
+
+    public function test_redirect_tracker_canonicalizes_legacy_host_stored_before_migration(): void
+    {
+        config([
+            'app.frontend_url' => 'https://shop.example.com',
+            'app.legacy_hosts' => ['old.example.com'],
+        ]);
+
+        $channel = $this->channel();
+
+        // Строка сохранена до переезда: хост уже выведен из эксплуатации.
+        $link = $this->link($channel, [
+            'slug' => 'legacy01',
+            'target_url' => 'https://old.example.com/catalog',
+            'utm_medium' => 'manual',
+        ]);
+
+        $this->get('/go/legacy01')->assertRedirect(
+            'https://shop.example.com/catalog?utm_source=ig&utm_medium=manual'
+        );
+
+        // Сама запись в БД не меняется — её лечит `php artisan urls:canonicalize`.
+        $this->assertSame('https://old.example.com/catalog', $link->fresh()->target_url);
     }
 
     // === Атрибуция заказа к метке (utm_link_id из orderData → заказ) ===

@@ -2,6 +2,7 @@
 
 namespace App\Notifications;
 
+use App\Support\PublicUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -36,13 +37,15 @@ class WelcomeNotification extends Notification
      */
     public function toMail(object $notifiable): MailMessage
     {
+        $loginUrl = PublicUrl::to('/client_account/login');
+
         return (new MailMessage)
             ->subject('Добро пожаловать в магазин AGAIN')
             ->greeting("Здравствуйте, {$this->title}!")
             ->line('Спасибо за регистрацию в нашем магазине "AGAIN".')
             ->line('Теперь вам доступен личный кабинет, в котором вы сможете отслеживать статус всех ваших заказов.')
-            ->line('Вы можете перейти в личный кабинет по этой ссылке: [again.ru](http://again8.ru/client_account/login)')
-            ->salutation('С уважением, команда ' . env('APP_NAME'));
+            ->line('Вы можете перейти в личный кабинет по этой ссылке: ['.PublicUrl::shopHost().']('.$loginUrl.')')
+            ->salutation('С уважением, команда '.config('app.name'));
     }
 
     /**

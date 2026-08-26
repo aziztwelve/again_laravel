@@ -12,11 +12,9 @@ class WhatsAppAdapter extends AbstractMessageAdapter
 
     public function __construct()
     {
-        $this->whatsappServiceUrl = env('WHATSAPP_SERVICE_URL', 'http://localhost:3001');
-
-//        Log::info("WhatsAppAdapter initialized", [
-//            'service_url' => $this->whatsappServiceUrl
-//        ]);
+        // config(), а не env(): при закэшированном конфиге env() в рантайме
+        // возвращает null. Адрес сервиса — внутренний, от домена не зависит.
+        $this->whatsappServiceUrl = rtrim((string) config('services.whatsapp.service_url'), '/');
     }
 
     /**

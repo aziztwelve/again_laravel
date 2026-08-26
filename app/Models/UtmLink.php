@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\PublicUrl;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -60,9 +61,14 @@ class UtmLink extends Model
 
     /**
      * Целевой URL c прикреплёнными utm-параметрами (куда ведёт редирект).
+     *
+     * Хост приводится к актуальному домену на чтении: метки, созданные до
+     * переезда, иначе увели бы клиента на выведенный из эксплуатации адрес.
      */
     public function getTargetUrlWithParamsAttribute(): string
     {
+        $targetUrl = (string) PublicUrl::canonicalize($this->target_url);
+
         $params = array_filter([
             'utm_source' => $this->utm_source,
             'utm_medium' => $this->utm_medium,
@@ -72,12 +78,12 @@ class UtmLink extends Model
         ], fn ($value) => $value !== null && $value !== '');
 
         if (empty($params)) {
-            return $this->target_url;
+            return $targetUrl;
         }
 
-        $separator = str_contains($this->target_url, '?') ? '&' : '?';
+        $separator = str_contains($targetUrl, '?') ? '&' : '?';
 
-        return $this->target_url.$separator.http_build_query($params);
+        return $targetUrl.$separator.http_build_query($params);
     }
 
     /**

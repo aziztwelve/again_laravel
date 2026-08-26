@@ -5,7 +5,6 @@ namespace App\Providers;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Pagination\LengthAwarePaginator;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use App\Services\PaymentService;
@@ -41,18 +40,6 @@ class AppServiceProvider extends ServiceProvider
         // (см. docs/tasks/order-status-actualization.md, пункт 2).
         \App\Models\YandexOrder::observe(\App\Observers\YandexOrderObserver::class);
         \App\Models\CdekOrder::observe(\App\Observers\CdekOrderObserver::class);
-
-        // Прокси для всех Http:: запросов — Telegram иначе недоступен с RU-хостинга.
-        // CURLPROXY_SOCKS5_HOSTNAME (7) = socks5h — DNS резолвится на стороне прокси.
-        if (env('TELEGRAM_PROXY')) {
-            Http::globalOptions([
-                'curl' => [
-                    CURLOPT_PROXYTYPE => CURLPROXY_SOCKS5_HOSTNAME,
-                    CURLOPT_PROXY     => '127.0.0.1',
-                    CURLOPT_PROXYPORT => 1080,
-                ],
-            ]);
-        }
     }
 
     public static function setUrlsToHttps(LengthAwarePaginator $paginator): LengthAwarePaginator

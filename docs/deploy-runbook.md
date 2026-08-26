@@ -249,6 +249,34 @@ cd /var/www/html/laravel && php artisan tinker --execute="echo \App\Models\Order
 
 ---
 
+## Смена домена — что обязательно сделать
+
+Домен нигде не зашит в код: канонический адрес берётся из `APP_URL`/`FRONTEND_URL`
+(`App\Support\PublicUrl`), прежние хосты — из `LEGACY_HOSTS`. При переезде:
+
+1. В laravel `.env`: `APP_URL` и `FRONTEND_URL` = новый домен, а прежний хост
+   добавить в `LEGACY_HOSTS` (через запятую). `php artisan optimize:clear`.
+2. `php artisan integrations:sync-webhooks` — переводит вебхуки Telegram, MAX,
+   VK и CDEK на новый адрес (VK попутно синхронизирует `confirmation_token`).
+   Сначала можно посмотреть состояние: `integrations:sync-webhooks --check`.
+3. `php artisan urls:canonicalize` — переписывает сохранённые в БД ссылки
+   (`utm_links.target_url`, `images.url`, `message_attachments.url`) с прежних
+   хостов на новый. Есть `--dry-run` и `-v`.
+4. В `.env` витрины и дашборда — новый домен, затем пересборка (`npm ci` +
+   build + `pm2 restart nuxt-shop`; `corepack yarn install --frozen-lockfile` +
+   build).
+5. nginx: `server_name`, сертификат, location'ы `/api`, `/go`, `/admin/`, `/`.
+
+> **Забытый вебхук = молча сломанный канал.** Telegram/MAX/VK не сообщают об
+> ошибке в интерфейсе: апдейты просто копятся на стороне мессенджера
+> (`last_error_message: Connection refused`). Поэтому шаг 2 обязателен.
+
+Бэкапы `.env.bak*` и `*.bak` конфигов nginx держать **вне** `sites-enabled/`:
+nginx подключает `sites-enabled/*` целиком и дублирующиеся `server_name` дают
+`conflicting server name ... ignored`.
+
+---
+
 ## История деплоев
 
 - **2026-08-18** — фича «Бесплатная доставка» (см.

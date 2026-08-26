@@ -3,6 +3,7 @@
 namespace App\Services\Notifications;
 
 use App\Models\CdekOrder;
+use App\Support\PublicUrl;
 
 class CdekDeliveryMessageBuilder
 {
@@ -37,7 +38,7 @@ class CdekDeliveryMessageBuilder
             $lines[] = 'Если потребуется помощь, ответьте на это сообщение.';
         }
         if ($statusCode === 'delivered') {
-            $lines[] = 'Спасибо за покупку в again8.ru.';
+            $lines[] = 'Спасибо за покупку в '.PublicUrl::shopHost().'.';
         }
 
         $message = implode("\n\n", $lines);

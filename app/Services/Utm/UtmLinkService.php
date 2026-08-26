@@ -5,6 +5,7 @@ namespace App\Services\Utm;
 use App\Models\MarketingChannel;
 use App\Models\Product;
 use App\Models\UtmLink;
+use App\Support\PublicUrl;
 use Illuminate\Support\Str;
 
 class UtmLinkService
@@ -67,11 +68,11 @@ class UtmLinkService
 
     private function canonicalizeTargetUrl(string $url): string
     {
+        // Прежние домены проекта задаются в LEGACY_HOSTS, а не в коде:
+        // см. App\Support\PublicUrl и config('app.legacy_hosts').
+        $url = PublicUrl::canonicalize($url);
+
         $parts = parse_url($url);
-        if (in_array($parts['host'] ?? null, ['sub.againdev.ru', 'sub.againdev2.ru'], true)) {
-            $parts['host'] = parse_url((string) config('utm.tracking_base_url', config('app.url')), PHP_URL_HOST)
-                ?: 'againdev3.ru';
-        }
 
         $path = $parts['path'] ?? '';
 
@@ -95,33 +96,7 @@ class UtmLinkService
 
     private function buildUrl(array $parts): string
     {
-        $url = ($parts['scheme'] ?? 'https').'://';
-
-        if (isset($parts['user'])) {
-            $url .= $parts['user'];
-            if (isset($parts['pass'])) {
-                $url .= ':'.$parts['pass'];
-            }
-            $url .= '@';
-        }
-
-        $url .= $parts['host'] ?? '';
-
-        if (isset($parts['port'])) {
-            $url .= ':'.$parts['port'];
-        }
-
-        $url .= $parts['path'] ?? '';
-
-        if (isset($parts['query'])) {
-            $url .= '?'.$parts['query'];
-        }
-
-        if (isset($parts['fragment'])) {
-            $url .= '#'.$parts['fragment'];
-        }
-
-        return $url;
+        return PublicUrl::buildUrl($parts);
     }
 
     /**

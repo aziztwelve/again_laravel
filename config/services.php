@@ -38,6 +38,10 @@ return [
     'whatsapp' => [
         'phone_number_id' => env('WHATSAPP_PHONE_NUMBER_ID'),
         'token' => env('WHATSAPP_TOKEN'),
+        // whatsapp-service (pm2) живёт на том же хосте, поэтому по умолчанию
+        // обращаемся к нему напрямую по localhost: публичный домен для этого
+        // не нужен и не должен участвовать (иначе переезд домена ломает отправку).
+        'service_url' => rtrim((string) env('WHATSAPP_SERVICE_URL', 'http://127.0.0.1:3002'), '/'),
     ],
 
     'telegram-bot-api' => [
@@ -91,7 +95,10 @@ return [
             'phone' => env('CDEK_DELIVERY_SENDER_PHONE'),
             'shipment_point' => env('CDEK_DELIVERY_SHIPMENT_POINT'),
         ],
-        'webhook_url' => env('CDEK_DELIVERY_WEBHOOK_URL'),
+        // По умолчанию вычисляется от APP_URL — отдельная env нужна только для
+        // нестандартных схем (например приём колбэка на другом хосте).
+        'webhook_url' => env('CDEK_DELIVERY_WEBHOOK_URL')
+            ?: rtrim((string) env('APP_URL'), '/').'/api/public/webhooks/cdek',
         'base_url' => [
             'sandbox' => 'https://api.edu.cdek.ru',
             'production' => 'https://api.cdek.ru',
