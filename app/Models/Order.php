@@ -16,6 +16,15 @@ class Order extends Model
 {
     use HasFactory, SoftDeletes;
 
+    /**
+     * Значения по умолчанию для новых заказов.
+     *
+     * Чек не пробиваем, пока менеджер явно не снимет этот флаг в заказе.
+     */
+    protected $attributes = [
+        'no_receipt' => true,
+    ];
+
     protected $fillable = [
         'order_number',
         'view_token',

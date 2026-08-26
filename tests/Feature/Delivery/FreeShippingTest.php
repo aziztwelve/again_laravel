@@ -468,6 +468,23 @@ class FreeShippingTest extends TestCase
         $this->getJson('/api/free-shipping-rules')->assertUnauthorized();
     }
 
+    public function test_product_selector_lists_only_online_catalog_products(): void
+    {
+        Sanctum::actingAs(User::factory()->create());
+
+        $online = $this->product(1000);
+        $outOfStock = $this->product(2000);
+        $outOfStock->update(['stock_quantity' => 0]);
+        $inactive = $this->product(3000);
+        $inactive->update(['is_active' => false]);
+
+        $this->getJson('/api/free-shipping-rules/products')
+            ->assertOk()
+            ->assertJsonFragment(['id' => $online->id])
+            ->assertJsonMissing(['id' => $outOfStock->id])
+            ->assertJsonMissing(['id' => $inactive->id]);
+    }
+
     // === Хелперы ===
 
     private function service(): FreeShippingService

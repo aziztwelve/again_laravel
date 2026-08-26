@@ -54,17 +54,24 @@ class FreeShippingRuleController extends Controller
      */
     public function options(): JsonResponse
     {
+        $countryCodes = config('free_shipping.country_codes', []);
+
         return response()->json([
             'success' => true,
             'services' => $this->dictionary(config('free_shipping.services', [])),
             'delivery_types' => $this->dictionary(config('free_shipping.delivery_types', [])),
             'payment_methods' => $this->dictionary(config('free_shipping.payment_methods', [])),
             'countries' => Country::query()
+                ->whereIn('code', $countryCodes)
+                ->orderByRaw("CASE WHEN code = 'RU' THEN 0 ELSE 1 END")
                 ->orderBy('name')
                 ->get(['id', 'name', 'code'])
                 ->map(fn ($c) => ['id' => (int) $c->id, 'name' => $c->name, 'code' => $c->code])
                 ->all(),
             'regions' => Region::query()
+                ->whereIn('country_id', Country::query()
+                    ->select('id')
+                    ->whereIn('code', $countryCodes))
                 ->orderBy('name')
                 ->get(['id', 'name', 'country_id'])
                 ->map(fn ($r) => [
@@ -80,7 +87,8 @@ class FreeShippingRuleController extends Controller
      * Лёгкий поиск товаров для мультивыбора в форме правила.
      *
      * Отдельно от общего /api/products: тот тянет остатки МоегоСклада и
-     * скидки — для селекта это лишний вес.
+     * скидки — для селекта это лишний вес. В основной список попадают только
+     * товары, доступные в онлайн-каталоге: активные и с остатком.
      */
     public function products(Request $request): JsonResponse
     {
@@ -88,14 +96,17 @@ class FreeShippingRuleController extends Controller
 
         $query = \App\Models\Product::query()
             ->select(['id', 'name', 'price'])
+            ->where('is_active', true)
+            ->where('stock_quantity', '>', 0)
             ->orderBy('name');
 
         if ($search !== '') {
             $query->where('name', 'like', "%{$search}%");
         }
 
-        // Явно выбранные товары должны приходить даже если не попали в поиск,
-        // иначе форма не сможет показать их названия.
+        // Явно выбранные ранее товары должны приходить даже если больше не
+        // доступны онлайн, иначе при редактировании нельзя будет увидеть и
+        // убрать сохранённое условие.
         $selected = array_filter(array_map('intval', (array) $request->get('ids', [])));
 
         $products = $query->limit(30)->get();

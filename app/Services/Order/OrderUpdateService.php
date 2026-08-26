@@ -172,6 +172,19 @@ class OrderUpdateService
 
             $order->update($filteredData);
 
+            // Карточка заказа меняет статус через общий inline-update endpoint,
+            // минуя OrderController::updateStatus(). При ручном переходе в
+            // cancelled всё равно нужно вернуть уже списанный demand.
+            $statusBeforeUpdate = $originalSnapshot['status'];
+            $statusAfterUpdate = $order->status;
+            if (
+                $statusAfterUpdate === OrderStatus::CANCELLED
+                && $statusBeforeUpdate !== OrderStatus::CANCELLED
+                && $order->moysklad_demand_uuid
+            ) {
+                \App\Jobs\ReturnOrderStockToMoySkladJob::dispatch($order->id);
+            }
+
             // Пересчёт бесплатной доставки: состав заказа, промокод, способ
             // доставки/оплаты или сама цена доставки могли измениться, а порог
             // сравнивается с актуальной суммой выкупа. Убрали половину товаров —

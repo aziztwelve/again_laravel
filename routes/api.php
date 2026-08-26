@@ -31,6 +31,7 @@ use App\Http\Controllers\Api\Admin\NotificationController;
 use App\Http\Controllers\Api\Admin\OrderController;
 use App\Http\Controllers\Api\Public\Order\PublicCheckoutController;
 use App\Http\Controllers\Api\Public\Order\CloudPaymentsController;
+use App\Http\Controllers\Api\Public\Order\YandexPayController;
 use App\Http\Controllers\Api\Public\Order\PublicOrderController;
 use App\Http\Controllers\Api\Admin\OrderStatsController;
 use App\Http\Controllers\Api\Admin\OrderViewController;
@@ -297,6 +298,10 @@ Route::prefix('/public')->group(function () {
         ->post('/orders/{viewToken}/cloudpayments/intent', [CloudPaymentsController::class, 'intent'])
         ->where('viewToken', '[a-f0-9]{32}')
         ->name('public.orders.cloudpayments.intent');
+    Route::middleware('throttle:10,1')
+        ->post('/orders/{viewToken}/yandex-pay/intent', [YandexPayController::class, 'intent'])
+        ->where('viewToken', '[a-f0-9]{32}')
+        ->name('public.orders.yandex-pay.intent');
 
 });
 
@@ -1094,6 +1099,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
         });
 
         Route::prefix('/cdek')->group(function () {
+            Route::get('/settings', [CDEKController::class, 'settings']);
+            Route::get('/tariffs', [CDEKController::class, 'tariffs']);
+            Route::put('/settings', [CDEKController::class, 'saveSettings']);
             Route::post('/settings', [CDEKController::class, 'update_cdek_settings']);
         });
         Route::prefix('/moysklad')->group(function () {

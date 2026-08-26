@@ -40,6 +40,7 @@ class AppServiceProvider extends ServiceProvider
         // (см. docs/tasks/order-status-actualization.md, пункт 2).
         \App\Models\YandexOrder::observe(\App\Observers\YandexOrderObserver::class);
         \App\Models\CdekOrder::observe(\App\Observers\CdekOrderObserver::class);
+        \App\Models\Order::observe(\App\Observers\OrderObserver::class);
     }
 
     public static function setUrlsToHttps(LengthAwarePaginator $paginator): LengthAwarePaginator

@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Api\Public\Order;
 
 use App\Enums\PaymentStatus;
-use App\Events\OrderPaid;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\Payment;
@@ -106,10 +105,6 @@ class CloudPaymentsController extends Controller
             $orderWasUnpaid = ! $payment->order->isPaid();
             if ($orderWasUnpaid) {
                 $payment->order->updatePaymentStatus(PaymentStatus::PAID, (string) $request->input('TransactionId'));
-                // Только Pay webhook (а не callback браузера) запускает
-                // создание доставки. EventServiceProvider поставит задачу
-                // Яндекс.Доставки в очередь, а повторный Pay её не продублирует.
-                OrderPaid::dispatch($payment->order->fresh(['deliveryMethod']));
             }
         }
 

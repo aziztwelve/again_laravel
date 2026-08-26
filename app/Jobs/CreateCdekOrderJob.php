@@ -7,19 +7,22 @@ use App\Models\Order;
 use App\Services\Delivery\CdekDeliveryService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
 use RuntimeException;
 
-class CreateCdekOrderJob implements ShouldQueue
+class CreateCdekOrderJob implements ShouldQueue, ShouldBeUnique
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 3;
     public array $backoff = [60, 300, 900];
+    public int $uniqueFor = 900;
     public function __construct(public int $orderId) {}
+    public function uniqueId(): string { return (string) $this->orderId; }
     public function middleware(): array { return [(new WithoutOverlapping('cdek-order:'.$this->orderId))->expireAfter(900)]; }
 
     public function handle(CdekDeliveryService $service): void
