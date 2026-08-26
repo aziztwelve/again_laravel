@@ -59,14 +59,22 @@ class CanonicalizeStoredUrls extends Command
             }
 
             $changed = 0;
+            $seen = [];
 
             foreach ($legacyHosts as $host) {
                 DB::table($table)
                     ->where($column, 'like', '%'.$host.'%')
                     ->orderBy('id')
                     ->select(['id', $column])
-                    ->chunkById(500, function ($rows) use ($table, $column, $dryRun, &$changed) {
+                    ->chunkById(500, function ($rows) use ($table, $column, $dryRun, &$changed, &$seen) {
                         foreach ($rows as $row) {
+                            // Хосты из LEGACY_HOSTS пересекаются как подстроки
+                            // (`old.example.com` ⊂ `sub.old.example.com`), поэтому
+                            // считаем каждую строку один раз.
+                            if (isset($seen[$row->id])) {
+                                continue;
+                            }
+
                             $current = (string) $row->{$column};
                             $canonical = (string) PublicUrl::canonicalize($current);
 
@@ -74,6 +82,7 @@ class CanonicalizeStoredUrls extends Command
                                 continue;
                             }
 
+                            $seen[$row->id] = true;
                             $changed++;
 
                             if ($this->output->isVerbose()) {
