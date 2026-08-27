@@ -14,13 +14,26 @@ return [
             'vat_code' => env('YOOKASSA_VAT_CODE', '1'),
         ],
 
+        // Яндекс Пэй / Сплит — базовая механика полной оплаты.
+        // См. docs/tasks/yandex-pay-integration.md. Merchant API key живёт
+        // только на сервере; во фронт уходит лишь merchant_id и env.
         'yandexpay' => [
             'enabled' => env('YANDEX_PAY_ENABLED', false),
             'env' => env('YANDEX_PAY_ENV', 'sandbox'),
             'merchant_id' => env('YANDEX_PAY_MERCHANT_ID'),
+            // В sandbox ключ API равен Merchant ID (требование Яндекс Пэй).
             'api_key' => env('YANDEX_PAY_API_KEY'),
             'api_url' => env('YANDEX_PAY_API_URL', 'https://sandbox.pay.yandex.ru'),
+            // В кабинете Callback URL задаётся без суффикса /v1/webhook —
+            // Яндекс Пэй добавляет его сам. Здесь значение только для справки.
             'callback_url' => env('YANDEX_PAY_CALLBACK_URL'),
+            // Время жизни ссылки на оплату (сек), 120..604800. По истечении
+            // Яндекс Пэй переводит заказ в FAILED, локальная попытка ротируется.
+            'order_ttl' => (int) env('YANDEX_PAY_ORDER_TTL', 1800),
+            // Ставка НДС для cart.items[].receipt.tax. Заполнять только когда
+            // в кабинете включена онлайн-касса и ставка согласована с
+            // бухгалтерией: https://pay.yandex.ru/docs/ru/custom/backend/fns#tax
+            'receipt_tax' => env('YANDEX_PAY_RECEIPT_TAX'),
         ],
 
         'cloudpayment' => [

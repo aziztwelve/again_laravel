@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Public\Order;
 
 use App\Http\Controllers\Controller;
 use App\Models\Order;
+use App\Services\Payment\YandexPayService;
 use Illuminate\Http\JsonResponse;
 
 class PublicOrderController extends Controller
@@ -153,8 +154,9 @@ class PublicOrderController extends Controller
             )
                 && (bool) config('payment.providers.cloudpayment.enabled')
                 && filled(config('payment.providers.cloudpayment.public_id')),
-            'yandex_pay_available' => in_array($order->payment_method, ['yandex_pay', 'yandex_pay_split'], true)
-                && app(\App\Services\Payment\YandexPayService::class)->isAvailable(),
+            // Публичные параметры Web SDK: merchant_id, env, сумма и методы.
+            // Merchant API key остаётся на сервере и во фронт не уходит.
+            'yandex_pay' => app(YandexPayService::class)->publicConfig($order),
             'total_amount' => (float) $order->total_amount,
             // discount_amount уже = total_items_discount + total_promo_discount
             // (см. OrderDiscountService::recalculate), складывать компоненты

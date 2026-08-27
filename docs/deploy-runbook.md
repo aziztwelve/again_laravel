@@ -207,6 +207,11 @@ location /api {
     root /var/www/html/laravel/public;
     try_files $uri /index.php?$query_string;
 }
+# Yandex Pay webhook. Кабинет вызывает именно /v1/webhook, а не /api.
+location = /v1/webhook {
+    root /var/www/html/laravel/public;
+    try_files $uri /index.php?$query_string;
+}
 # UTM редирект-трекер (ставит host-only cookie utm_link_id)
 location /go {
     root /var/www/html/laravel/public;
