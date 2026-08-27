@@ -90,7 +90,7 @@ class TelegramAttachmentsQueueTest extends TestCase
         $conversation = Conversation::create([
             'source' => 'telegram',
             'external_id' => 555003,
-            'status' => 'open',
+            'status' => 'new',
         ]);
         $message = Message::create([
             'conversation_id' => $conversation->id,

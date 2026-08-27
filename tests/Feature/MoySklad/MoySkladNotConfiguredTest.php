@@ -71,6 +71,7 @@ class MoySkladNotConfiguredTest extends TestCase
     private function order(): Order
     {
         return Order::create([
+            'order_number' => 'TEST-'.uniqid(),
             'status' => 'new',
             'payment_status' => 'pending',
             'total_amount' => 1000,
