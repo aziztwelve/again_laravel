@@ -305,6 +305,42 @@ nginx подключает `sites-enabled/*` целиком и дублирую�
 
 ## История деплоев
 
+- **2026-08-27** — восстановление мессенджеров после переезда на `againdev3.ru`
+  и снятие привязки к домену в коде. Вебхуки Telegram, MAX и VK всё ещё
+  указывали на выведенный из эксплуатации `sub.againdev.ru`, поэтому входящие
+  сообщения молча терялись (`last_error_message: Connection refused`,
+  `pending_update_count` рос). Сделано:
+  - Telegram: старые боты (`againChilla_bot`, `againdev_test_bot`) отвязаны
+    (`deleteWebhook`) и удалены из `telegraph_bots`/`telegraph_chats` (бэкап
+    `/root/backups/telegraph-backup-*.json`), подключён новый
+    `@again8help_bot` + `TELEGRAM_BOT_USERNAME` в `.env`;
+  - MAX: `MAX_WEBHOOK_URL` убран из `.env` (теперь = `APP_URL`), подписка
+    перерегистрирована;
+  - VK: callback-сервер переведён на новый домен; попутно оказался устаревшим
+    `vk_settings.confirmation_token` (VK ждал другую строку → `status=failed`),
+    синхронизирован через `groups.getCallbackConfirmationCode`;
+  - `WHATSAPP_SERVICE_URL` переведён на `http://127.0.0.1:3002` (сервис живёт
+    на том же хосте, публичный домен в цепочке не нужен);
+  - `urls:canonicalize` вылечил 138 строк (`utm_links` 11, `images` 4,
+    `message_attachments` 123) — до этого `/go/{slug}` редиректил на мёртвый
+    домен;
+  - код: `App\Support\PublicUrl`, `config/cors.php` из env, письма и билдеры
+    сообщений без зашитого `again8.ru`, исправлена опечатка `env('FRONDEND_URL')`
+    в сбросе пароля, удалён мёртвый блок `TELEGRAM_PROXY`;
+  - новые команды `integrations:sync-webhooks` и `urls:canonicalize`;
+  - из `sites-enabled/` вынесены два `*.bak` конфига nginx (давали
+    `conflicting server name`).
+  Тесты: `PublicUrlTest` 7/7, `UtmTrackingTest` 15/15, `OtoBannerResourceTest`
+  1/1. Heads: laravel `c805197`, vue-admin `4427d08`, nuxt-shop `3f2a60e`.
+
+  > Известный красный тест **не от этой выкатки**: `FreeShippingTest` —
+  > 2 падения (`Expected 201, received 500`). Причина: публичное создание
+  > заказа теперь жёстко требует настройки МойСклад
+  > (`MoySklad\OrderService::__construct` бросает исключение), а в тестовой БД
+  > строки `delivery_services_settings` нет. На проде настройки есть
+  > (`moysklad`, `yandex`), чекаут работает. Воспроизводится и на коммите
+  > `ccc63ac` — до правок этой выкатки.
+
 - **2026-08-18** — фича «Бесплатная доставка» (см.
   `docs/tasks/free-shipping.md`): гибкие правила в админке (Настройки →
   Бесплатная доставка), применение в чекауте и показ на витрине. Применено
