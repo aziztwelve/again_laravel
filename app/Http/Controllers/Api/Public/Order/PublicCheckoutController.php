@@ -282,7 +282,18 @@ class PublicCheckoutController extends Controller
             // оплаты. Асинхронно — ошибка МойСклад не должна блокировать
             // клиента. Повторно выгружается (обновляется) после оплаты через
             // SyncOrderToMoySkladAfterPayment listener на OrderPaid.
-            \App\Jobs\SyncOrderToMoySkladJob::dispatch($order->id);
+            //
+            // Постановка в очередь идёт уже после DB::commit(), поэтому любое
+            // исключение здесь означало бы 500 по созданному заказу: клиент
+            // увидел бы ошибку и оформил заказ повторно. Гасим на месте.
+            try {
+                \App\Jobs\SyncOrderToMoySkladJob::dispatch($order->id);
+            } catch (\Throwable $e) {
+                Log::error('Не удалось поставить заказ в очередь синхронизации с МойСклад', [
+                    'order_id' => $order->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
 
             return $this->createdOrderResponse($order, $containsGiftCard, 201);
         } catch (QueryException $e) {

@@ -10,6 +10,9 @@ class MessageAttachment extends Model
 {
     protected $fillable = [
         'message_id',
+        // Идентификатор файла в источнике (Telegram file_id) — защита от
+        // дублей при повторном прогоне DownloadTelegramAttachmentsJob.
+        'source_file_id',
         'type',
         'url',
         'file_path',

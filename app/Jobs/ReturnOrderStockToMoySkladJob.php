@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\Order;
 use App\Services\MoySklad\DemandService;
+use App\Services\MoySklad\MoySkladSettings;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -32,12 +33,25 @@ class ReturnOrderStockToMoySkladJob implements ShouldQueue
         return [(new WithoutOverlapping('moysklad-return-stock:'.$this->orderId))->expireAfter(900)];
     }
 
-    public function handle(DemandService $service): void
+    /**
+     * DemandService резолвится внутри метода: его конструктор бросает
+     * исключение при отсутствии настроек МойСклад, и контейнер сделал бы это
+     * ещё до проверки isConfigured() ниже.
+     */
+    public function handle(): void
     {
         $order = Order::query()->findOrFail($this->orderId);
 
+        if (! MoySkladSettings::isConfigured()) {
+            Log::warning('ReturnOrderStockToMoySkladJob: МойСклад не настроен, возврат пропущен', [
+                'order_id' => $order->id,
+            ]);
+
+            return;
+        }
+
         try {
-            $service->returnOrderStock($order);
+            app(DemandService::class)->returnOrderStock($order);
         } catch (\Throwable $e) {
             Log::error('ReturnOrderStockToMoySkladJob: не удалось вернуть товар на склад', [
                 'order_id' => $order->id,

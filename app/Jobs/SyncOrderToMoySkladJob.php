@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\Order;
 use App\Services\MoySklad\DemandService;
+use App\Services\MoySklad\MoySkladSettings;
 use App\Services\MoySklad\OrderService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -41,19 +42,35 @@ class SyncOrderToMoySkladJob implements ShouldQueue
         return [(new WithoutOverlapping('moysklad-order:'.$this->orderId))->expireAfter(900)];
     }
 
-    public function handle(OrderService $service, DemandService $demandService): void
+    /**
+     * Сервисы МойСклад резолвятся внутри метода, а не через параметры handle():
+     * их конструкторы бросают исключение при отсутствии настроек, и контейнер
+     * сделал бы это ещё до проверки isConfigured() ниже.
+     */
+    public function handle(): void
     {
         $order = Order::query()->findOrFail($this->orderId);
 
+        if (! MoySkladSettings::isConfigured()) {
+            // Интеграция не настроена — это не сбой синхронизации, повторять
+            // нечего. Иначе заказ трижды уходил бы в retry и попадал в
+            // failed_jobs, а при sync-очереди ломал бы ответ чекаута.
+            Log::warning('SyncOrderToMoySkladJob: МойСклад не настроен, синхронизация пропущена', [
+                'order_id' => $order->id,
+            ]);
+
+            return;
+        }
+
         try {
-            $service->pushOrder($order);
+            app(OrderService::class)->pushOrder($order);
 
             // Списываем товар сразу при первой синхронизации (idempotent —
             // shipOrder() не создаст повторную отгрузку, если она уже есть).
             // Отменённые заказы не списываем — для них возврат/отмена
             // обрабатывается отдельно (см. cancelOrder()).
             if ($order->status !== \App\Enums\OrderStatus::CANCELLED) {
-                $demandService->shipOrder($order->fresh());
+                app(DemandService::class)->shipOrder($order->fresh());
             }
         } catch (\Throwable $e) {
             Log::error('SyncOrderToMoySkladJob: не удалось синхронизировать заказ', [

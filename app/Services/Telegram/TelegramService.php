@@ -8,7 +8,9 @@ use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\File\FileStorageService;
 use App\Services\Integrations\AmneziaVpnService;
+use App\Jobs\Telegram\DownloadTelegramAttachmentsJob;
 use App\Services\Messaging\ConversationService;
+use DefStudio\Telegraph\Models\TelegraphBot;
 use DefStudio\Telegraph\Models\TelegraphChat;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -70,86 +72,73 @@ class TelegramService
             );
         }
 
-        // Извлекаем и обрабатываем файлы из request data
-        $attachmentsData = [];
-        if (!empty($requestData)) {
-            $attachmentsData = $this->processMessageAttachments($requestData, $botToken);
-        }
+        // Вложения не качаем внутри webhook-запроса: getFile + сам файл идут
+        // через SOCKS5-прокси и легко выходят за таймаут Telegram, после чего
+        // Telegram считает доставку неуспешной и повторяет апдейт. Из request
+        // достаём только дескрипторы (это без сети), файлы забирает очередь.
+        $descriptors = $requestData ? $this->extractAttachmentDescriptors($requestData) : [];
 
         $messageData = [
             'conversation_id' => $conversation->id,
-            'content' => $content ?: ($attachmentsData ? '' : '') ,
+            'content' => $content,
             'direction' => 'incoming',
             'status' => 'sent',
             'content_type' => 'text',
             'source_data' => $orderId ? ['order_id' => $orderId] : null,
-            'attachments' => $attachmentsData
+            'attachments' => [],
         ];
 
-        $this->conversationService->addMessage($conversation, $messageData);
+        $message = $this->conversationService->addMessage($conversation, $messageData);
+
+        if ($descriptors) {
+            DownloadTelegramAttachmentsJob::dispatch($message->id, $descriptors, $botToken ? $this->resolveBotId($botToken) : null);
+        }
     }
 
     /**
-     * Обработка вложений из Telegram webhook data
+     * Дескрипторы вложений из webhook-апдейта: file_id, имя и тип, без
+     * обращений к Telegram API. Скачиванием занимается
+     * DownloadTelegramAttachmentsJob.
+     *
+     * @return array<int, array{file_id: string, file_name: string|null}>
      */
-    private function processMessageAttachments(array $messageData, ?string $botToken = null): array
+    public function extractAttachmentDescriptors(array $messageData): array
     {
-        $attachmentsData = [];
+        $descriptors = [];
 
-        try {
-
-            // Обработка фото
-            if (isset($messageData['photo']) && is_array($messageData['photo'])) {
-                $photos = $this->extractPhotos($messageData['photo']);
-                foreach ($photos as $photoData) {
-                    $downloadedFile = $this->downloadTelegramFile($photoData['file_id'], null, $botToken);
-                    if ($downloadedFile) {
-                        $attachmentsData[] = $downloadedFile;
-                    }
-                }
+        // Фото
+        if (isset($messageData['photo']) && is_array($messageData['photo'])) {
+            foreach ($this->extractPhotos($messageData['photo']) as $photo) {
+                $descriptors[] = ['file_id' => $photo['file_id'], 'file_name' => null];
             }
-
-            // Обработка аудио
-            if (isset($messageData['audio'])) {
-                $audio = $this->extractAudio($messageData['audio']);
-                if ($audio) {
-                    $downloadedFile = $this->downloadTelegramFile($audio['file_id'], $audio['file_name'], $botToken);
-                    if ($downloadedFile) {
-                        $attachmentsData[] = $downloadedFile;
-                    }
-                }
-            }
-
-            // Обработка голосовых сообщений
-            if (isset($messageData['voice'])) {
-                $voice = $this->extractVoice($messageData['voice']);
-                if ($voice) {
-                    $downloadedFile = $this->downloadTelegramFile($voice['file_id'], $voice['file_name'], $botToken);
-                    if ($downloadedFile) {
-                        $attachmentsData[] = $downloadedFile;
-                    }
-                }
-            }
-
-            // Обработка документов (файлы)
-            if (isset($messageData['document'])) {
-                $document = $this->extractDocument($messageData['document']);
-                if ($document) {
-                    $downloadedFile = $this->downloadTelegramFile($document['file_id'], $document['file_name'], $botToken);
-                    if ($downloadedFile) {
-                        $attachmentsData[] = $downloadedFile;
-                    }
-                }
-            }
-
-        } catch (\Exception $e) {
-            Log::error('Error processing Telegram attachments', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
         }
 
-        return $attachmentsData;
+        // Аудио, голосовые, документы
+        foreach ([
+            ['audio', fn (array $data) => $this->extractAudio($data)],
+            ['voice', fn (array $data) => $this->extractVoice($data)],
+            ['document', fn (array $data) => $this->extractDocument($data)],
+        ] as [$key, $extractor]) {
+            if (! isset($messageData[$key]) || ! is_array($messageData[$key])) {
+                continue;
+            }
+
+            $extracted = $extractor($messageData[$key]);
+
+            if ($extracted) {
+                $descriptors[] = [
+                    'file_id' => $extracted['file_id'],
+                    'file_name' => $extracted['file_name'] ?? null,
+                ];
+            }
+        }
+
+        return $descriptors;
+    }
+
+    private function resolveBotId(string $botToken): ?int
+    {
+        return TelegraphBot::query()->where('token', $botToken)->value('id');
     }
 
     private function extractPhotos(array $photoArray): array
@@ -215,7 +204,12 @@ class TelegramService
         return null;
     }
 
-    private function downloadTelegramFile(string $fileId, ?string $fileName = null, ?string $botToken = null): ?array
+    /**
+     * Скачивает файл из Telegram и складывает в public-диск.
+     * Публичный, потому что вызывается из DownloadTelegramAttachmentsJob:
+     * внутри webhook-запроса это делать нельзя (таймаут Telegram).
+     */
+    public function downloadTelegramFile(string $fileId, ?string $fileName = null, ?string $botToken = null): ?array
     {
         try {
             if (!$botToken) {
