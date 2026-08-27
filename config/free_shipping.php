@@ -28,6 +28,8 @@ return [
         'cloudpayments_sbp' => 'СБП',
         'cloudpayments_sberpay' => 'SberPay',
         'cloudpayments_mirpay' => 'Mir Pay',
+        'yandex_pay' => 'Яндекс Пэй',
+        'yandex_pay_split' => 'Яндекс Сплит',
     ],
 
     // География, в которой оформляется чек. Только эти страны доступны для

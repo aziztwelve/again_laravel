@@ -302,6 +302,12 @@ Route::prefix('/public')->group(function () {
         ->post('/orders/{viewToken}/yandex-pay/intent', [YandexPayController::class, 'intent'])
         ->where('viewToken', '[a-f0-9]{32}')
         ->name('public.orders.yandex-pay.intent');
+    // Сверка статуса после возврата с формы Яндекс Пэй: redirect браузера
+    // оплату не подтверждает, а уведомление может задержаться.
+    Route::middleware('throttle:30,1')
+        ->post('/orders/{viewToken}/yandex-pay/status', [YandexPayController::class, 'status'])
+        ->where('viewToken', '[a-f0-9]{32}')
+        ->name('public.orders.yandex-pay.status');
 
 });
 
