@@ -111,7 +111,7 @@ class ImportInsalesPromoCodes extends Command
         $parsed = [];
         $headers = [];
 
-        foreach ($rows as $rowIndex => $row) {
+        foreach ($rows as $row) {
             $values = [];
             foreach ($row->children($namespace)->c as $cell) {
                 $reference = (string) $cell['r'];
@@ -123,7 +123,10 @@ class ImportInsalesPromoCodes extends Command
                     : $raw;
             }
 
-            if ($rowIndex === 0) {
+            // В XLSX ключ строки — её номер из Excel (первая строка имеет ключ
+            // 1), поэтому определяем заголовок по его фактическому отсутствию,
+            // а не по индексу итератора.
+            if ($headers === []) {
                 $headers = array_flip($values);
                 $missing = array_diff(self::REQUIRED_HEADERS, array_keys($headers));
                 if ($missing !== []) {
