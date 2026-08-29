@@ -159,7 +159,9 @@ class ImportInsalesPromoCodes extends Command
         $namespace = $strings->getNamespaces(true)[''] ?? '';
 
         return collect($strings->children($namespace)->si)
-            ->map(fn (SimpleXMLElement $item) => (string) $item)
+            ->map(fn (SimpleXMLElement $item) => collect($item->xpath('.//*[local-name()="t"]') ?: [])
+                ->map(fn (SimpleXMLElement $text) => (string) $text)
+                ->implode(''))
             ->all();
     }
 
