@@ -114,11 +114,12 @@ class ImportInsalesPromoCodes extends Command
         foreach ($rows as $row) {
             $values = [];
             foreach ($row->children($namespace)->c as $cell) {
-                $reference = (string) $cell['r'];
+                $attributes = $cell->attributes();
+                $reference = (string) $attributes->r;
                 preg_match('/^[A-Z]+/', $reference, $matches);
                 $column = $matches[0] ?? '';
                 $raw = (string) $cell->children($namespace)->v;
-                $values[$column] = (string) $cell['t'] === 's'
+                $values[$column] = (string) $attributes->t === 's'
                     ? ($sharedStrings[(int) $raw] ?? '')
                     : $raw;
             }
