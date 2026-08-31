@@ -108,7 +108,7 @@ class CdekClientTest extends TestCase
             && $request['delivery_point'] === 'MSKPOST1');
     }
 
-    public function test_it_makes_selected_warehouse_tariffs_free_in_checkout(): void
+    public function test_it_makes_selected_warehouse_tariffs_free_only_after_the_configured_threshold(): void
     {
         Http::fake([
             'https://api.edu.cdek.ru/v2/oauth/token' => Http::response(['access_token' => 'test-token', 'expires_in' => 3600]),
@@ -120,12 +120,15 @@ class CdekClientTest extends TestCase
         $service = new CdekDeliveryService([
             'enabled' => true, 'mode' => 'sandbox', 'account' => 'account', 'secure_password' => 'secret',
             'base_url' => ['sandbox' => 'https://api.edu.cdek.ru'], 'sender' => ['city_code' => 44, 'address' => 'Москва'],
-            'tariff_mode' => 'sklad', 'tariff_codes' => [137], 'price_rules' => ['add_cost' => 19.1, 'rounded' => '1'],
+            'tariff_mode' => 'sklad', 'tariff_codes' => [137], 'price_rules' => ['threshold' => 7000, 'add_cost' => 19.1, 'rounded' => '1'],
         ]);
 
-        $tariff = $service->calculateTariffs('courier', ['city_code' => 44, 'address' => 'Тест'], [['name' => 'Товар', 'weight' => 100]])[0];
+        $tariff = $service->calculateTariffs('courier', ['city_code' => 44, 'address' => 'Тест'], [['name' => 'Товар', 'weight' => 100, 'price' => 7000]])[0];
 
         $this->assertSame(0.0, $tariff['price']);
         $this->assertSame(3, $tariff['delivery_mode']);
+
+        $belowThreshold = $service->calculateTariffs('courier', ['city_code' => 44, 'address' => 'Тест'], [['name' => 'Товар', 'weight' => 100, 'price' => 6999]])[0];
+        $this->assertSame(440.0, $belowThreshold['price']);
     }
 }

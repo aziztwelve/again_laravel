@@ -118,10 +118,12 @@ class CdekDeliveryService extends DeliveryService
         $deliveryModes = $this->deliveryModes($deliveryType);
         $allowedCodes = array_map('intval', $this->settings['tariff_codes'] ?? []);
         $daysOffset = max(0, (int) ($this->settings['delivery_days_offset'] ?? 0));
+        $freeFrom = max(0, (float) data_get($this->settings, 'price_rules.threshold', 0));
+        $orderTotal = collect($items)->sum(fn (array $item) => (float) ($item['price'] ?? 0) * max(1, (int) ($item['quantity'] ?? 1)));
         return collect($result['data']['tariff_codes'] ?? [])
             ->filter(fn (array $tariff) => in_array((int) ($tariff['delivery_mode'] ?? 0), $deliveryModes, true))
             ->filter(fn (array $tariff) => $allowedCodes === [] || in_array((int) ($tariff['tariff_code'] ?? 0), $allowedCodes, true))
-            ->map(fn (array $tariff) => $this->presentTariff($tariff, $deliveryType, $daysOffset))
+            ->map(fn (array $tariff) => $this->presentTariff($tariff, $deliveryType, $daysOffset, $freeFrom > 0 && $orderTotal >= $freeFrom))
             ->values()->all();
     }
 
@@ -295,7 +297,7 @@ class CdekDeliveryService extends DeliveryService
     public function location_regions(Request $request): array { return []; }
 
     /** Add the admin-configured presentation without changing CDEK's source tariff name. */
-    private function presentTariff(array $tariff, string $deliveryType, int $daysOffset): array
+    private function presentTariff(array $tariff, string $deliveryType, int $daysOffset, bool $isFree): array
     {
         $sourceName = (string) ($tariff['tariff_name'] ?? 'Тариф СДЭК');
         $display = $this->settings['tariff_display'] ?? [];
@@ -323,7 +325,7 @@ class CdekDeliveryService extends DeliveryService
             'tariff_code' => $tariff['tariff_code'], 'tariff_name' => $sourceName,
             'display_name' => $title, 'display_description' => $description,
             'show_tariff_label' => (bool) ($display['show_label'] ?? true),
-            'delivery_mode' => $tariff['delivery_mode'], 'price' => $this->checkoutPrice((float) $tariff['delivery_sum'], (int) $tariff['tariff_code']), 'currency' => 'RUB',
+            'delivery_mode' => $tariff['delivery_mode'], 'price' => $this->checkoutPrice((float) $tariff['delivery_sum'], $isFree), 'currency' => 'RUB',
             'period' => ['min' => (int) $tariff['period_min'] + $daysOffset, 'max' => (int) $tariff['period_max'] + $daysOffset],
             'delivery_date_range' => $tariff['delivery_date_range'] ?? null,
         ];
@@ -369,11 +371,9 @@ class CdekDeliveryService extends DeliveryService
             default => $modes,
         };
     }
-    private function checkoutPrice(float $price, int $tariffCode): float
+    private function checkoutPrice(float $price, bool $isFree): float
     {
-        // The manager's selected tariff list is the free-delivery list:
-        // selected codes are displayed in checkout with a zero cost.
-        if (in_array($tariffCode, array_map('intval', $this->settings['tariff_codes'] ?? []), true)) return 0.0;
+        if ($isFree) return 0.0;
         $rules = $this->settings['price_rules'] ?? [];
         $price += max(0, (float) ($rules['add_cost'] ?? 0));
         return match ((string) ($rules['rounded'] ?? '0')) {
