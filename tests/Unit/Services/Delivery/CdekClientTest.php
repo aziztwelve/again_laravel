@@ -108,7 +108,7 @@ class CdekClientTest extends TestCase
             && $request['delivery_point'] === 'MSKPOST1');
     }
 
-    public function test_it_uses_warehouse_tariffs_and_applies_checkout_price_rules(): void
+    public function test_it_makes_selected_warehouse_tariffs_free_in_checkout(): void
     {
         Http::fake([
             'https://api.edu.cdek.ru/v2/oauth/token' => Http::response(['access_token' => 'test-token', 'expires_in' => 3600]),
@@ -125,7 +125,7 @@ class CdekClientTest extends TestCase
 
         $tariff = $service->calculateTariffs('courier', ['city_code' => 44, 'address' => 'Тест'], [['name' => 'Товар', 'weight' => 100]])[0];
 
-        $this->assertSame(440.0, $tariff['price']);
+        $this->assertSame(0.0, $tariff['price']);
         $this->assertSame(3, $tariff['delivery_mode']);
     }
 }
