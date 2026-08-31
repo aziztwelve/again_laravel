@@ -312,6 +312,36 @@ class ConversationController extends Controller
         return ConversationResource::make($conversation);
     }
 
+    /**
+     * Привязывает сохранённого клиента к анонимному диалогу.
+     */
+    public function attachClient(Request $request, Conversation $conversation)
+    {
+        if ($conversation->client_id !== null) {
+            return response()->json([
+                'message' => 'Клиент уже привязан к этому диалогу.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'client_id' => 'required|integer|exists:clients,id',
+        ]);
+
+        $conversation->update(['client_id' => $validated['client_id']]);
+
+        $conversation->load([
+            'client.profile',
+            'client.lastOrder',
+            'client.segments',
+            'client.tags',
+        ]);
+
+        return response()->json([
+            'message' => 'Клиент привязан к диалогу.',
+            'client' => new \App\Http\Resources\Client\ClientResource($conversation->client),
+        ]);
+    }
+
     public function store(Request $request)
     {
         $validated = $request->validate([

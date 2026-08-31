@@ -681,6 +681,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Получить подробную информацию о конкретном разговоре по его ID, включая сообщения и участников
         Route::get('/{conversation}', [ConversationController::class, 'show']);
 
+        // Привязать сохранённого клиента к анонимному диалогу.
+        Route::post('/{conversation}/client', [ConversationController::class, 'attachClient']);
+
         // Отправить новое сообщение (ответ) в конкретный разговор
         Route::post('/{conversation}/reply', [ConversationController::class, 'reply']);
 
