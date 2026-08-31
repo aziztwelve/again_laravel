@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\DeliveryServiceSetting;
+use App\Models\FreeShippingRule;
 use App\Services\Delivery\CdekDeliveryService;
 use App\Traits\HelperTrait;
 use Illuminate\Http\Request;
@@ -154,7 +155,42 @@ class CDEKController extends Controller
         $settings = array_replace_recursive($record->settings ?? [], $newSettings);
         $record->update(['settings' => $settings]);
 
+        $settings = $this->syncCdekFreeShippingRule($record, $settings);
+
         unset($settings['secure_password']);
         return response()->json(['success' => true, 'message' => 'Настройки СДЭК сохранены', 'settings' => $settings]);
+    }
+
+    /** Keep the CDEK page threshold as an additional (OR) rule in the shared engine. */
+    private function syncCdekFreeShippingRule(DeliveryServiceSetting $record, array $settings): array
+    {
+        $threshold = max(0, (float) data_get($settings, 'price_rules.threshold', 0));
+        $rule = filled($settings['free_shipping_rule_id'] ?? null)
+            ? FreeShippingRule::query()->find($settings['free_shipping_rule_id'])
+            : null;
+
+        if ($threshold <= 0) {
+            if ($rule) $rule->update(['is_active' => false]);
+            return $settings;
+        }
+
+        $attributes = [
+            'name' => 'СДЭК: бесплатная доставка из настроек',
+            'is_active' => true,
+            'priority' => 0,
+            'min_order_amount' => $threshold,
+            'services' => ['cdek'],
+            'delivery_types' => [],
+            'payment_methods' => [],
+            'starts_at' => null,
+            'ends_at' => null,
+        ];
+        $rule ??= FreeShippingRule::create($attributes);
+        $rule->update($attributes);
+        $settings['free_shipping_rule_id'] = $rule->id;
+        $record->update(['settings' => $settings]);
+        app(\App\Services\Delivery\FreeShippingService::class)->flushCache();
+
+        return $settings;
     }
 }
