@@ -10,6 +10,7 @@ use App\Models\Shipment;
 use App\Models\ShipmentStatus;
 use App\Services\Delivery\Cdek\CdekClient;
 use App\Services\Notifications\CdekDeliveryNotificationService;
+use App\Services\Order\OrderCreationService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -48,7 +49,14 @@ class CdekDeliveryService extends DeliveryService
             'is_handout' => $filter['is_handout'] ?? true,
         ], fn ($value) => $value !== null && $value !== '');
         $result = $this->client->request('GET', '/v2/deliverypoints', query: $query);
-        return $result['successful'] ? ($result['data'] ?? []) : [];
+        $points = $result['successful'] ? ($result['data'] ?? []) : [];
+        // For COD only points that can accept cashless payment are meaningful.
+        // If CDEK does not return this capability, keep the point visible so a
+        // provider-side change cannot empty checkout completely.
+        if (! empty($this->settings['cod_pickup_only'])) {
+            $points = array_values(array_filter($points, fn (array $point) => ! array_key_exists('have_cashless', $point) || (bool) $point['have_cashless']));
+        }
+        return $points;
     }
 
     /** Tariffs available under the connected CDEK contract for the admin setup form. */
@@ -103,11 +111,15 @@ class CdekDeliveryService extends DeliveryService
         $result = $this->client->request('POST', '/v2/calculator/tarifflist', $payload);
         if (! $result['successful']) return [];
 
-        $deliveryMode = $deliveryType === 'courier' ? 1 : 2;
+        // CDEK calls modes 1/2 "from door" and 3/4 "from warehouse".
+        // The selected tariffs are frequently the warehouse variants (136,
+        // 137 and 368), so filtering only by 1/2 made valid tariffs vanish
+        // from checkout.
+        $deliveryModes = $this->deliveryModes($deliveryType);
         $allowedCodes = array_map('intval', $this->settings['tariff_codes'] ?? []);
         $daysOffset = max(0, (int) ($this->settings['delivery_days_offset'] ?? 0));
         return collect($result['data']['tariff_codes'] ?? [])
-            ->filter(fn (array $tariff) => (int) ($tariff['delivery_mode'] ?? 0) === $deliveryMode)
+            ->filter(fn (array $tariff) => in_array((int) ($tariff['delivery_mode'] ?? 0), $deliveryModes, true))
             ->filter(fn (array $tariff) => $allowedCodes === [] || in_array((int) ($tariff['tariff_code'] ?? 0), $allowedCodes, true))
             ->map(fn (array $tariff) => $this->presentTariff($tariff, $deliveryType, $daysOffset))
             ->values()->all();
@@ -185,6 +197,15 @@ class CdekDeliveryService extends DeliveryService
             'from_location' => $this->senderLocation(),
             'packages' => [$this->package($this->orderItems($order), $cdekOrder->external_order_number)],
         ];
+        if (filled(data_get($this->settings, 'sender.name'))) {
+            $payload['sender'] = array_filter([
+                'name' => data_get($this->settings, 'sender.name'),
+                'phones' => filled(data_get($this->settings, 'sender.phone')) ? [['number' => data_get($this->settings, 'sender.phone')]] : null,
+            ]);
+        }
+        $payload = array_replace($payload, $this->orderPriceModifiers($this->orderItems($order)));
+        $services = $this->additionalServices();
+        if ($services !== []) $payload['services'] = $services;
         if ($isPickup) $payload['delivery_point'] = $delivery['pvz']['code'] ?? $delivery['pvz_code'] ?? null;
         else $payload['to_location'] = ['code' => (int) ($destination['city_code'] ?? 0), 'address' => $destination['address'] ?? $address?->address];
         if (empty($payload['delivery_point']) && $isPickup) throw new InvalidArgumentException('Не выбран ПВЗ СДЭК.');
@@ -222,6 +243,7 @@ class CdekDeliveryService extends DeliveryService
             ]);
         }
         $this->upsertShipment($cdekOrder->fresh(), $order);
+        $this->syncConfiguredOrderStatus($cdekOrder->fresh('order'), $statusCode);
         if ($previousStatus !== $statusCode) {
             try {
                 $this->notificationService->notify($cdekOrder->fresh('order'), $statusCode);
@@ -301,7 +323,7 @@ class CdekDeliveryService extends DeliveryService
             'tariff_code' => $tariff['tariff_code'], 'tariff_name' => $sourceName,
             'display_name' => $title, 'display_description' => $description,
             'show_tariff_label' => (bool) ($display['show_label'] ?? true),
-            'delivery_mode' => $tariff['delivery_mode'], 'price' => (float) $tariff['delivery_sum'], 'currency' => 'RUB',
+            'delivery_mode' => $tariff['delivery_mode'], 'price' => $this->checkoutPrice((float) $tariff['delivery_sum']), 'currency' => 'RUB',
             'period' => ['min' => (int) $tariff['period_min'] + $daysOffset, 'max' => (int) $tariff['period_max'] + $daysOffset],
             'delivery_date_range' => $tariff['delivery_date_range'] ?? null,
         ];
@@ -334,16 +356,98 @@ class CdekDeliveryService extends DeliveryService
         }
     }
     private function senderLocation(): array { $sender = $this->settings['sender']; return array_filter(['code' => (int) $sender['city_code'], 'postal_code' => $sender['postal_code'] ?? null, 'address' => $sender['address']]); }
+    private function deliveryModes(string $deliveryType): array
+    {
+        $modes = match ($deliveryType) {
+            'courier' => [1, 3],
+            'postamat' => [6, 7],
+            default => [2, 4],
+        };
+        return match ($this->settings['tariff_mode'] ?? 'any') {
+            'dver' => array_values(array_intersect($modes, [1, 2, 6])),
+            'sklad' => array_values(array_intersect($modes, [3, 4, 7])),
+            default => $modes,
+        };
+    }
+    private function checkoutPrice(float $price): float
+    {
+        $rules = $this->settings['price_rules'] ?? [];
+        $price += max(0, (float) ($rules['add_cost'] ?? 0));
+        return match ((string) ($rules['rounded'] ?? '0')) {
+            '1' => (float) ceil($price),
+            '2' => (float) floor($price),
+            default => round($price, 2),
+        };
+    }
+    private function additionalServices(): array
+    {
+        $services = $this->settings['services'] ?? [];
+        // Service codes are CDEK API v2 identifiers. They are sent only for
+        // a real order; the calculator determines their availability itself.
+        return array_values(array_filter([
+            ! empty($services['fitting']) ? ['code' => 'TRYING_ON'] : null,
+            ! empty($services['partial_delivery']) ? ['code' => 'PART_DELIV'] : null,
+            ! empty($services['no_inspection']) ? ['code' => 'NOT_INSPECTION'] : null,
+        ]));
+    }
+    private function orderPriceModifiers(array $items): array
+    {
+        $rules = $this->settings['price_rules'] ?? [];
+        $deliveryCost = max(0, (float) ($rules['add_rko'] ?? 0));
+        $extraCost = max(0, (float) ($rules['add_drc'] ?? 0));
+        $threshold = max(0, (float) ($rules['add_drc_adv'] ?? 0));
+        $orderTotal = collect($items)->sum(fn (array $item) => (float) $item['price'] * (int) $item['quantity']);
+        $vatRate = data_get($this->settings, 'delivery_vat');
+        $vat = in_array((int) $vatRate, [0, 5, 7, 10, 16, 22], true) ? (int) $vatRate : null;
+        $result = [];
+        if ($deliveryCost > 0) $result['delivery_recipient_cost'] = array_filter(['value' => $deliveryCost, 'vat_rate' => $vat], fn ($value) => $value !== null);
+        if ($extraCost > 0 && $threshold > 0 && $orderTotal <= $threshold) {
+            $result['delivery_recipient_cost_adv'] = [array_filter(['threshold' => (int) $threshold, 'sum' => $extraCost, 'vat_rate' => $vat], fn ($value) => $value !== null)];
+        }
+        return $result;
+    }
     private function package(array $items, string $number): array
     {
         $items = array_values($items);
         $measurements = array_map(fn (array $item) => $this->measurement($item), $items);
-        $weight = max(1, (int) collect($measurements)->sum(fn (array $item) => $item['weight'] * $item['quantity']));
+        $fallback = $this->settings['default_package'] ?? [];
+        $useOrderFallback = ($this->settings['default_weight_scope'] ?? 'item') === 'order'
+            && collect($items)->contains(fn (array $item) => ! filled($item['weight'] ?? null));
+        $weight = $useOrderFallback ? max(1, (int) ($fallback['weight'] ?? 500)) : max(1, (int) collect($measurements)->sum(fn (array $item) => $item['weight'] * $item['quantity']));
         $length = max(1, (int) collect($measurements)->max('length'));
         $width = max(1, (int) collect($measurements)->max('width'));
         $height = max(1, (int) collect($measurements)->sum(fn (array $item) => $item['height'] * $item['quantity']));
 
-        return ['number' => Str::limit($number, 30, ''), 'weight' => $weight, 'length' => $length, 'width' => $width, 'height' => $height, 'items' => array_map(fn (array $item, int $index) => ['name' => Str::limit((string) ($item['name'] ?? 'Товар'), 255, ''), 'ware_key' => (string) ($item['sku'] ?? $item['id'] ?? 'item'), 'payment' => ['value' => (float) ($item['price'] ?? 0)], 'cost' => (float) ($item['price'] ?? 0), 'amount' => $measurements[$index]['quantity'], 'weight' => $measurements[$index]['weight']], $items, array_keys($items))];
+        return ['number' => Str::limit($number, 30, ''), 'weight' => $weight, 'length' => $length, 'width' => $width, 'height' => $height, 'items' => array_map(fn (array $item, int $index) => ['name' => Str::limit((string) ($item['name'] ?? 'Товар'), 255, ''), 'ware_key' => (string) ($item['sku'] ?? $item['id'] ?? 'item'), 'payment' => ['value' => (float) ($item['price'] ?? 0)], 'cost' => $this->declaredCost((float) ($item['price'] ?? 0)), 'amount' => $measurements[$index]['quantity'], 'weight' => $measurements[$index]['weight']], $items, array_keys($items))];
+    }
+    private function declaredCost(float $price): float
+    {
+        $declared = $this->settings['declared'] ?? [];
+        if ((float) ($declared['value'] ?? 0) > 0) return (float) $declared['value'];
+        if ((float) ($declared['percent'] ?? 0) > 0) return round($price * (float) $declared['percent'] / 100, 2);
+        return $price;
+    }
+    private function syncConfiguredOrderStatus(CdekOrder $cdekOrder, string $statusCode): void
+    {
+        if (empty($this->settings['use_import']) || ! $cdekOrder->order) return;
+        $legacyCode = match ($statusCode) {
+            'CREATED' => '1', 'ACCEPTED' => '3', 'DELIVERED' => '4',
+            'NOT_DELIVERED' => '5', 'RETURNED_TO_SENDER' => '18',
+            'IN_POSTAMAT' => '29', default => '0',
+        };
+        $shopStatus = collect($this->settings['status_mapping'] ?? [])
+            ->filter(fn ($cdekCode) => (string) $cdekCode === $legacyCode)
+            ->keys()->first();
+        $target = match ($shopStatus) {
+            'new' => \App\Enums\OrderStatus::NEW,
+            'processing', 'approved', 'return_process' => \App\Enums\OrderStatus::PROCESSING,
+            'shipped', 'exported' => \App\Enums\OrderStatus::SHIPPED,
+            'delivered' => \App\Enums\OrderStatus::DELIVERED,
+            'cancelled' => \App\Enums\OrderStatus::CANCELLED,
+            'returned' => \App\Enums\OrderStatus::PRODUCT_RETURN,
+            default => null,
+        };
+        if ($target && $cdekOrder->order->status !== $target) app(OrderCreationService::class)->updateOrderStatus($cdekOrder->order, $target);
     }
     private function measurement(array $item): array
     {

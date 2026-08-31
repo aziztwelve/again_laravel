@@ -59,7 +59,7 @@ class CdekClientTest extends TestCase
             'https://api.edu.cdek.ru/v2/calculator/tarifflist' => Http::response([
                 'tariff_codes' => [[
                     'tariff_code' => 136, 'tariff_name' => 'Посылка склад-склад',
-                    'delivery_mode' => 2, 'delivery_sum' => 420,
+                    'delivery_mode' => 4, 'delivery_sum' => 420,
                     'period_min' => 2, 'period_max' => 4,
                 ]],
             ]),
@@ -89,7 +89,7 @@ class CdekClientTest extends TestCase
         Http::fake([
             'https://api.edu.cdek.ru/v2/oauth/token' => Http::response(['access_token' => 'test-token', 'expires_in' => 3600]),
             'https://api.edu.cdek.ru/v2/calculator/tarifflist' => Http::response(['tariff_codes' => [[
-                'tariff_code' => 136, 'tariff_name' => 'Посылка склад-постамат', 'delivery_mode' => 2,
+                'tariff_code' => 368, 'tariff_name' => 'Посылка склад-постамат', 'delivery_mode' => 7,
                 'delivery_sum' => 420, 'period_min' => 2, 'period_max' => 4,
             ]]]),
         ]);
@@ -106,5 +106,26 @@ class CdekClientTest extends TestCase
         $this->assertSame('Посылка склад-постамат', $tariff['display_description']);
         Http::assertSent(fn (Request $request) => $request->url() === 'https://api.edu.cdek.ru/v2/calculator/tarifflist'
             && $request['delivery_point'] === 'MSKPOST1');
+    }
+
+    public function test_it_uses_warehouse_tariffs_and_applies_checkout_price_rules(): void
+    {
+        Http::fake([
+            'https://api.edu.cdek.ru/v2/oauth/token' => Http::response(['access_token' => 'test-token', 'expires_in' => 3600]),
+            'https://api.edu.cdek.ru/v2/calculator/tarifflist' => Http::response(['tariff_codes' => [[
+                'tariff_code' => 137, 'tariff_name' => 'Посылка склад-дверь', 'delivery_mode' => 3,
+                'delivery_sum' => 420.2, 'period_min' => 2, 'period_max' => 4,
+            ]]]),
+        ]);
+        $service = new CdekDeliveryService([
+            'enabled' => true, 'mode' => 'sandbox', 'account' => 'account', 'secure_password' => 'secret',
+            'base_url' => ['sandbox' => 'https://api.edu.cdek.ru'], 'sender' => ['city_code' => 44, 'address' => 'Москва'],
+            'tariff_mode' => 'sklad', 'tariff_codes' => [137], 'price_rules' => ['add_cost' => 19.1, 'rounded' => '1'],
+        ]);
+
+        $tariff = $service->calculateTariffs('courier', ['city_code' => 44, 'address' => 'Тест'], [['name' => 'Товар', 'weight' => 100]])[0];
+
+        $this->assertSame(440.0, $tariff['price']);
+        $this->assertSame(3, $tariff['delivery_mode']);
     }
 }
