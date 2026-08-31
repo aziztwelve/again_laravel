@@ -57,14 +57,23 @@ class CdekDeliveryService extends DeliveryService
         $result = $this->client->request('GET', '/v2/calculator/alltariffs');
         if (! $result['successful']) return [];
 
-        return collect($result['data'] ?? [])
-            ->map(fn (array $tariff) => [
-                'code' => (int) ($tariff['tariff_code'] ?? 0),
-                'name' => trim(implode(' ', array_filter([
-                    $tariff['tariff_name'] ?? null,
-                    $tariff['delivery_mode_name'] ?? null,
-                ]))),
-            ])
+        $tariffs = $result['data']['tariff_codes'] ?? $result['data'] ?? [];
+
+        return collect($tariffs)
+            ->flatMap(function (array $tariff) {
+                // Current CDEK API response groups codes by tariff name and
+                // puts individual variants in delivery_modes. Keep support
+                // for the earlier flat shape too.
+                $modes = isset($tariff['tariff_code']) ? [$tariff] : ($tariff['delivery_modes'] ?? []);
+
+                return collect($modes)->map(fn (array $mode) => [
+                    'code' => (int) ($mode['tariff_code'] ?? 0),
+                    'name' => trim(implode(' ', array_filter([
+                        $tariff['tariff_name'] ?? null,
+                        $mode['delivery_mode_name'] ?? $tariff['delivery_mode_name'] ?? null,
+                    ]))),
+                ]);
+            })
             ->filter(fn (array $tariff) => $tariff['code'] > 0 && $tariff['name'] !== '')
             ->sortBy('name')->values()->all();
     }
