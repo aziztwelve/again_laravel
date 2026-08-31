@@ -29,7 +29,7 @@ class CdekDeliveryController
     public function calculate(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'delivery_type' => 'required|in:courier,pickup',
+            'delivery_type' => 'required|in:courier,pickup,postamat',
             'destination' => 'required|array', 'destination.city_code' => 'required|integer', 'destination.address' => 'nullable|string|max:255',
             'pvz_code' => 'nullable|string|max:255', 'items' => 'required|array|min:1',
             'items.*.name' => 'nullable|string|max:255', 'items.*.weight' => 'nullable|integer|min:1',

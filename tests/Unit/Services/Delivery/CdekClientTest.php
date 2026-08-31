@@ -83,4 +83,28 @@ class CdekClientTest extends TestCase
         $this->assertSame('MSK1', $delivery['pvz']['code']);
         $this->assertSame('Тестовый адрес', $delivery['pvz']['address']);
     }
+
+    public function test_it_calculates_postamat_tariffs_and_applies_the_configured_display_name(): void
+    {
+        Http::fake([
+            'https://api.edu.cdek.ru/v2/oauth/token' => Http::response(['access_token' => 'test-token', 'expires_in' => 3600]),
+            'https://api.edu.cdek.ru/v2/calculator/tarifflist' => Http::response(['tariff_codes' => [[
+                'tariff_code' => 136, 'tariff_name' => 'Посылка склад-постамат', 'delivery_mode' => 2,
+                'delivery_sum' => 420, 'period_min' => 2, 'period_max' => 4,
+            ]]]),
+        ]);
+
+        $service = new CdekDeliveryService([
+            'enabled' => true, 'mode' => 'sandbox', 'account' => 'account', 'secure_password' => 'secret',
+            'base_url' => ['sandbox' => 'https://api.edu.cdek.ru'], 'sender' => ['city_code' => 44, 'address' => 'Москва'],
+            'tariff_display' => ['name_source' => 'delivery', 'description_source' => 'full'],
+        ]);
+
+        $tariff = $service->calculateTariffs('postamat', ['city_code' => 44], [['name' => 'Товар', 'weight' => 100]], 'MSKPOST1')[0];
+
+        $this->assertSame('СДЭК: Постамат', $tariff['display_name']);
+        $this->assertSame('Посылка склад-постамат', $tariff['display_description']);
+        Http::assertSent(fn (Request $request) => $request->url() === 'https://api.edu.cdek.ru/v2/calculator/tarifflist'
+            && $request['delivery_point'] === 'MSKPOST1');
+    }
 }

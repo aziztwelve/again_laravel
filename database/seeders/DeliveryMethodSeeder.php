@@ -31,6 +31,13 @@ class DeliveryMethodSeeder extends Seeder
                 'settings' => ['kind' => 'pickup', 'company' => 'cdek'],
             ],
             [
+                'code' => 'cdek_postamat',
+                'name' => 'Постамат СДЭК',
+                'description' => 'Получение заказа в постамате СДЭК',
+                'provider_class' => $cdek,
+                'settings' => ['kind' => 'postamat', 'company' => 'cdek'],
+            ],
+            [
                 'code' => 'cdek_courier',
                 'name' => 'СДЭК: Курьерская доставка',
                 'description' => 'Курьерская доставка СДЭК до двери',

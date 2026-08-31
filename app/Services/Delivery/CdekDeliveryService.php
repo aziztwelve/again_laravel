@@ -70,7 +70,8 @@ class CdekDeliveryService extends DeliveryService
     public function calculateTariffs(string $deliveryType, array $destination, array $items, ?string $pickupPoint = null): array
     {
         $this->assertSenderConfigured();
-        if ($deliveryType === 'pickup' && ! $pickupPoint) throw new InvalidArgumentException('Выберите пункт выдачи СДЭК.');
+        $isPickup = in_array($deliveryType, ['pickup', 'postamat'], true);
+        if ($isPickup && ! $pickupPoint) throw new InvalidArgumentException($deliveryType === 'postamat' ? 'Выберите постамат СДЭК.' : 'Выберите пункт выдачи СДЭК.');
         if ($deliveryType === 'courier' && (! filled($destination['city_code'] ?? null) || ! filled($destination['address'] ?? null))) {
             throw new InvalidArgumentException('Для курьерской доставки укажите город СДЭК и адрес.');
         }
@@ -86,7 +87,7 @@ class CdekDeliveryService extends DeliveryService
             ] : ['code' => (int) ($destination['city_code'] ?? 0)],
             'packages' => [$this->package($items, 'quote')],
         ];
-        if ($deliveryType === 'pickup') $payload['delivery_point'] = $pickupPoint;
+        if ($isPickup) $payload['delivery_point'] = $pickupPoint;
 
         $result = $this->client->request('POST', '/v2/calculator/tarifflist', $payload);
         if (! $result['successful']) return [];
@@ -97,15 +98,8 @@ class CdekDeliveryService extends DeliveryService
         return collect($result['data']['tariff_codes'] ?? [])
             ->filter(fn (array $tariff) => (int) ($tariff['delivery_mode'] ?? 0) === $deliveryMode)
             ->filter(fn (array $tariff) => $allowedCodes === [] || in_array((int) ($tariff['tariff_code'] ?? 0), $allowedCodes, true))
-            ->map(fn (array $tariff) => [
-            'tariff_code' => $tariff['tariff_code'],
-            'tariff_name' => $tariff['tariff_name'],
-            'delivery_mode' => $tariff['delivery_mode'],
-            'price' => (float) $tariff['delivery_sum'],
-            'currency' => 'RUB',
-            'period' => ['min' => (int) $tariff['period_min'] + $daysOffset, 'max' => (int) $tariff['period_max'] + $daysOffset],
-            'delivery_date_range' => $tariff['delivery_date_range'] ?? null,
-            ])->values()->all();
+            ->map(fn (array $tariff) => $this->presentTariff($tariff, $deliveryType, $daysOffset))
+            ->values()->all();
     }
 
     /**
@@ -119,11 +113,11 @@ class CdekDeliveryService extends DeliveryService
         $pickupCode = $delivery['pvz']['code'] ?? null;
         $tariffCode = (int) ($delivery['tariff_code'] ?? 0);
 
-        if (! in_array($deliveryType, ['courier', 'pickup'], true) || ! is_array($destination) || $tariffCode < 1) {
+        if (! in_array($deliveryType, ['courier', 'pickup', 'postamat'], true) || ! is_array($destination) || $tariffCode < 1) {
             throw new InvalidArgumentException('Выберите актуальный тариф СДЭК.');
         }
 
-        if ($deliveryType === 'pickup') {
+        if (in_array($deliveryType, ['pickup', 'postamat'], true)) {
             $point = collect($this->pickupPoints([
                 'city_code' => $destination['city_code'] ?? null,
                 'type' => 'ALL',
@@ -150,7 +144,7 @@ class CdekDeliveryService extends DeliveryService
             'delivery_type' => $deliveryType,
             ...$tariff,
             'destination' => $destination,
-            'pvz' => $deliveryType === 'pickup' ? [
+            'pvz' => in_array($deliveryType, ['pickup', 'postamat'], true) ? [
                 'code' => $point['code'],
                 'type' => $point['type'] ?? null,
                 'address' => data_get($point, 'location.address') ?? data_get($point, 'location.address_full'),
@@ -171,7 +165,7 @@ class CdekDeliveryService extends DeliveryService
         $recipientPhone = $address?->recipient_phone ?? $order->client?->phone;
         if (! $recipientPhone) throw new InvalidArgumentException('Для оформления СДЭК нужен телефон получателя.');
         $destination = $delivery['destination'] ?? [];
-        $isPickup = ($delivery['delivery_type'] ?? null) === 'pickup';
+        $isPickup = in_array($delivery['delivery_type'] ?? null, ['pickup', 'postamat'], true);
         $payload = [
             'type' => (int) ($this->settings['order_type'] ?? 1),
             'number' => $cdekOrder->external_order_number,
@@ -266,6 +260,41 @@ class CdekDeliveryService extends DeliveryService
     }
     public function location_cities(Request $request): array { return $this->cities((string) $request->input('city', ''), (string) $request->input('country_code', 'RU')); }
     public function location_regions(Request $request): array { return []; }
+
+    /** Add the admin-configured presentation without changing CDEK's source tariff name. */
+    private function presentTariff(array $tariff, string $deliveryType, int $daysOffset): array
+    {
+        $sourceName = (string) ($tariff['tariff_name'] ?? 'Тариф СДЭК');
+        $display = $this->settings['tariff_display'] ?? [];
+        $custom = $display['custom_names'][(string) ($tariff['tariff_code'] ?? '')] ?? [];
+        $fullName = filled($custom['name'] ?? null) ? (string) $custom['name'] : $sourceName;
+        $shortName = filled($custom['short_name'] ?? null) ? (string) $custom['short_name'] : preg_replace('/^(Посылка|Экономичная посылка|Магистральный экспресс)\s+/ui', '', $fullName);
+        $deliveryName = match ($deliveryType) {
+            'courier' => 'СДЭК: Курьерская доставка',
+            'postamat' => 'СДЭК: Постамат',
+            default => 'СДЭК: Пункт выдачи',
+        };
+        $title = match ($display['name_source'] ?? 'delivery') {
+            'full' => $fullName,
+            'short' => $shortName,
+            default => $deliveryName,
+        };
+        $description = match ($display['description_source'] ?? 'full') {
+            'delivery' => $deliveryName,
+            'short' => $shortName,
+            'description' => $sourceName,
+            default => $fullName,
+        };
+
+        return [
+            'tariff_code' => $tariff['tariff_code'], 'tariff_name' => $sourceName,
+            'display_name' => $title, 'display_description' => $description,
+            'show_tariff_label' => (bool) ($display['show_label'] ?? true),
+            'delivery_mode' => $tariff['delivery_mode'], 'price' => (float) $tariff['delivery_sum'], 'currency' => 'RUB',
+            'period' => ['min' => (int) $tariff['period_min'] + $daysOffset, 'max' => (int) $tariff['period_max'] + $daysOffset],
+            'delivery_date_range' => $tariff['delivery_date_range'] ?? null,
+        ];
+    }
 
     private function assertSenderConfigured(): void
     {
