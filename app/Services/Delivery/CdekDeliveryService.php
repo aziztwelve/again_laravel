@@ -23,7 +23,9 @@ class CdekDeliveryService extends DeliveryService
 
     public function __construct(array $methodSettings = [], private ?CdekDeliveryNotificationService $notificationService = null)
     {
-        $database = DeliveryServiceSetting::query()->where('service_name', 'cdek')->value('settings') ?? [];
+        $database = $this->withoutEmptyOverrides(
+            DeliveryServiceSetting::query()->where('service_name', 'cdek')->value('settings') ?? [],
+        );
         $this->settings = array_replace_recursive(config('services.cdek_delivery'), $database, $methodSettings);
         $this->notificationService ??= app(CdekDeliveryNotificationService::class);
         $this->client = new CdekClient($this->settings);
@@ -294,6 +296,25 @@ class CdekDeliveryService extends DeliveryService
             'period' => ['min' => (int) $tariff['period_min'] + $daysOffset, 'max' => (int) $tariff['period_max'] + $daysOffset],
             'delivery_date_range' => $tariff['delivery_date_range'] ?? null,
         ];
+    }
+
+    /**
+     * Settings page stores only fields changed by a manager. A legacy record
+     * may contain null/empty placeholders; those must not overwrite protected
+     * operational values from .env (CDEK OAuth and sender data).
+     */
+    private function withoutEmptyOverrides(array $settings): array
+    {
+        $result = [];
+        foreach ($settings as $key => $value) {
+            if (is_array($value)) {
+                $nested = $this->withoutEmptyOverrides($value);
+                if ($nested !== []) $result[$key] = $nested;
+            } elseif ($value !== null && $value !== '') {
+                $result[$key] = $value;
+            }
+        }
+        return $result;
     }
 
     private function assertSenderConfigured(): void
