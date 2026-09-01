@@ -498,7 +498,7 @@ class OrderUpdateService
         // Самостоятельно снимаем старое использование, чтобы applyPromoCodeChange
         // не создал дубль usage и не инкрементировал times_used повторно.
         $promoCode->usages()->where('order_id', $order->id)->delete();
-        $promoCode->decrement('times_used');
+        $this->decrementPromoUsage($promoCode);
 
         // Сбрасываем привязку и в памяти, и в БД, чтобы applyPromoCodeChange
         // не пошёл по ветке «без изменений» и не пытался ещё раз снять промо.
@@ -542,7 +542,7 @@ class OrderUpdateService
                 $oldPromo->usages()
                     ->where('order_id', $order->id)
                     ->delete();
-                $oldPromo->decrement('times_used');
+                $this->decrementPromoUsage($oldPromo);
             }
             $order->promo_code_id = null;
         }
@@ -624,6 +624,13 @@ class OrderUpdateService
     private function resolveDiscountService(): \App\Services\Order\OrderDiscountService
     {
         return app(\App\Services\Order\OrderDiscountService::class);
+    }
+
+    private function decrementPromoUsage(PromoCode $promoCode): void
+    {
+        DB::table('promo_codes')
+            ->where('id', $promoCode->id)
+            ->update(['times_used' => DB::raw('GREATEST(times_used - 1, 0)')]);
     }
 
     /**

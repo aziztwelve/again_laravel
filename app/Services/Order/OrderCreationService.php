@@ -13,6 +13,7 @@ use App\Models\PromoCode;
 use App\Services\GiftCard\GiftCardService;
 use App\Services\Promotion\PromotionService;
 use Exception;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class OrderCreationService
@@ -643,7 +644,9 @@ class OrderCreationService
             if ($order->promo_code_id) {
                 $promoCode = PromoCode::find($order->promo_code_id);
                 if ($promoCode) {
-                    $promoCode->decrement('times_used');
+                    DB::table('promo_codes')
+                        ->where('id', $promoCode->id)
+                        ->update(['times_used' => DB::raw('GREATEST(times_used - 1, 0)')]);
 
                     // Удаляем запись об использовании
                     $promoCode->usages()
