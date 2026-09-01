@@ -131,4 +131,24 @@ class CdekClientTest extends TestCase
         $belowThreshold = $service->calculateTariffs('courier', ['city_code' => 44, 'address' => 'Тест'], [['name' => 'Товар', 'weight' => 100, 'price' => 6999]])[0];
         $this->assertSame(440.0, $belowThreshold['price']);
     }
+
+    public function test_it_returns_only_the_configured_default_tariff_for_each_delivery_type(): void
+    {
+        Http::fake([
+            'https://api.edu.cdek.ru/v2/oauth/token' => Http::response(['access_token' => 'test-token', 'expires_in' => 3600]),
+            'https://api.edu.cdek.ru/v2/calculator/tarifflist' => Http::response(['tariff_codes' => [
+                ['tariff_code' => 137, 'tariff_name' => 'Посылка склад-дверь', 'delivery_mode' => 3, 'delivery_sum' => 400, 'period_min' => 1, 'period_max' => 2],
+                ['tariff_code' => 480, 'tariff_name' => 'Экспресс дверь-дверь', 'delivery_mode' => 1, 'delivery_sum' => 800, 'period_min' => 1, 'period_max' => 2],
+            ]]),
+        ]);
+        $service = new CdekDeliveryService([
+            'enabled' => true, 'mode' => 'sandbox', 'account' => 'account', 'secure_password' => 'secret',
+            'base_url' => ['sandbox' => 'https://api.edu.cdek.ru'], 'sender' => ['city_code' => 44, 'address' => 'Москва'],
+            'tariff_mode' => 'sklad', 'tariff_codes' => [136, 137, 368],
+        ]);
+
+        $tariffs = $service->calculateTariffs('courier', ['city_code' => 44, 'address' => 'Тест'], [['name' => 'Товар', 'weight' => 100]]);
+
+        $this->assertSame([137], array_column($tariffs, 'tariff_code'));
+    }
 }

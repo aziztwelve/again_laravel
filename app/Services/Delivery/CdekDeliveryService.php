@@ -116,9 +116,13 @@ class CdekDeliveryService extends DeliveryService
         // 137 and 368), so filtering only by 1/2 made valid tariffs vanish
         // from checkout.
         $deliveryModes = $this->deliveryModes($deliveryType);
+        // The configured codes are default checkout tariffs, one for each
+        // destination type: 137 courier, 136 pickup point, 368 postamat.
+        $allowedCodes = array_map('intval', $this->settings['tariff_codes'] ?? []);
         $daysOffset = max(0, (int) ($this->settings['delivery_days_offset'] ?? 0));
         return collect($result['data']['tariff_codes'] ?? [])
             ->filter(fn (array $tariff) => in_array((int) ($tariff['delivery_mode'] ?? 0), $deliveryModes, true))
+            ->filter(fn (array $tariff) => $allowedCodes === [] || in_array((int) ($tariff['tariff_code'] ?? 0), $allowedCodes, true))
             ->map(fn (array $tariff) => $this->presentTariff($tariff, $deliveryType, $daysOffset))
             ->values()->all();
     }
