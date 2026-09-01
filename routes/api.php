@@ -684,6 +684,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Привязать сохранённого клиента к анонимному диалогу.
         Route::post('/{conversation}/client', [ConversationController::class, 'attachClient']);
 
+        // Создать клиента из анонимного диалога и сразу привязать его.
+        Route::post('/{conversation}/client/create', [ConversationController::class, 'createAndAttachClient']);
+
         // Отправить новое сообщение (ответ) в конкретный разговор
         Route::post('/{conversation}/reply', [ConversationController::class, 'reply']);
 

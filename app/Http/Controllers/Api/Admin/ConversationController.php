@@ -4,15 +4,18 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Helpers\PaginationHelper;
 use App\Http\Controllers\Controller;
+use App\Http\Resources\Client\ClientResource;
 use App\Http\Resources\Conversation\ConversationResource;
 use App\Models\Client;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\Order;
 use App\Models\User;
+use App\Models\UserProfile;
 use App\Services\File\FileStorageService;
 use App\Services\Messaging\ConversationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class ConversationController extends Controller
@@ -338,8 +341,79 @@ class ConversationController extends Controller
 
         return response()->json([
             'message' => 'Клиент привязан к диалогу.',
-            'client' => new \App\Http\Resources\Client\ClientResource($conversation->client),
+            'client' => new ClientResource($conversation->client),
         ]);
+    }
+
+    /**
+     * Создаёт клиента из анонимного диалога и сразу привязывает его.
+     * Email и телефон проверяются до создания, чтобы не плодить дубликаты.
+     */
+    public function createAndAttachClient(Request $request, Conversation $conversation)
+    {
+        if ($conversation->client_id !== null) {
+            return response()->json([
+                'message' => 'Клиент уже привязан к этому диалогу.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'first_name' => 'required|string|max:255',
+            'last_name' => 'required|string|max:255',
+            'middle_name' => 'nullable|string|max:255',
+            'phone' => 'required|string|max:255',
+            'email' => 'required|string|email|max:255',
+        ]);
+
+        $email = mb_strtolower(trim($validated['email']));
+        $phone = trim($validated['phone']);
+        $phoneDigits = preg_replace('/\D+/', '', $phone);
+        $phoneTail = strlen($phoneDigits) >= 10 ? substr($phoneDigits, -10) : $phoneDigits;
+
+        $emailExists = Client::query()
+            ->whereNull('deleted_at')
+            ->whereRaw('LOWER(email) = ?', [$email])
+            ->exists();
+        $phoneExists = $phoneTail !== '' && UserProfile::query()
+            ->whereRaw("RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone, ''), '+', ''), ' ', ''), '(', ''), ')', ''), '-', ''), '.', ''), 10) = ?", [$phoneTail])
+            ->exists();
+
+        if ($emailExists || $phoneExists) {
+            $message = $emailExists && $phoneExists
+                ? 'Клиент с таким email и номером телефона уже существует.'
+                : ($emailExists
+                    ? 'Клиент с таким email уже существует.'
+                    : 'Клиент с таким номером телефона уже существует.');
+
+            return response()->json(['message' => $message], 422);
+        }
+
+        $client = DB::transaction(function () use ($conversation, $validated, $email, $phone) {
+            $lockedConversation = Conversation::query()
+                ->lockForUpdate()
+                ->findOrFail($conversation->id);
+
+            if ($lockedConversation->client_id !== null) {
+                abort(422, 'Клиент уже привязан к этому диалогу.');
+            }
+
+            $client = Client::create(['email' => $email]);
+            $client->profile()->create([
+                'first_name' => trim($validated['first_name']),
+                'last_name' => trim($validated['last_name']),
+                'middle_name' => filled($validated['middle_name'] ?? null) ? trim($validated['middle_name']) : null,
+                'phone' => $phone,
+            ]);
+
+            $lockedConversation->update(['client_id' => $client->id]);
+
+            return $client->load(['profile', 'lastOrder', 'segments', 'tags']);
+        });
+
+        return response()->json([
+            'message' => 'Данные клиента сохранены.',
+            'client' => new ClientResource($client),
+        ], 201);
     }
 
     public function store(Request $request)
