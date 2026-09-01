@@ -2,6 +2,9 @@
 
 namespace App\Console\Commands\Import;
 
+use App\Models\Order;
+use App\Models\PromoCode;
+use App\Models\PromoCodeUsage;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -64,6 +67,11 @@ class ImportInsalesPromoCodes extends Command
             });
         }
 
+        // `order_numbers` в InSales содержит историю заказов с купоном.
+        // Связываем её и при первичном импорте, и при повторном запуске уже
+        // импортированного файла: это позволяет безопасно дозагрузить историю.
+        $usageStats = $this->syncOrderUsages($codes, (bool) $this->option('dry-run'));
+
         $this->table(
             ['Метрика', 'Значение'],
             [
@@ -72,6 +80,12 @@ class ImportInsalesPromoCodes extends Command
                 ['Дубликатов в файле', count($rows) - count($codes)],
                 ['Уже есть в БД (включая удалённые)', $skippedExisting],
                 [$this->option('dry-run') ? 'Будет импортировано' : 'Импортировано', count($toInsert)],
+                ['Номеров заказов в файле', $usageStats['order_numbers']],
+                ['Заказов найдено в БД', $usageStats['orders_found']],
+                [$this->option('dry-run') ? 'Будет связано с купонами' : 'Связано с купонами', $usageStats['linked']],
+                ['Уже связано с этим купоном', $usageStats['already_linked']],
+                ['Пропущено: у заказа другой купон', $usageStats['conflicts']],
+                ['Не найдено заказов по номеру', $usageStats['orders_missing']],
             ],
         );
 
@@ -229,5 +243,111 @@ class ImportInsalesPromoCodes extends Command
             'created_at' => $now,
             'updated_at' => $now,
         ];
+    }
+
+    /**
+     * Привязывает импортированные промокоды к существующим заказам из InSales.
+     *
+     * @param array<string, array<string, string>> $codes
+     * @return array{order_numbers: int, orders_found: int, linked: int, already_linked: int, conflicts: int, orders_missing: int}
+     */
+    private function syncOrderUsages(array $codes, bool $dryRun): array
+    {
+        $stats = [
+            'order_numbers' => 0,
+            'orders_found' => 0,
+            'linked' => 0,
+            'already_linked' => 0,
+            'conflicts' => 0,
+            'orders_missing' => 0,
+        ];
+
+        $promoCodes = PromoCode::withTrashed()
+            ->get()
+            ->keyBy(fn (PromoCode $promoCode) => mb_strtolower($promoCode->code));
+
+        foreach ($codes as $code => $row) {
+            /** @var PromoCode|null $promoCode */
+            $promoCode = $promoCodes->get(mb_strtolower($code));
+            if (! $promoCode) {
+                continue;
+            }
+
+            $orderNumbers = $this->parseOrderNumbers($row['order_numbers']);
+            $stats['order_numbers'] += count($orderNumbers);
+            if ($orderNumbers === []) {
+                continue;
+            }
+
+            $orders = Order::query()
+                ->whereIn('order_number', $orderNumbers)
+                ->get()
+                ->keyBy(fn (Order $order) => (string) $order->order_number);
+            $stats['orders_found'] += $orders->count();
+            $stats['orders_missing'] += count(array_diff($orderNumbers, $orders->keys()->all()));
+
+            foreach ($orders as $order) {
+                if ($order->promo_code_id !== null && (int) $order->promo_code_id !== (int) $promoCode->id) {
+                    $stats['conflicts']++;
+                    continue;
+                }
+
+                $usage = PromoCodeUsage::withTrashed()
+                    ->where('promo_code_id', $promoCode->id)
+                    ->where('order_id', $order->id)
+                    ->first();
+
+                if ((int) $order->promo_code_id === (int) $promoCode->id && $usage?->exists && ! $usage->trashed()) {
+                    $stats['already_linked']++;
+                    continue;
+                }
+
+                $stats['linked']++;
+                if ($dryRun) {
+                    continue;
+                }
+
+                DB::transaction(function () use ($order, $promoCode, $usage): void {
+                    $order->update(['promo_code_id' => $promoCode->id]);
+
+                    $attributes = [
+                        'client_id' => $order->client_id,
+                        'discount_amount' => $this->orderPromoDiscount($order),
+                    ];
+                    if ($usage) {
+                        $usage->restore();
+                        $usage->update($attributes);
+                    } else {
+                        $promoCode->usages()->create($attributes + ['order_id' => $order->id]);
+                        $promoCode->increment('times_used');
+                    }
+                });
+            }
+        }
+
+        return $stats;
+    }
+
+    /** @return array<int, string> */
+    private function parseOrderNumbers(string $value): array
+    {
+        if (trim($value) === '') {
+            return [];
+        }
+
+        return array_values(array_unique(array_filter(array_map(
+            static fn (string $number): string => ltrim(trim($number), '#'),
+            preg_split('/[,;\s]+/', $value) ?: [],
+        ))));
+    }
+
+    private function orderPromoDiscount(Order $order): float
+    {
+        $promoDiscount = $order->total_promo_discount;
+        if ($promoDiscount !== null) {
+            return max(0, (float) $promoDiscount);
+        }
+
+        return max(0, (float) ($order->discount_amount ?? 0));
     }
 }
