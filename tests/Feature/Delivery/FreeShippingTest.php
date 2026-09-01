@@ -102,6 +102,22 @@ class FreeShippingTest extends TestCase
         $this->assertFalse($candidates[1]['is_free']);
     }
 
+    public function test_general_free_shipping_rule_can_make_other_cdek_tariffs_free(): void
+    {
+        $cdekRule = $this->rule(['min_order_amount' => 7000, 'services' => ['cdek']]);
+        DeliveryServiceSetting::updateOrCreate(['service_name' => 'cdek'], [
+            'settings' => ['free_shipping_rule_id' => $cdekRule->id, 'tariff_codes' => [137]],
+        ]);
+        $generalRule = $this->rule(['min_order_amount' => 5000, 'name' => 'Общая бесплатная доставка '.uniqid()]);
+
+        $candidates = $this->service()->evaluateCandidates($this->context(8000), [
+            ['key' => 'cdek:courier:480', 'service' => 'cdek', 'delivery_type' => 'courier', 'tariff_code' => 480, 'price' => 700],
+        ]);
+
+        $this->assertTrue($candidates[0]['is_free']);
+        $this->assertSame($generalRule->id, $candidates[0]['rule']['id']);
+    }
+
     public function test_payment_method_condition(): void
     {
         $this->rule(['min_order_amount' => 1000, 'payment_methods' => ['cloudpayments_sbp']]);
