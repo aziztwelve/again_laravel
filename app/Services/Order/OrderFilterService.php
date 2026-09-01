@@ -40,6 +40,15 @@ class OrderFilterService
             $query = $this->filterByPromoCode($query, $request->promo_code);
         }
 
+        // Точный фильтр по конкретному промокоду (по orders.promo_code_id).
+        // Используется ссылками вида /orders/list?promo_code_id=N — например,
+        // из статистики промокода («Использован»), чтобы показать именно
+        // заказы, где применён этот купон (LIKE по коду мог бы зацепить
+        // другие коды с похожим названием).
+        if ($request->filled('promo_code_id')) {
+            $query = $query->where('orders.promo_code_id', (int) $request->promo_code_id);
+        }
+
         if ($request->filled('city')) {
             $query = $this->filterByCity($query, $request->city);
         }
@@ -480,6 +489,13 @@ class OrderFilterService
             ];
         }
 
+        if ($request->filled('promo_code_id')) {
+            $filters['promo_code_id'] = [
+                'label' => 'Промокод',
+                'value' => $request->promo_code_id,
+            ];
+        }
+
         if ($request->filled('city')) {
             $filters['city'] = [
                 'label' => 'Город',
@@ -530,6 +546,7 @@ class OrderFilterService
             'date_to' => 'nullable|date|after_or_equal:date_from',
             'client_id' => 'nullable|integer|exists:clients,id',
             'promo_code' => 'nullable|string|max:50',
+            'promo_code_id' => 'nullable|integer|exists:promo_codes,id',
             'city' => 'nullable|string|max:255',
             'country_code' => 'nullable|string|size:2',
             'phone' => 'nullable|string|max:20',
