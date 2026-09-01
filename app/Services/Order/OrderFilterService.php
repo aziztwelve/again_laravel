@@ -301,9 +301,15 @@ class OrderFilterService
         $phoneNeedles = $this->phoneNeedles($search);
 
         return $query->where(function ($q) use ($search, $phoneNeedles) {
-            // Поиск по ID заказа
+            // Поиск по ID заказа — только для заказов БЕЗ order_number
+            // (в списке они показывают id как номер, см. filterByOrderNumber).
+            // Поиск по номеру здесь не дублируем: он идёт отдельным
+            // параметром order_number из фильтра столбца «Номер заказа».
             if (is_numeric($search)) {
-                $q->orWhere('orders.id', $search);
+                $q->orWhere(function ($idQuery) use ($search) {
+                    $idQuery->whereNull('order_number')
+                        ->where('orders.id', (int) $search);
+                });
             }
 
             // Поиск по данным клиента: email, имя, телефон, адрес из user_profiles
@@ -376,9 +382,15 @@ class OrderFilterService
             // Поиск по order_number (like, чтобы работал частичный ввод)
             $q->where('order_number', 'like', '%' . $value . '%');
 
-            // Числовой ID
+            // Числовой ID — только для заказов БЕЗ order_number: в списке
+            // заказов такие строки показывают id вместо номера. Для заказов
+            // с номером id не матчим: иначе поиск «12989» возвращал ещё и
+            // заказ с id=12989, но совершенно другим видимым номером.
             if (is_numeric($value)) {
-                $q->orWhere('orders.id', (int) $value);
+                $q->orWhere(function ($idQuery) use ($value) {
+                    $idQuery->whereNull('order_number')
+                        ->where('orders.id', (int) $value);
+                });
             }
         });
     }
