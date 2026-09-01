@@ -108,7 +108,7 @@ class CdekClientTest extends TestCase
             && $request['delivery_point'] === 'MSKPOST1');
     }
 
-    public function test_it_makes_selected_warehouse_tariffs_free_only_after_the_configured_threshold(): void
+    public function test_it_keeps_selected_warehouse_tariff_price_independent_from_free_shipping_threshold(): void
     {
         Http::fake([
             'https://api.edu.cdek.ru/v2/oauth/token' => Http::response(['access_token' => 'test-token', 'expires_in' => 3600]),
@@ -125,7 +125,7 @@ class CdekClientTest extends TestCase
 
         $tariff = $service->calculateTariffs('courier', ['city_code' => 44, 'address' => 'Тест'], [['name' => 'Товар', 'weight' => 100, 'price' => 7000]])[0];
 
-        $this->assertSame(0.0, $tariff['price']);
+        $this->assertSame(440.0, $tariff['price']);
         $this->assertSame(3, $tariff['delivery_mode']);
 
         $belowThreshold = $service->calculateTariffs('courier', ['city_code' => 44, 'address' => 'Тест'], [['name' => 'Товар', 'weight' => 100, 'price' => 6999]])[0];
