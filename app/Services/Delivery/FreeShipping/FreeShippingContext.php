@@ -23,6 +23,7 @@ final class FreeShippingContext
         public array $items = [],
         public ?string $service = null,
         public ?string $deliveryType = null,
+        public ?int $tariffCode = null,
         public ?string $paymentMethod = null,
         public ?int $countryId = null,
         public ?int $regionId = null,
@@ -36,11 +37,12 @@ final class FreeShippingContext
      * Копия контекста с другой службой/видом доставки — для перебора
      * вариантов доставки, показанных покупателю.
      */
-    public function withDelivery(?string $service, ?string $deliveryType): self
+    public function withDelivery(?string $service, ?string $deliveryType, ?int $tariffCode = null): self
     {
         $clone = clone $this;
         $clone->service = $service;
         $clone->deliveryType = $deliveryType;
+        $clone->tariffCode = $tariffCode;
 
         return $clone;
     }

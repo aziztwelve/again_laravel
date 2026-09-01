@@ -53,6 +53,7 @@ class FreeShippingController extends Controller
             'candidates.*.key' => 'nullable|string|max:120',
             'candidates.*.service' => 'nullable|string|max:32',
             'candidates.*.delivery_type' => 'nullable|string|max:32',
+            'candidates.*.tariff_code' => 'nullable|integer|min:1',
             'candidates.*.price' => 'nullable|numeric|min:0',
         ]);
 

@@ -3,6 +3,7 @@
 namespace Tests\Feature\Delivery;
 
 use App\Models\DeliveryMethod;
+use App\Models\DeliveryServiceSetting;
 use App\Models\FreeShippingRule;
 use App\Models\Order;
 use App\Models\Product;
@@ -83,6 +84,22 @@ class FreeShippingTest extends TestCase
         $this->assertSame('pickup', $candidates[0]['delivery_type']);
         $this->assertSame(0.0, $candidates[0]['price']);
         $this->assertSame(350.0, $candidates[0]['original_price']);
+    }
+
+    public function test_cdek_integration_rule_makes_only_configured_tariffs_free(): void
+    {
+        $rule = $this->rule(['min_order_amount' => 1000, 'services' => ['cdek']]);
+        DeliveryServiceSetting::updateOrCreate(['service_name' => 'cdek'], [
+            'settings' => ['free_shipping_rule_id' => $rule->id, 'tariff_codes' => [137]],
+        ]);
+
+        $candidates = $this->service()->evaluateCandidates($this->context(2000), [
+            ['key' => 'cdek:courier:137', 'service' => 'cdek', 'delivery_type' => 'courier', 'tariff_code' => 137, 'price' => 500],
+            ['key' => 'cdek:courier:480', 'service' => 'cdek', 'delivery_type' => 'courier', 'tariff_code' => 480, 'price' => 700],
+        ]);
+
+        $this->assertTrue($candidates[0]['is_free']);
+        $this->assertFalse($candidates[1]['is_free']);
     }
 
     public function test_payment_method_condition(): void

@@ -4,6 +4,7 @@ namespace App\Services\Delivery;
 
 use App\Models\City;
 use App\Models\Country;
+use App\Models\DeliveryServiceSetting;
 use App\Models\FreeShippingRule;
 use App\Models\Order;
 use App\Models\Region;
@@ -23,6 +24,7 @@ class FreeShippingService
 {
     /** Кеш активных правил в пределах одного запроса. */
     private ?Collection $rulesCache = null;
+    private ?array $cdekSettingsCache = null;
 
     /**
      * Лучшее сработавшее правило для контекста или NULL.
@@ -36,6 +38,9 @@ class FreeShippingService
 
         foreach ($this->activeRules() as $rule) {
             if (! $this->conditionsMatch($rule, $context)) {
+                continue;
+            }
+            if ($this->isCdekIntegrationRule($rule) && ! $this->isCdekFreeTariff($context)) {
                 continue;
             }
 
@@ -113,7 +118,8 @@ class FreeShippingService
             $type = $this->normalizeDeliveryType($candidate['delivery_type'] ?? null);
             $price = round((float) ($candidate['price'] ?? 0), 2);
 
-            $match = $this->evaluate($context->withDelivery($service, $type));
+            $tariffCode = isset($candidate['tariff_code']) ? (int) $candidate['tariff_code'] : null;
+            $match = $this->evaluate($context->withDelivery($service, $type, $tariffCode));
 
             $result[] = [
                 'key' => isset($candidate['key']) ? (string) $candidate['key'] : null,
@@ -203,6 +209,7 @@ class FreeShippingService
             items: $items,
             service: $this->resolveService($deliveryData, $methodCode),
             deliveryType: $this->resolveDeliveryType($deliveryData, $methodCode),
+            tariffCode: isset($deliveryData['tariff_code']) ? (int) $deliveryData['tariff_code'] : null,
             paymentMethod: $order->payment_method ? (string) $order->payment_method : null,
             countryId: $this->intOrNull($geoOverrides['country_id'] ?? null),
             regionId: $this->intOrNull($geoOverrides['region_id'] ?? null),
@@ -425,10 +432,33 @@ class FreeShippingService
             ->get();
     }
 
+    /** The CDEK integration rule applies only to tariff codes selected on its page. */
+    private function isCdekIntegrationRule(FreeShippingRule $rule): bool
+    {
+        return (int) ($this->cdekSettings()['free_shipping_rule_id'] ?? 0) === (int) $rule->id;
+    }
+
+    private function isCdekFreeTariff(FreeShippingContext $context): bool
+    {
+        if ($context->service !== 'cdek' || ! $context->tariffCode) return false;
+        return in_array($context->tariffCode, array_map('intval', $this->cdekSettings()['tariff_codes'] ?? []), true);
+    }
+
+    private function cdekSettings(): array
+    {
+        if ($this->cdekSettingsCache === null) {
+            $this->cdekSettingsCache = DeliveryServiceSetting::query()
+                ->where('service_name', 'cdek')
+                ->value('settings') ?? [];
+        }
+        return $this->cdekSettingsCache;
+    }
+
     /** Сбросить кеш правил (нужен в тестах и после изменения правил). */
     public function flushCache(): void
     {
         $this->rulesCache = null;
+        $this->cdekSettingsCache = null;
     }
 
     private function normalizeService(?string $value): ?string
