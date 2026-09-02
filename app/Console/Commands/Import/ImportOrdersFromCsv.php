@@ -13,6 +13,8 @@ class ImportOrdersFromCsv extends Command
         {--dry-run : Только показать статистику, без записи в БД}
         {--no-overwrite : Не переписывать существующие заказы}
         {--no-history : Не импортировать историю изменений}
+        {--attach-missing-clients : Создать/привязать клиентов только к заказам без клиента}
+        {--only-promo-orders : При привязке клиентов обрабатывать только заказы с промокодом}
         {--memory=2048M : memory_limit на время выполнения}';
 
     protected $description = 'Импортировать заказы из CSV-выгрузки InSales (orders-DD.MM.YYYY.csv)';
@@ -41,6 +43,8 @@ class ImportOrdersFromCsv extends Command
             'dry_run' => (bool) $this->option('dry-run'),
             'overwrite' => !$this->option('no-overwrite'),
             'import_history' => !$this->option('no-history'),
+            'attach_missing_clients' => (bool) $this->option('attach-missing-clients'),
+            'only_promo_orders' => (bool) $this->option('only-promo-orders'),
         ]);
         $stats['duration_sec'] = round(microtime(true) - $start, 2);
         $stats['peak_memory_mb'] = round(memory_get_peak_usage(true) / 1024 / 1024, 1);

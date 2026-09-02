@@ -10,6 +10,7 @@ use App\Models\Order;
 use App\Models\OrderAddress;
 use App\Models\OrderHistory;
 use App\Models\OrderItem;
+use App\Models\PromoCodeUsage;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
@@ -222,6 +223,8 @@ class OrderImportService
         $dryRun = (bool) ($options['dry_run'] ?? false);
         $overwrite = (bool) ($options['overwrite'] ?? true);
         $importHistory = (bool) ($options['import_history'] ?? true);
+        $attachMissingClients = (bool) ($options['attach_missing_clients'] ?? false);
+        $onlyPromoOrders = (bool) ($options['only_promo_orders'] ?? false);
 
         $this->loadReferences();
 
@@ -233,6 +236,9 @@ class OrderImportService
             'errors' => 0,
             'items_total' => 0,
             'history_total' => 0,
+            'clients_created' => 0,
+            'clients_linked' => 0,
+            'clients_skipped' => 0,
             'errors_list' => [],
         ];
 
@@ -261,14 +267,22 @@ class OrderImportService
                 $isNew = false;
                 $itemsCount = 0;
                 $historyCount = 0;
+                $clientCreated = false;
+                $clientLinked = false;
+                $clientSkipped = false;
                 DB::transaction(function () use (
                     $bundle,
                     $orderNumber,
                     $overwrite,
                     $importHistory,
+                    $attachMissingClients,
+                    $onlyPromoOrders,
                     &$isNew,
                     &$itemsCount,
                     &$historyCount,
+                    &$clientCreated,
+                    &$clientLinked,
+                    &$clientSkipped,
                 ) {
                     [$orderData, $addressData, $itemsData, $historyEntries, $totals] =
                         $this->mapBundle($bundle);
@@ -295,6 +309,21 @@ class OrderImportService
                     } elseif ($overwrite) {
                         $order->forceFill($payload);
                         $order->save();
+                    }
+
+                    if ($attachMissingClients && $order->client_id === null
+                        && (! $onlyPromoOrders || $order->promo_code_id !== null)) {
+                        [$client, $created] = $this->findOrCreateClientFromOrderHeader($bundle['header']);
+                        if (! $client) {
+                            $clientSkipped = true;
+                        } else {
+                            $order->update(['client_id' => $client->id]);
+                            PromoCodeUsage::where('order_id', $order->id)
+                                ->whereNull('client_id')
+                                ->update(['client_id' => $client->id]);
+                            $clientLinked = true;
+                            $clientCreated = $created;
+                        }
                     }
 
                     if ($overwrite || $isNew) {
@@ -333,6 +362,9 @@ class OrderImportService
                 $isNew ? $stats['created']++ : $stats['updated']++;
                 $stats['items_total'] += $itemsCount;
                 $stats['history_total'] += $historyCount;
+                $stats['clients_created'] += $clientCreated ? 1 : 0;
+                $stats['clients_linked'] += $clientLinked ? 1 : 0;
+                $stats['clients_skipped'] += $clientSkipped ? 1 : 0;
             } catch (\Throwable $e) {
                 $stats['errors']++;
                 if (count($stats['errors_list']) < 50) {
@@ -613,6 +645,48 @@ class OrderImportService
         }
 
         return null;
+    }
+
+    /**
+     * Возвращает существующего клиента либо создаёт его из реквизитов заказа.
+     *
+     * @param array<string, ?string> $header
+     * @return array{0: ?Client, 1: bool}
+     */
+    protected function findOrCreateClientFromOrderHeader(array $header): array
+    {
+        $email = $this->nullableString($header['email'] ?? null)
+            ?? $this->nullableString($header['email_alt'] ?? null);
+        $email = $email ? mb_strtolower($email) : null;
+        $phone = $this->normalizePhone((string) ($header['phone'] ?? ''));
+
+        if ($email === null && $phone === null) {
+            return [null, false];
+        }
+
+        $client = $this->findClient($email, $phone);
+        if ($client) {
+            return [$client, false];
+        }
+
+        $recipient = $this->splitFullName((string) ($header['recipient_full_name'] ?? ''));
+        if ($recipient['first_name'] === '') {
+            $recipient['first_name'] = $this->nullableString($header['first_name'] ?? null) ?? '';
+        }
+
+        $client = Client::create([
+            'email' => $email,
+            'bonus_balance' => 0,
+        ]);
+        UserProfile::create([
+            'client_id' => $client->id,
+            'first_name' => $recipient['first_name'],
+            'last_name' => $recipient['last_name'],
+            'middle_name' => $recipient['middle_name'] ?: null,
+            'phone' => $phone,
+        ]);
+
+        return [$client, true];
     }
 
     protected function resolveDeliveryMethodId(string $name): ?int
