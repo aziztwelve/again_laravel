@@ -81,9 +81,17 @@ class FreeShippingTest extends TestCase
         );
 
         $this->assertTrue($candidates[0]['is_free']);
-        $this->assertSame('pickup', $candidates[0]['delivery_type']);
+        $this->assertSame('postamat', $candidates[0]['delivery_type']);
         $this->assertSame(0.0, $candidates[0]['price']);
         $this->assertSame(350.0, $candidates[0]['original_price']);
+    }
+
+    public function test_postamat_rule_does_not_apply_to_regular_pickup(): void
+    {
+        $this->rule(['min_order_amount' => 1000, 'delivery_types' => ['postamat']]);
+
+        $this->assertNotNull($this->service()->evaluate($this->context(2000, type: 'postamat')));
+        $this->assertNull($this->service()->evaluate($this->context(2000, type: 'pickup')));
     }
 
     public function test_cdek_integration_rule_makes_only_configured_tariffs_free(): void
@@ -494,6 +502,19 @@ class FreeShippingTest extends TestCase
             'min_order_amount' => 100,
             'services' => ['boxberry'],
         ])->assertUnprocessable()->assertJsonValidationErrors('services.0');
+    }
+
+    public function test_admin_can_create_postamat_only_rule(): void
+    {
+        Sanctum::actingAs(User::factory()->create());
+
+        $this->postJson('/api/free-shipping-rules', [
+            'name' => 'СДЭК: Постамат '.uniqid(),
+            'min_order_amount' => 5000,
+            'services' => ['cdek'],
+            'delivery_types' => ['postamat'],
+        ])->assertCreated()
+            ->assertJsonPath('data.delivery_types', ['postamat']);
     }
 
     public function test_rules_endpoint_requires_auth(): void

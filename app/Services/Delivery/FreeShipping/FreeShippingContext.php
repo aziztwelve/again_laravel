@@ -16,7 +16,7 @@ final class FreeShippingContext
      *         Позиции с ФИНАЛЬНЫМИ ценами (после товарных скидок, промокода
      *         и скидки по акции). Подарки (is_gift = true) в сумму не идут.
      * @param  string|null  $service  'cdek' | 'yandex' | null (ещё не выбрана)
-     * @param  string|null  $deliveryType  'pickup' | 'courier' | null
+     * @param  string|null  $deliveryType  'pickup' | 'postamat' | 'courier' | null
      * @param  string|null  $paymentMethod  код способа оплаты
      */
     public function __construct(

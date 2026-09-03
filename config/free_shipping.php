@@ -14,9 +14,11 @@ return [
         'yandex' => 'Яндекс.Доставка',
     ],
 
-    // Вид доставки. Постамат считается разновидностью ПВЗ.
+    // Вид доставки. ПВЗ включает и постаматы для обратной совместимости;
+    // отдельный тип позволяет настроить правило только для постаматов СДЭК.
     'delivery_types' => [
         'pickup' => 'Пункт выдачи (ПВЗ)',
+        'postamat' => 'Постамат',
         'courier' => 'Курьерская доставка',
     ],
 
@@ -40,7 +42,7 @@ return [
     // в заказе нет delivery_data (например, админский заказ без интеграции).
     'method_code_map' => [
         'cdek_pickup' => ['service' => 'cdek', 'delivery_type' => 'pickup'],
-        'cdek_postamat' => ['service' => 'cdek', 'delivery_type' => 'pickup'],
+        'cdek_postamat' => ['service' => 'cdek', 'delivery_type' => 'postamat'],
         'cdek_courier' => ['service' => 'cdek', 'delivery_type' => 'courier'],
         'yandex_pickup' => ['service' => 'yandex', 'delivery_type' => 'pickup'],
         'yandex_courier' => ['service' => 'yandex', 'delivery_type' => 'courier'],

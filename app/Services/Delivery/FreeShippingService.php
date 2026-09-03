@@ -239,7 +239,8 @@ class FreeShippingService
 
     /**
      * Вид доставки: приоритет — delivery_data.delivery_type, фолбэк — код
-     * способа доставки. Постамат считается ПВЗ.
+     * способа доставки. Отдельное правило «ПВЗ» также включает постаматы,
+     * а правило «Постамат» работает только для них.
      */
     public function resolveDeliveryType(array $deliveryData, ?string $methodCode): ?string
     {
@@ -291,7 +292,7 @@ class FreeShippingService
             return false;
         }
 
-        if (! $this->inList($rule->delivery_types, $context->deliveryType, $lenient)) {
+        if (! $this->deliveryTypeInList($rule->delivery_types, $context->deliveryType, $lenient)) {
             return false;
         }
 
@@ -348,6 +349,27 @@ class FreeShippingService
         }
 
         return in_array($value, $allowed, true);
+    }
+
+    /**
+     * Постамат — частный случай ПВЗ для прежних правил. Это сохраняет
+     * существующую семантику «ПВЗ», одновременно позволяя создать правило,
+     * которое срабатывает только на постаматах.
+     */
+    private function deliveryTypeInList(?array $allowed, ?string $value, bool $lenient): bool
+    {
+        $allowed = array_values(array_filter((array) $allowed, fn ($v) => $v !== null && $v !== ''));
+
+        if ($allowed === []) {
+            return true;
+        }
+
+        if ($value === null || $value === '') {
+            return $lenient;
+        }
+
+        return in_array($value, $allowed, true)
+            || ($value === 'postamat' && in_array('pickup', $allowed, true));
     }
 
     /**
@@ -480,8 +502,11 @@ class FreeShippingService
 
         $value = strtolower(trim($value));
 
-        // Постамат/ПВЗ — один и тот же вид доставки.
-        if (in_array($value, ['postamat', 'pvz', 'pickup_point'], true)) {
+        if ($value === 'postamat') {
+            return 'postamat';
+        }
+
+        if (in_array($value, ['pvz', 'pickup_point'], true)) {
             return 'pickup';
         }
 

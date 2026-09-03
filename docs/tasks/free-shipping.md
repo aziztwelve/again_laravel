@@ -25,7 +25,7 @@ dev `againdev3.ru` 2026-08-18. Осталось: прокликать сцена
 
 - название (например, `Доставка_СДЭК_ПВЗ`);
 - служба доставки (Яндекс.Доставка, СДЭК) — мультивыбор;
-- вид доставки (ПВЗ / курьер) — мультивыбор;
+- вид доставки (ПВЗ / постамат / курьер) — мультивыбор;
 - товары из каталога онлайн — мультивыбор;
 - сумма бесплатной доставки (например, от 5000 ₽);
 - страны — мультивыбор;
@@ -54,7 +54,7 @@ dev `againdev3.ru` 2026-08-18. Осталось: прокликать сцена
 
 | Факт | Где | Значение для фичи |
 |---|---|---|
-| Способы доставки: `cdek_pickup`, `cdek_courier`, `yandex_pickup`, `yandex_courier` (+ legacy boxberry/почта, `courier`, `email`, `none`) | таблица `delivery_methods` | из кода метода выводим службу и вид |
+| Способы доставки: `cdek_pickup`, `cdek_postamat`, `cdek_courier`, `yandex_pickup`, `yandex_courier` (+ legacy boxberry/почта, `courier`, `email`, `none`) | таблица `delivery_methods` | из кода метода выводим службу и вид |
 | Провайдер и вид доставки заказа лежат в `orders.delivery_data` (`provider` = `cdek\|yandex`, `delivery_type` = `pickup\|courier`, `price`) | `OrderCreationService::buildDeliveryData()` | источник правды для матчинга |
 | `item.price` в `order_items` — финальная цена после товарных скидок, промокода и «скидки вместо подарка» | `OrderValidationService`, `Order::updateTotalAmount()` | сумма выкупа = `sum(qty * price)` по не-подарочным позициям |
 | `Order::updateTotalAmount()` = `items + delivery_cost − gift_card_amount` | `app/Models/Order.php` | после обнуления доставки достаточно вызвать пересчёт |

@@ -80,7 +80,7 @@ flowchart TD
     C1A -->|да| C2
 
     C2{"delivery_types заданы?"} -->|нет| C3
-    C2 -->|да| C2A{"вид доставки в списке?<br/>постамат = ПВЗ"}
+    C2 -->|да| C2A{"вид доставки в списке?<br/>постамат совпадает с «ПВЗ»;<br/>«Постамат» — только постамат"}
     C2A -->|нет| NEXT
     C2A -->|да| C3
 
@@ -158,7 +158,7 @@ erDiagram
         int priority "порядок в списке"
         decimal min_order_amount "порог, ₽"
         json services "[cdek, yandex] · пусто = любая"
-        json delivery_types "[pickup, courier] · пусто = любой"
+        json delivery_types "[pickup, postamat, courier] · пусто = любой"
         json payment_methods "коды оплат · пусто = любая"
         timestamp starts_at "необязательное окно"
         timestamp ends_at

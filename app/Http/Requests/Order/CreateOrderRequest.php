@@ -359,7 +359,7 @@ class CreateOrderRequest extends FormRequest
             'yandex_offer' => 'nullable|string|max:255',
             'pvz_code' => 'nullable|string|max:255',
             'pvz_address' => 'nullable|string|max:1000',
-            'delivery_type' => 'nullable|in:courier,pickup',
+            'delivery_type' => 'nullable|in:courier,pickup,postamat',
             'tariff_code' => 'nullable|string|max:100',
             'scheduled_time' => 'nullable|string|max:255',
             'destination_coordinates' => 'nullable|array|size:2',
