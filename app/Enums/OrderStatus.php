@@ -5,6 +5,7 @@ namespace App\Enums;
 enum OrderStatus: string
 {
     case NEW = 'new';
+    case APPROVED = 'approved';
     case PROCESSING = 'processing';
     case SHIPPED = 'shipped';
     case DELIVERED = 'delivered';
@@ -21,6 +22,7 @@ enum OrderStatus: string
     {
         return match ($this) {
             self::NEW => 'Новый',
+            self::APPROVED => 'Согласован',
             self::PROCESSING => 'В работе',
             self::SHIPPED => 'Отгружен',
             self::DELIVERED => 'Доставлен',
@@ -40,6 +42,7 @@ enum OrderStatus: string
     {
         return match ($this) {
             self::NEW => '#fb7878',
+            self::APPROVED => '#60a5fa',
             self::PROCESSING => '#efd49c',
             self::SHIPPED => '#7391ec',
             self::DELIVERED => '#6fbaba',
