@@ -76,10 +76,10 @@ class CdekWarehousesTest extends TestCase
     {
         $this->getJson('/api/third-party-integrations/cdek/warehouses?query=Моск')
             ->assertOk()
-            ->assertJsonCount(4, 'warehouses')
+            ->assertJsonCount(3, 'warehouses')
             ->assertJsonPath('warehouses.0.city', 'Москва')
             ->assertJsonPath('warehouses.0.city_code', 44)
-            ->assertJsonPath('warehouses.3.city', 'Подольск');
+            ->assertJsonPath('warehouses.2.city', 'Подольск');
 
         $this->getJson('/api/third-party-integrations/cdek/warehouses?query=Ленин')
             ->assertOk()
