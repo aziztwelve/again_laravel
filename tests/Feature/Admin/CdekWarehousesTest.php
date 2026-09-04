@@ -35,19 +35,25 @@ class CdekWarehousesTest extends TestCase
 
         Http::fake([
             '*/v2/oauth/token*' => Http::response(['access_token' => 'test-token', 'expires_in' => 3600]),
-            '*/v2/deliverypoints*' => Http::response(array_map(
-                fn (array $point) => ['code' => $point['code'], 'type' => 'PVZ', 'location' => $point['location']],
-                [
-                    ['code' => 'SPB1', 'location' => ['city' => 'Санкт-Петербург', 'city_code' => 137, 'region' => 'Санкт-Петербург', 'address' => 'Невский проспект, 1', 'address_full' => '', 'postal_code' => '190000']],
-                    ['code' => 'MSK2', 'location' => ['city' => 'Москва', 'city_code' => 44, 'region' => 'Москва', 'address' => 'Ленинский проспект, 2', 'address_full' => '', 'postal_code' => '119071']],
-                    ['code' => 'MSK1', 'location' => ['city' => 'Москва', 'city_code' => 44, 'region' => 'Москва', 'address' => 'Арбат, 10', 'address_full' => '', 'postal_code' => '119002']],
-                    ['code' => 'MOSOBL1', 'location' => ['city' => 'Подольск', 'city_code' => 246, 'region' => 'Московская область', 'address' => 'Ленина, 5', 'address_full' => '', 'postal_code' => '142100']],
-                    ['code' => 'EKB1', 'location' => ['city' => 'Екатеринбург', 'city_code' => 267, 'region' => 'Свердловская область', 'address' => 'Ленина, 8', 'address_full' => '', 'postal_code' => '620000']],
-                ],
-            )],
-        ));
+            '*/v2/deliverypoints*' => Http::response($this->points()),
+        ]);
 
         Sanctum::actingAs(User::factory()->create());
+    }
+
+    /** @return array<int, array{code: string, type: string, location: array<string, mixed>>}> */
+    private function points(): array
+    {
+        return array_map(
+            fn (array $point) => ['code' => $point['code'], 'type' => 'PVZ', 'location' => $point['location']],
+            [
+                ['code' => 'SPB1', 'location' => ['city' => 'Санкт-Петербург', 'city_code' => 137, 'region' => 'Санкт-Петербург', 'address' => 'Невский проспект, 1', 'address_full' => '', 'postal_code' => '190000']],
+                ['code' => 'MSK2', 'location' => ['city' => 'Москва', 'city_code' => 44, 'region' => 'Москва', 'address' => 'Ленинский проспект, 2', 'address_full' => '', 'postal_code' => '119071']],
+                ['code' => 'MSK1', 'location' => ['city' => 'Москва', 'city_code' => 44, 'region' => 'Москва', 'address' => 'Арбат, 10', 'address_full' => '', 'postal_code' => '119002']],
+                ['code' => 'MOSOBL1', 'location' => ['city' => 'Подольск', 'city_code' => 246, 'region' => 'Московская область', 'address' => 'Ленина, 5', 'address_full' => '', 'postal_code' => '142100']],
+                ['code' => 'EKB1', 'location' => ['city' => 'Екатеринбург', 'city_code' => 267, 'region' => 'Свердловская область', 'address' => 'Ленина, 8', 'address_full' => '', 'postal_code' => '620000']],
+            ],
+        );
     }
 
     public function test_warehouses_are_sorted_and_limited(): void
