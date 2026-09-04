@@ -105,6 +105,7 @@ class FreeShippingController extends Controller
             'qualifying_amount' => round($qualifyingAmount, 2),
             'candidates' => $candidates,
             'progress' => $this->freeShippingService->progress($context),
+            'progresses' => $this->freeShippingService->progresses($context),
         ]);
     }
 

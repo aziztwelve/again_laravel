@@ -103,6 +103,49 @@ class FreeShippingService
     }
 
     /**
+     * All applicable thresholds for the checkout hint, grouped by delivery
+     * option. Unlike progress(), this intentionally keeps every rule so the
+     * buyer can compare pickup, courier and postamat delivery at once.
+     */
+    public function progresses(FreeShippingContext $context): array
+    {
+        $context = $this->withResolvedGeo($context);
+        $progresses = [];
+
+        foreach ($this->activeRules() as $rule) {
+            if (! $this->conditionsMatch($rule, $context, lenient: true)) {
+                continue;
+            }
+
+            $deliveryType = collect($rule->delivery_types ?? [])
+                ->first(fn ($type) => in_array($type, ['pickup', 'courier', 'postamat'], true));
+
+            // The multi-line checkout hint is intended for delivery-specific
+            // rules. General promotions continue to use the legacy progress.
+            if (! $deliveryType) {
+                continue;
+            }
+
+            $amount = $this->qualifyingAmount($rule, $context);
+            $remaining = round((float) $rule->min_order_amount - $amount, 2);
+            if ($remaining <= 0) {
+                continue;
+            }
+
+            $progresses[$deliveryType] ??= [
+                'rule_id' => (int) $rule->id,
+                'rule_name' => (string) $rule->name,
+                'delivery_type' => $deliveryType,
+                'min_order_amount' => round((float) $rule->min_order_amount, 2),
+                'qualifying_amount' => round($amount, 2),
+                'remaining' => $remaining,
+            ];
+        }
+
+        return array_values($progresses);
+    }
+
+    /**
      * Оценка списка вариантов доставки, показанных покупателю.
      *
      * @param  array<int, array{key?:string, service?:string, delivery_type?:string, price?:float}>  $candidates
