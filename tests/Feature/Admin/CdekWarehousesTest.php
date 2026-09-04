@@ -67,7 +67,7 @@ class CdekWarehousesTest extends TestCase
             ->assertJsonPath('warehouses.0.city', 'Екатеринбург')
             ->assertJsonPath('warehouses.1.city', 'Москва')
             ->assertJsonPath('warehouses.1.address', 'Арбат, 10')
-            ->assertJsonPath('warehouses.2.address', 'Ленинский проспект, 2')
+            ->assertJsonPath('warehouses.2.address', 'Ленинский пр-кт, 2')
             ->assertJsonPath('warehouses.3.city', 'Подольск')
             ->assertJsonPath('warehouses.4.city', 'Санкт-Петербург');
     }
