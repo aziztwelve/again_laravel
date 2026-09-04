@@ -13,6 +13,7 @@ use App\Services\Notifications\CdekDeliveryNotificationService;
 use App\Services\Order\OrderCreationService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -57,6 +58,60 @@ class CdekDeliveryService extends DeliveryService
             $points = array_values(array_filter($points, fn (array $point) => ! array_key_exists('have_cashless', $point) || (bool) $point['have_cashless']));
         }
         return $points;
+    }
+
+    /**
+     * All RU handout points for the admin "sender city" picker: the manager
+     * picks a warehouse and the city code comes straight from CDEK. The full
+     * list is cached for a day (CDEK allows pickup-point data up to a day old);
+     * a failed request is not cached. Search ranks city prefix > city contains
+     * > region > address and returns at most $limit items.
+     */
+    public function warehouses(string $query = '', int $limit = 100): array
+    {
+        $points = Cache::get('cdek:warehouses:ru');
+        if ($points === null) {
+            $result = $this->client->request('GET', '/v2/deliverypoints', query: ['country_code' => 'RU', 'is_handout' => true]);
+            if (! $result['successful']) return [];
+
+            $points = collect($result['data'] ?? [])
+                ->map(fn (array $point) => [
+                    'code' => (string) ($point['code'] ?? ''),
+                    'type' => $point['type'] ?? null,
+                    'city' => (string) data_get($point, 'location.city', ''),
+                    'city_code' => (int) data_get($point, 'location.city_code'),
+                    'region' => (string) data_get($point, 'location.region', ''),
+                    'address' => (string) (data_get($point, 'location.address') ?: data_get($point, 'location.address_full', '')),
+                    'postal_code' => (string) data_get($point, 'location.postal_code', ''),
+                ])
+                ->filter(fn (array $point) => $point['city_code'] > 0 && $point['city'] !== '')
+                ->sortBy([['city', 'asc'], ['address', 'asc']], SORT_STRING)
+                ->values()
+                ->all();
+            Cache::put('cdek:warehouses:ru', $points, now()->addDay());
+        }
+
+        $query = trim($query);
+        if ($query === '') return array_slice($points, 0, $limit);
+
+        $needle = mb_strtolower($query);
+        $matched = [];
+        foreach ($points as $point) {
+            $city = mb_strtolower($point['city']);
+            $score = match (true) {
+                str_starts_with($city, $needle) => 0,
+                str_contains($city, $needle) => 1,
+                str_contains(mb_strtolower($point['region']), $needle) => 2,
+                str_contains(mb_strtolower($point['address']), $needle) => 3,
+                default => null,
+            };
+            if ($score !== null) $matched[] = ['score' => $score, 'point' => $point];
+        }
+
+        usort($matched, fn (array $a, array $b) => [$a['score'], $a['point']['city'], $a['point']['address']]
+            <=> [$b['score'], $b['point']['city'], $b['point']['address']]);
+
+        return array_slice(array_column($matched, 'point'), 0, $limit);
     }
 
     /** Tariffs available under the connected CDEK contract for the admin setup form. */

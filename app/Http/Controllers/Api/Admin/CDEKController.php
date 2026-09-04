@@ -126,6 +126,19 @@ class CDEKController extends Controller
         return response()->json(['tariffs' => (new CdekDeliveryService())->availableTariffs()]);
     }
 
+    /** Warehouse list for the "sender city" autocomplete on the CDEK settings page. */
+    public function warehouses(Request $request)
+    {
+        $data = $request->validate([
+            'query' => ['nullable', 'string', 'max:255'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:500'],
+        ]);
+
+        return response()->json([
+            'warehouses' => (new CdekDeliveryService())->warehouses((string) ($data['query'] ?? ''), (int) ($data['limit'] ?? 100)),
+        ]);
+    }
+
     public function saveSettings(Request $request)
     {
         $data = $request->validate([
@@ -135,6 +148,7 @@ class CDEKController extends Controller
             'settings.secure_password' => ['nullable', 'string', 'max:255'],
             'settings.sender' => ['nullable', 'array'],
             'settings.sender.city_code' => ['nullable', 'integer'],
+            'settings.sender.city_name' => ['nullable', 'string', 'max:255'],
             'settings.sender.address' => ['nullable', 'string', 'max:255'],
             'settings.sender.name' => ['nullable', 'string', 'max:255'],
             'settings.sender.postal_code' => ['nullable', 'string', 'max:20'],
