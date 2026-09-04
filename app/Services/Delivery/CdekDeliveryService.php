@@ -94,7 +94,12 @@ class CdekDeliveryService extends DeliveryService
         $query = trim($query);
         if ($query === '') return array_slice($points, 0, $limit);
 
-        $needle = mb_strtolower($query);
+        // CDEK abbreviates street words in addresses; expand the query the
+        // same way so «Ленинский проспект» still matches «Ленинский пр-кт».
+        $needle = strtr(mb_strtolower($query), [
+            'проспект' => 'пр-кт', 'улица' => 'ул', 'бульвар' => 'б-р',
+            'переулок' => 'пер', 'проезд' => 'пр-д', 'шоссе' => 'ш',
+        ]);
         $matched = [];
         foreach ($points as $point) {
             $city = mb_strtolower($point['city']);

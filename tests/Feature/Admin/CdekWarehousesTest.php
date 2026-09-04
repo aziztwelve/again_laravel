@@ -48,7 +48,7 @@ class CdekWarehousesTest extends TestCase
             fn (array $point) => ['code' => $point['code'], 'type' => 'PVZ', 'location' => $point['location']],
             [
                 ['code' => 'SPB1', 'location' => ['city' => 'Санкт-Петербург', 'city_code' => 137, 'region' => 'Санкт-Петербург', 'address' => 'Невский проспект, 1', 'address_full' => '', 'postal_code' => '190000']],
-                ['code' => 'MSK2', 'location' => ['city' => 'Москва', 'city_code' => 44, 'region' => 'Москва', 'address' => 'Ленинский проспект, 2', 'address_full' => '', 'postal_code' => '119071']],
+                ['code' => 'MSK2', 'location' => ['city' => 'Москва', 'city_code' => 44, 'region' => 'Москва', 'address' => 'Ленинский пр-кт, 2', 'address_full' => '', 'postal_code' => '119071']],
                 ['code' => 'MSK1', 'location' => ['city' => 'Москва', 'city_code' => 44, 'region' => 'Москва', 'address' => 'Арбат, 10', 'address_full' => '', 'postal_code' => '119002']],
                 ['code' => 'MOSOBL1', 'location' => ['city' => 'Подольск', 'city_code' => 246, 'region' => 'Московская область', 'address' => 'Ленина, 5', 'address_full' => '', 'postal_code' => '142100']],
                 ['code' => 'EKB1', 'location' => ['city' => 'Екатеринбург', 'city_code' => 267, 'region' => 'Свердловская область', 'address' => 'Ленина, 8', 'address_full' => '', 'postal_code' => '620000']],
@@ -84,7 +84,13 @@ class CdekWarehousesTest extends TestCase
         $this->getJson('/api/third-party-integrations/cdek/warehouses?query=Ленин')
             ->assertOk()
             ->assertJsonCount(3, 'warehouses')
-            ->assertJsonPath('warehouses.1.address', 'Ленинский проспект, 2');
+            ->assertJsonPath('warehouses.1.address', 'Ленинский пр-кт, 2');
+
+        // CDEK abbreviates street words, the endpoint expands the query.
+        $this->getJson('/api/third-party-integrations/cdek/warehouses?query=Ленинский проспект')
+            ->assertOk()
+            ->assertJsonCount(1, 'warehouses')
+            ->assertJsonPath('warehouses.0.city', 'Москва');
 
         $this->getJson('/api/third-party-integrations/cdek/warehouses?query=НетТакогоГорода')
             ->assertOk()
