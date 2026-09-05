@@ -32,7 +32,13 @@ class CdekDeliveryController
             'delivery_type' => 'required|in:courier,pickup,postamat',
             'destination' => 'required|array', 'destination.city_code' => 'required|integer', 'destination.address' => 'nullable|string|max:255',
             'pvz_code' => 'nullable|string|max:255', 'items' => 'required|array|min:1',
-            'items.*.name' => 'nullable|string|max:255', 'items.*.weight' => 'nullable|integer|min:1',
+            'items.*.name' => 'nullable|string|max:255',
+            // Измерения товара приходят строками из decimal-кастов API ("350.000"),
+            // отсутствующие поля заполняет fallback из настроек default_package.
+            'items.*.weight' => 'nullable|numeric|min:0.001',
+            'items.*.length' => 'nullable|numeric|min:0.1',
+            'items.*.width' => 'nullable|numeric|min:0.1',
+            'items.*.height' => 'nullable|numeric|min:0.1',
             'items.*.price' => 'nullable|numeric|min:0', 'items.*.quantity' => 'nullable|integer|min:1',
         ]);
         try {

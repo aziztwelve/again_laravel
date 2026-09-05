@@ -152,6 +152,34 @@ class CdekClientTest extends TestCase
         $this->assertSame(['min' => 5, 'max' => 7], $tariff['period']);
     }
 
+    public function test_package_uses_item_measurements_with_settings_fallback(): void
+    {
+        Http::fake([
+            'https://api.edu.cdek.ru/v2/oauth/token' => Http::response(['access_token' => 'test-token', 'expires_in' => 3600]),
+            'https://api.edu.cdek.ru/v2/calculator/tarifflist' => Http::response(['tariff_codes' => [[
+                'tariff_code' => 137, 'tariff_name' => 'Посылка склад-дверь', 'delivery_mode' => 3,
+                'delivery_sum' => 420, 'period_min' => 2, 'period_max' => 4,
+            ]]]),
+        ]);
+        $service = new CdekDeliveryService([
+            'enabled' => true, 'mode' => 'sandbox', 'account' => 'account', 'secure_password' => 'secret',
+            'base_url' => ['sandbox' => 'https://api.edu.cdek.ru'], 'sender' => ['city_code' => 44, 'address' => 'Москва'],
+            'default_package' => ['weight' => 80, 'length' => 26, 'width' => 21, 'height' => 4],
+        ]);
+
+        // Товар с габаритами из карточки + товар без них (fallback настроек).
+        $service->calculateTariffs('courier', ['city_code' => 44, 'address' => 'Тест'], [
+            ['name' => 'С данными', 'weight' => 350, 'length' => 35, 'width' => 25, 'height' => 12, 'quantity' => 1],
+            ['name' => 'Без данных', 'quantity' => 2],
+        ]);
+
+        Http::assertSent(fn (Request $request) => str_contains($request->url(), 'tarifflist')
+            && $request['packages'][0]['weight'] === 350 + 80 * 2
+            && $request['packages'][0]['length'] === 35
+            && $request['packages'][0]['width'] === 25
+            && $request['packages'][0]['height'] === 12 + 4 * 2);
+    }
+
     public function test_it_returns_only_the_configured_default_tariff_for_each_delivery_type(): void
     {
         Http::fake([

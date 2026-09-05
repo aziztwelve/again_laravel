@@ -141,6 +141,45 @@ class CdekWarehousesTest extends TestCase
         ])->assertStatus(422);
     }
 
+    public function test_public_calculate_accepts_product_measurements_as_decimal_strings(): void
+    {
+        DeliveryServiceSetting::query()->where('service_name', 'cdek')->update(['settings' => [
+            'enabled' => true, 'mode' => 'sandbox', 'account' => 'test-account', 'secure_password' => 'test-secret',
+            'sender' => ['city_code' => 44, 'address' => 'Москва'],
+        ] + (DeliveryServiceSetting::query()->where('service_name', 'cdek')->value('settings') ?? [])]);
+
+        Http::fake([
+            '*/v2/oauth/token*' => Http::response(['access_token' => 'test-token', 'expires_in' => 3600]),
+            '*/v2/calculator/tarifflist*' => Http::response(['tariff_codes' => [[
+                'tariff_code' => 137, 'tariff_name' => 'Посылка склад-дверь', 'delivery_mode' => 3,
+                'delivery_sum' => 420, 'period_min' => 2, 'period_max' => 4,
+            ]]]),
+        ]);
+
+        // API товаров отдаёт измерения строками decimal-кастов ("350.000").
+        $this->postJson('/api/public/delivery/cdek/calculate', [
+            'delivery_type' => 'courier',
+            'destination' => ['city_code' => 137, 'address' => 'Тест'],
+            'items' => [[
+                'name' => 'Товар', 'weight' => '350.000', 'length' => '35.00',
+                'width' => '25.00', 'height' => '12.00', 'quantity' => 1,
+            ]],
+        ])->assertOk()->assertJsonPath('success', true);
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/v2/calculator/tarifflist')
+            && $request['packages'][0]['weight'] === 350
+            && $request['packages'][0]['length'] === 35
+            && $request['packages'][0]['width'] === 25
+            && $request['packages'][0]['height'] === 12);
+
+        // Товар без измерений — посылка собирается из fallback-настроек.
+        $this->postJson('/api/public/delivery/cdek/calculate', [
+            'delivery_type' => 'courier',
+            'destination' => ['city_code' => 137, 'address' => 'Тест'],
+            'items' => [['name' => 'Товар', 'quantity' => 1]],
+        ])->assertOk()->assertJsonPath('success', true);
+    }
+
     public function test_guest_cannot_list_warehouses(): void
     {
         auth()->forgetGuards();
