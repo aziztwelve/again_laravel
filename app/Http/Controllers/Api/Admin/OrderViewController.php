@@ -63,8 +63,11 @@ class OrderViewController extends Controller
             'assignedUser.profile',
             'assignedUser.roles',
             'yandexOrder.statusEvents',
-            'cdekOrder',
+            'cdekOrder.statusEvents',
         ]);
+
+        // Payload событий СДЭК не используется на фронте и может быть большим.
+        $order->cdekOrder?->statusEvents?->makeHidden('payload');
 
         $summary = $this->orderCreationService->getOrderSummary($order);
 
