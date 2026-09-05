@@ -12,8 +12,13 @@ use App\Jobs\CreateYandexOrderJob;
  */
 class CreateYandexOrderAfterPayment
 {
-    public function handle(OrderPaid $event): void
+    /** @param OrderPaid $event */
+    public function handle(mixed $event): void
     {
+        if (! $event instanceof OrderPaid) {
+            return;
+        }
+
         if (str_starts_with((string) $event->order->deliveryMethod?->code, 'yandex_') && ! $event->order->yandexOrder()->exists()) {
             CreateYandexOrderJob::dispatch($event->order->id);
         }

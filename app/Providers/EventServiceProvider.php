@@ -24,8 +24,9 @@ class EventServiceProvider extends ServiceProvider
         ],
     ];
 
-    // Discovery отключён: иначе Laravel может повторно включить deprecated-
-    // listener'ы создания заявок доставки по type-hint события.
+    // Основной framework-provider также сканирует app/Listeners. У deprecated-
+    // listener'ов выше параметр handle намеренно не type-hint'ен, поэтому они
+    // не будут обнаружены автоматически до явного возврата этой интеграции.
     public function shouldDiscoverEvents(): bool
     {
         return false;
