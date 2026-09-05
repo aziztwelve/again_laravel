@@ -288,7 +288,18 @@ class OrderViewController extends Controller
         } catch (\InvalidArgumentException $exception) {
             return $this->errorResponse($exception->getMessage(), 422);
         }
-        if (! $result['successful']) return $this->errorResponse('СДЭК не подтвердил удаление заявки.', 422, $result['data'] ?? []);
+        if (! $result['successful']) {
+            // Заявки уже нет на стороне СДЭК (удалена/истекла) — локальную
+            // запись всё равно убираем, чтобы можно было создать новую.
+            $notFound = collect(data_get($result, 'data.requests.*.errors.*.code'))
+                ->contains('v2_entity_not_found');
+            if (! $notFound) {
+                return $this->errorResponse('СДЭК не подтвердил удаление заявки.', 422, $result['data'] ?? []);
+            }
+
+            $cdekOrder->delete();
+            return $this->successResponse('Заявка не найдена на стороне СДЭК — локальная запись удалена.');
+        }
 
         // Заявка удалена в СДЭК — убираем локальную запись, чтобы кнопка
         // «Отправить данные в СДЭК» снова стала доступна (создать заявку заново).
