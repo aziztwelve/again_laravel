@@ -156,6 +156,7 @@ class CDEKController extends Controller
             'settings.tariff_codes' => ['nullable', 'array'],
             'settings.tariff_codes.*' => ['integer'],
             'settings.tariff_mode' => ['nullable', 'in:any,dver,sklad'],
+            'settings.delivery_days_offset' => ['nullable', 'integer', 'min:0', 'max:30'],
             'settings.delivery_vat' => ['nullable', 'integer', 'in:0,5,7,10,16,22'],
             'settings.default_weight_scope' => ['nullable', 'in:item,order'],
             'settings.services' => ['nullable', 'array'],

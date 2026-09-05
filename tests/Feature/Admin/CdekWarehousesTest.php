@@ -127,6 +127,20 @@ class CdekWarehousesTest extends TestCase
         $this->assertSame(44, data_get($saved, 'sender.city_code'));
     }
 
+    public function test_settings_save_persists_delivery_days_offset(): void
+    {
+        $this->putJson('/api/third-party-integrations/cdek/settings', [
+            'settings' => ['delivery_days_offset' => 2],
+        ])->assertOk()->assertJsonPath('settings.delivery_days_offset', 2);
+
+        $saved = DeliveryServiceSetting::query()->where('service_name', 'cdek')->value('settings');
+        $this->assertSame(2, data_get($saved, 'delivery_days_offset'));
+
+        $this->putJson('/api/third-party-integrations/cdek/settings', [
+            'settings' => ['delivery_days_offset' => -1],
+        ])->assertStatus(422);
+    }
+
     public function test_guest_cannot_list_warehouses(): void
     {
         auth()->forgetGuards();

@@ -132,6 +132,26 @@ class CdekClientTest extends TestCase
         $this->assertSame(440.0, $belowThreshold['price']);
     }
 
+    public function test_it_adds_the_configured_days_offset_to_the_delivery_period(): void
+    {
+        Http::fake([
+            'https://api.edu.cdek.ru/v2/oauth/token' => Http::response(['access_token' => 'test-token', 'expires_in' => 3600]),
+            'https://api.edu.cdek.ru/v2/calculator/tarifflist' => Http::response(['tariff_codes' => [[
+                'tariff_code' => 137, 'tariff_name' => 'Посылка склад-дверь', 'delivery_mode' => 3,
+                'delivery_sum' => 420, 'period_min' => 2, 'period_max' => 4,
+            ]]]),
+        ]);
+        $service = new CdekDeliveryService([
+            'enabled' => true, 'mode' => 'sandbox', 'account' => 'account', 'secure_password' => 'secret',
+            'base_url' => ['sandbox' => 'https://api.edu.cdek.ru'], 'sender' => ['city_code' => 44, 'address' => 'Москва'],
+            'delivery_days_offset' => 3,
+        ]);
+
+        $tariff = $service->calculateTariffs('courier', ['city_code' => 44, 'address' => 'Тест'], [['name' => 'Товар', 'weight' => 100]])[0];
+
+        $this->assertSame(['min' => 5, 'max' => 7], $tariff['period']);
+    }
+
     public function test_it_returns_only_the_configured_default_tariff_for_each_delivery_type(): void
     {
         Http::fake([
