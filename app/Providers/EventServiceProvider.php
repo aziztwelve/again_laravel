@@ -11,19 +11,21 @@ use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvi
 class EventServiceProvider extends ServiceProvider
 {
     /**
-     * Автоматически ставим создание Яндекс.Доставки в очередь только после
-     * подтверждённой сервером оплаты. Это не зависит от закрытия браузера.
+     * Заявки Яндекс.Доставки и СДЭК временно создаются менеджером вручную
+     * из карточки заказа. Автосоздание после оплаты оставлено ниже
+     * закомментированным, чтобы его можно было безопасно вернуть.
      */
     protected $listen = [
         OrderPaid::class => [
-            CreateYandexOrderAfterPayment::class,
-            CreateCdekOrderAfterPayment::class,
+            // @deprecated Временно отключено: заявки доставки создаются вручную из админки.
+            // CreateYandexOrderAfterPayment::class,
+            // CreateCdekOrderAfterPayment::class,
             SyncOrderToMoySkladAfterPayment::class,
         ],
     ];
 
-    // Listener задан явно выше. Отключаем discovery, иначе Laravel добавит
-    // тот же CreateYandexOrderAfterPayment второй раз по type-hint события.
+    // Discovery отключён: иначе Laravel может повторно включить deprecated-
+    // listener'ы создания заявок доставки по type-hint события.
     public function shouldDiscoverEvents(): bool
     {
         return false;
