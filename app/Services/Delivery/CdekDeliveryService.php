@@ -359,7 +359,7 @@ class CdekDeliveryService extends DeliveryService
      * СДЭК отвечает 202 (принято, документ генерируется) без url — поллим
      * запрос печати, пока не появится ссылка на готовый PDF.
      */
-    private function resolvePrintUrl(array $result, string $path, int $cdekOrderId): array
+    private function resolvePrintUrl(array $result, string $path, ?int $cdekOrderId): array
     {
         if (! $result['successful'] || ! empty($result['data']['url'])) return $result;
 
