@@ -335,7 +335,7 @@ class CdekDeliveryService extends DeliveryService
         return $this->client->request(
             'POST',
             '/v2/print/orders',
-            ['orders' => [['cdek_uuid' => $cdekOrder->cdek_uuid]], 'format' => 'pdf'],
+            ['orders' => [['order_uuid' => $cdekOrder->cdek_uuid]], 'format' => 'pdf'],
             cdekOrderId: $cdekOrder->id,
         );
     }
@@ -346,7 +346,7 @@ class CdekDeliveryService extends DeliveryService
         return $this->client->request(
             'POST',
             '/v2/print/barcodes',
-            ['orders' => [['cdek_uuid' => $cdekOrder->cdek_uuid]], 'format' => 'A6'],
+            ['orders' => [['order_uuid' => $cdekOrder->cdek_uuid]], 'format' => 'A6'],
             cdekOrderId: $cdekOrder->id,
         );
     }

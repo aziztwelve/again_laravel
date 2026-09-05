@@ -221,10 +221,10 @@ class CdekClientTest extends TestCase
         $this->assertTrue($barcode['successful']);
         $this->assertSame('https://print.cdek.ru/barcodes.pdf', $barcode['data']['url']);
         Http::assertSent(fn (Request $request) => $request->url() === 'https://api.edu.cdek.ru/v2/print/orders'
-            && $request['orders'] === [['cdek_uuid' => 'uuid-1']]
+            && $request['orders'] === [['order_uuid' => 'uuid-1']]
             && $request['format'] === 'pdf');
         Http::assertSent(fn (Request $request) => $request->url() === 'https://api.edu.cdek.ru/v2/print/barcodes'
-            && $request['orders'] === [['cdek_uuid' => 'uuid-1']]
+            && $request['orders'] === [['order_uuid' => 'uuid-1']]
             && $request['format'] === 'A6');
     }
 
