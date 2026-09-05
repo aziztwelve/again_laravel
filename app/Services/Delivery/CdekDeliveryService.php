@@ -332,23 +332,47 @@ class CdekDeliveryService extends DeliveryService
     public function printWaybill(CdekOrder $cdekOrder): array
     {
         if (! $cdekOrder->cdek_uuid) throw new InvalidArgumentException('Заявка СДЭК ещё не создана.');
-        return $this->client->request(
+        $result = $this->client->request(
             'POST',
             '/v2/print/orders',
             ['orders' => [['order_uuid' => $cdekOrder->cdek_uuid]], 'format' => 'pdf'],
             cdekOrderId: $cdekOrder->id,
         );
+
+        return $this->resolvePrintUrl($result, '/v2/print/orders', $cdekOrder->id);
     }
 
     public function printBarcode(CdekOrder $cdekOrder): array
     {
         if (! $cdekOrder->cdek_uuid) throw new InvalidArgumentException('Заявка СДЭК ещё не создана.');
-        return $this->client->request(
+        $result = $this->client->request(
             'POST',
             '/v2/print/barcodes',
             ['orders' => [['order_uuid' => $cdekOrder->cdek_uuid]], 'format' => 'A6'],
             cdekOrderId: $cdekOrder->id,
         );
+
+        return $this->resolvePrintUrl($result, '/v2/print/barcodes', $cdekOrder->id);
+    }
+
+    /**
+     * СДЭК отвечает 202 (принято, документ генерируется) без url — поллим
+     * запрос печати, пока не появится ссылка на готовый PDF.
+     */
+    private function resolvePrintUrl(array $result, string $path, int $cdekOrderId): array
+    {
+        if (! $result['successful'] || ! empty($result['data']['url'])) return $result;
+
+        $uuid = data_get($result, 'data.entity.uuid');
+        if (! $uuid) return $result;
+
+        for ($attempt = 0; $attempt < 10; $attempt++) {
+            usleep(500_000);
+            $polled = $this->client->request('GET', $path.'/'.$uuid, cdekOrderId: $cdekOrderId);
+            if (! empty($polled['data']['url'])) return $polled;
+        }
+
+        return $result;
     }
     public function webhooks(): array
     {
