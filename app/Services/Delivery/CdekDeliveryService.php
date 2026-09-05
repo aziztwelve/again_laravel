@@ -328,6 +328,28 @@ class CdekDeliveryService extends DeliveryService
         if (! $cdekOrder->cdek_uuid) throw new InvalidArgumentException('Заявка СДЭК ещё не создана.');
         return $this->client->request('DELETE', '/v2/orders/'.$cdekOrder->cdek_uuid, cdekOrderId: $cdekOrder->id);
     }
+
+    public function printWaybill(CdekOrder $cdekOrder): array
+    {
+        if (! $cdekOrder->cdek_uuid) throw new InvalidArgumentException('Заявка СДЭК ещё не создана.');
+        return $this->client->request(
+            'POST',
+            '/v2/print/orders',
+            ['cdek_uuids' => [$cdekOrder->cdek_uuid], 'format' => 'pdf'],
+            cdekOrderId: $cdekOrder->id,
+        );
+    }
+
+    public function printBarcode(CdekOrder $cdekOrder): array
+    {
+        if (! $cdekOrder->cdek_uuid) throw new InvalidArgumentException('Заявка СДЭК ещё не создана.');
+        return $this->client->request(
+            'POST',
+            '/v2/print/barcodes',
+            ['cdek_uuids' => [$cdekOrder->cdek_uuid], 'format' => 'pdf'],
+            cdekOrderId: $cdekOrder->id,
+        );
+    }
     public function webhooks(): array
     {
         $result = $this->client->request('GET', '/v2/webhooks');

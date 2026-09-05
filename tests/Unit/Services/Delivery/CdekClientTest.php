@@ -199,4 +199,42 @@ class CdekClientTest extends TestCase
 
         $this->assertSame([137], array_column($tariffs, 'tariff_code'));
     }
+
+    public function test_it_requests_print_documents_for_a_created_order(): void
+    {
+        Http::fake([
+            'https://api.edu.cdek.ru/v2/oauth/token' => Http::response(['access_token' => 'test-token', 'expires_in' => 3600]),
+            'https://api.edu.cdek.ru/v2/print/orders' => Http::response(['url' => 'https://print.cdek.ru/waybill.pdf']),
+            'https://api.edu.cdek.ru/v2/print/barcodes' => Http::response(['url' => 'https://print.cdek.ru/barcodes.pdf']),
+        ]);
+        $service = new CdekDeliveryService([
+            'enabled' => true, 'mode' => 'sandbox', 'account' => 'account', 'secure_password' => 'secret',
+            'base_url' => ['sandbox' => 'https://api.edu.cdek.ru'], 'sender' => ['city_code' => 44, 'address' => 'Москва'],
+        ]);
+        $cdekOrder = new \App\Models\CdekOrder(['cdek_uuid' => 'uuid-1', 'order_id' => 7]);
+
+        $waybill = $service->printWaybill($cdekOrder);
+        $barcode = $service->printBarcode($cdekOrder);
+
+        $this->assertTrue($waybill['successful']);
+        $this->assertSame('https://print.cdek.ru/waybill.pdf', $waybill['data']['url']);
+        $this->assertTrue($barcode['successful']);
+        $this->assertSame('https://print.cdek.ru/barcodes.pdf', $barcode['data']['url']);
+        Http::assertSent(fn (Request $request) => $request->url() === 'https://api.edu.cdek.ru/v2/print/orders'
+            && $request['cdek_uuids'] === ['uuid-1']
+            && $request['format'] === 'pdf');
+        Http::assertSent(fn (Request $request) => $request->url() === 'https://api.edu.cdek.ru/v2/print/barcodes'
+            && $request['cdek_uuids'] === ['uuid-1']);
+    }
+
+    public function test_it_requires_created_order_for_print_documents(): void
+    {
+        $service = new CdekDeliveryService([
+            'enabled' => true, 'mode' => 'sandbox', 'account' => 'account', 'secure_password' => 'secret',
+            'base_url' => ['sandbox' => 'https://api.edu.cdek.ru'],
+        ]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $service->printWaybill(new \App\Models\CdekOrder(['order_id' => 7]));
+    }
 }

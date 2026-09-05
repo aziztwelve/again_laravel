@@ -941,6 +941,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/{order}/yandex-delivery/cancel', [OrderViewController::class, 'cancelYandexDelivery'])->name('yandex.cancel');
         Route::post('/{order}/cdek-delivery/create', [OrderViewController::class, 'createCdekDelivery'])->name('cdek.create');
         Route::post('/{order}/cdek-delivery/cancel', [OrderViewController::class, 'cancelCdekDelivery'])->name('cdek.cancel');
+        Route::get('/{order}/cdek-delivery/waybill', [OrderViewController::class, 'cdekWaybill'])->name('cdek.waybill');
+        Route::get('/{order}/cdek-delivery/barcode', [OrderViewController::class, 'cdekBarcode'])->name('cdek.barcode');
         Route::put('/{order}', [OrderController::class, 'update'])->name('update');
         Route::delete('/{order}', [OrderController::class, 'destroy'])->name('destroy');
 

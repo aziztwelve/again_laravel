@@ -233,6 +233,48 @@ class OrderViewController extends Controller
         return $this->successResponse('Заявка СДЭК поставлена в очередь на создание.', ['cdek_order' => $cdekOrder->fresh()]);
     }
 
+    public function cdekWaybill(Request $request, Order $order): JsonResponse
+    {
+        if (! $this->orderAuthorizationService->canView($request->user(), $order)) {
+            return $this->errorResponse('Доступ запрещён', 403);
+        }
+        $cdekOrder = $order->cdekOrder;
+        if (! $cdekOrder?->cdek_uuid) return $this->errorResponse('Заявка СДЭК ещё не создана.', 422);
+
+        try {
+            $result = app(CdekDeliveryService::class)->printWaybill($cdekOrder);
+        } catch (\InvalidArgumentException $exception) {
+            return $this->errorResponse($exception->getMessage(), 422);
+        }
+        if (! $result['successful']) return $this->errorResponse('СДЭК не вернул накладную.', 422, $result['data'] ?? []);
+
+        $url = $result['data']['url'] ?? null;
+        if (! $url) return $this->errorResponse('СДЭК не вернул ссылку на накладную.', 422);
+
+        return $this->successResponse('Ссылка на накладную получена.', ['url' => $url]);
+    }
+
+    public function cdekBarcode(Request $request, Order $order): JsonResponse
+    {
+        if (! $this->orderAuthorizationService->canView($request->user(), $order)) {
+            return $this->errorResponse('Доступ запрещён', 403);
+        }
+        $cdekOrder = $order->cdekOrder;
+        if (! $cdekOrder?->cdek_uuid) return $this->errorResponse('Заявка СДЭК ещё не создана.', 422);
+
+        try {
+            $result = app(CdekDeliveryService::class)->printBarcode($cdekOrder);
+        } catch (\InvalidArgumentException $exception) {
+            return $this->errorResponse($exception->getMessage(), 422);
+        }
+        if (! $result['successful']) return $this->errorResponse('СДЭК не вернул ШК.', 422, $result['data'] ?? []);
+
+        $url = $result['data']['url'] ?? null;
+        if (! $url) return $this->errorResponse('СДЭК не вернул ссылку на ШК.', 422);
+
+        return $this->successResponse('Ссылка на ШК получена.', ['url' => $url]);
+    }
+
     public function cancelCdekDelivery(Request $request, Order $order, CdekDeliveryService $service): JsonResponse
     {
         if (! $this->orderAuthorizationService->canView($request->user(), $order)) {
@@ -246,10 +288,13 @@ class OrderViewController extends Controller
         } catch (\InvalidArgumentException $exception) {
             return $this->errorResponse($exception->getMessage(), 422);
         }
-        if (! $result['successful']) return $this->errorResponse('СДЭК не подтвердил отмену заявки.', 422, $result['data'] ?? []);
+        if (! $result['successful']) return $this->errorResponse('СДЭК не подтвердил удаление заявки.', 422, $result['data'] ?? []);
 
-        $service->sync($cdekOrder->fresh());
-        return $this->successResponse('Запрос на отмену заявки СДЭК отправлен.');
+        // Заявка удалена в СДЭК — убираем локальную запись, чтобы кнопка
+        // «Отправить данные в СДЭК» снова стала доступна (создать заявку заново).
+        $cdekOrder->delete();
+
+        return $this->successResponse('Заявка СДЭК удалена.');
     }
 
     /**
