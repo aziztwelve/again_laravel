@@ -310,6 +310,25 @@ nginx подключает `sites-enabled/*` целиком и дублирую�
 
 ## История деплоев
 
+- **2026-09-05** — привязка поля «Увеличить время доставки на, дней» на странице
+  СДЭК (https://againdev3.ru/admin/integrations/delivery/cdek). Поле и логика
+  существовали давно (дашборд отправлял `delivery_days_offset`, сервис
+  `CdekDeliveryService` прибавлял его к `period_min/max`), но
+  `CDEKController::saveSettings` не имел правила валидации для
+  `settings.delivery_days_offset` — `validate()` молча отбрасывал ключ, и
+  значение никогда не сохранялось в БД (та же история, что с
+  `sender.city_name` 2026-09-04 (4)). Добавлено правило
+  `nullable|integer|min:0|max:30`. Правок фронта не потребовалось: витрина
+  уже показывает `X-Y дн.` (`components/Checkout/Delivery.vue`). Миграций/сидов
+  нет; laravel — `optimize:clear` + рестарт pm2-воркеров; фронты не
+  пересобирались (код не менялся, только pull). Тесты: `CdekClientTest` 7/7
+  (в т.ч. новый: offset 3 → период 2-4 становится 5-7), `CdekWarehousesTest`
+  6/6 (в т.ч. новый: PUT сохраняет offset=2, отрицательное значение → 422).
+  Проверено end-to-end на сервере с временным sanctum-токеном (удалён):
+  PUT offset=2 → в БД 2; `/api/public/delivery/cdek/calculate` курьер Москва
+  тариф 137: период 2-3 → 4-5; значение возвращено в 0. Head: laravel
+  `1e1ff39` (nuxt-shop `1944805`, vue-admin `47fd44e` без изменений).
+
 - **2026-09-04 (4)** — «Город отправки» в настройках СДЭК
   (https://againdev3.ru/admin/integrations/delivery/cdek, «Параметры
   отправки»): вместо свободного текстового поля — автокомплит по складам
