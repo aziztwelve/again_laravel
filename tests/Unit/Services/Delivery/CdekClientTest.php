@@ -204,9 +204,9 @@ class CdekClientTest extends TestCase
     {
         Http::fake([
             'https://api.edu.cdek.ru/v2/oauth/token' => Http::response(['access_token' => 'test-token', 'expires_in' => 3600]),
-            // Накладная: 202 без url → поллим GET до готовности.
+            // Накладная: 202 без url → поллим GET (url вложен в entity) до готовности.
             'https://api.edu.cdek.ru/v2/print/orders' => Http::response(['entity' => ['uuid' => 'print-uuid']], 202),
-            'https://api.edu.cdek.ru/v2/print/orders/print-uuid' => Http::response(['url' => 'https://print.cdek.ru/waybill.pdf']),
+            'https://api.edu.cdek.ru/v2/print/orders/print-uuid' => Http::response(['entity' => ['url' => 'https://print.cdek.ru/waybill.pdf']]),
             // ШК: готов сразу.
             'https://api.edu.cdek.ru/v2/print/barcodes' => Http::response(['url' => 'https://print.cdek.ru/barcodes.pdf']),
         ]);

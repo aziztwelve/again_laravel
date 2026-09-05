@@ -357,11 +357,21 @@ class CdekDeliveryService extends DeliveryService
 
     /**
      * СДЭК отвечает 202 (принято, документ генерируется) без url — поллим
-     * запрос печати, пока не появится ссылка на готовый PDF.
+     * запрос печати, пока не появится ссылка на готовый PDF (url приходит
+     * вложенным в data.entity.url).
      */
     private function resolvePrintUrl(array $result, string $path, ?int $cdekOrderId): array
     {
-        if (! $result['successful'] || ! empty($result['data']['url'])) return $result;
+        $normalize = function (array $response): ?array {
+            $url = data_get($response, 'data.url') ?? data_get($response, 'data.entity.url');
+            if (! $url) return null;
+            $response['data']['url'] = $url;
+
+            return $response;
+        };
+
+        if (! $result['successful']) return $result;
+        if ($ready = $normalize($result)) return $ready;
 
         $uuid = data_get($result, 'data.entity.uuid');
         if (! $uuid) return $result;
@@ -369,7 +379,7 @@ class CdekDeliveryService extends DeliveryService
         for ($attempt = 0; $attempt < 10; $attempt++) {
             usleep(500_000);
             $polled = $this->client->request('GET', $path.'/'.$uuid, cdekOrderId: $cdekOrderId);
-            if (! empty($polled['data']['url'])) return $polled;
+            if ($ready = $normalize($polled)) return $ready;
         }
 
         return $result;
