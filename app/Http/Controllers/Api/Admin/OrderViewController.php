@@ -290,22 +290,42 @@ class OrderViewController extends Controller
         }
         if (! $result['successful']) {
             // Заявки уже нет на стороне СДЭК (удалена/истекла) — локальную
-            // запись всё равно убираем, чтобы можно было создать новую.
+            // запись всё равно чистим, чтобы можно было создать новую.
             $notFound = collect(data_get($result, 'data.requests.*.errors.*.code'))
                 ->contains('v2_entity_not_found');
             if (! $notFound) {
                 return $this->errorResponse('СДЭК не подтвердил удаление заявки.', 422, $result['data'] ?? []);
             }
 
-            $cdekOrder->delete();
-            return $this->successResponse('Заявка не найдена на стороне СДЭК — локальная запись удалена.');
+            $this->resetCdekOrder($cdekOrder);
+            return $this->successResponse('Заявка не найдена на стороне СДЭК — локальная запись очищена.');
         }
 
-        // Заявка удалена в СДЭК — убираем локальную запись, чтобы кнопка
-        // «Отправить данные в СДЭК» снова стала доступна (создать заявку заново).
-        $cdekOrder->delete();
+        $this->resetCdekOrder($cdekOrder);
 
         return $this->successResponse('Заявка СДЭК удалена.');
+    }
+
+    /**
+     * Сбрасывает локальную заявку СДЭК в состояние «не создана»: запись
+     * сохраняется (order_id и external_order_number — UNIQUE, soft-delete
+     * заблокировал бы повторное создание), события статусов удаляются.
+     */
+    private function resetCdekOrder(CdekOrder $cdekOrder): void
+    {
+        $cdekOrder->statusEvents()->delete();
+        $cdekOrder->fill([
+            'cdek_uuid' => null,
+            'cdek_number' => null,
+            'request_uuid' => null,
+            'creation_state' => 'NEW',
+            'status_code' => null,
+            'status_name' => null,
+            'internal_status' => null,
+            'tracking_url' => null,
+            'last_synced_at' => null,
+            'last_error' => null,
+        ])->save();
     }
 
     /**
