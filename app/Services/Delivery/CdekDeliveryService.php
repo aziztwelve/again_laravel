@@ -238,17 +238,51 @@ class CdekDeliveryService extends DeliveryService
         ], fn ($value) => $value !== null);
     }
 
+    /**
+     * Причина, по которой заявку СДЭК ещё нельзя создать, или null.
+     *
+     * Проверяется дважды: в админском эндпоинте (менеджер сразу видит текст)
+     * и перед отправкой в СДЭК. Legacy-заказы приходят с пустым
+     * `delivery_data`, и без этой проверки job молча падал в очереди —
+     * в интерфейсе после нажатия кнопки не появлялось ничего.
+     */
+    public function readinessError(Order $order): ?string
+    {
+        $sender = $this->settings['sender'] ?? [];
+        if (! filled($sender['city_code'] ?? null) || ! filled($sender['address'] ?? null)) {
+            return 'Заполните CDEK_DELIVERY_SENDER_CITY_CODE и CDEK_DELIVERY_SENDER_ADDRESS.';
+        }
+
+        $delivery = $order->delivery_data ?? [];
+        if (! ($delivery['tariff_code'] ?? null)) {
+            return 'В заказе нет данных доставки СДЭК: не выбран тариф. Выберите способ доставки СДЭК в заказе и повторите отправку.';
+        }
+
+        $address = $order->loadMissing('address')->address;
+        if (! ($address?->recipient_phone ?? $order->client?->phone)) {
+            return 'Для оформления СДЭК нужен телефон получателя.';
+        }
+
+        if (in_array($delivery['delivery_type'] ?? null, ['pickup', 'postamat'], true)) {
+            if (! ($delivery['pvz']['code'] ?? $delivery['pvz_code'] ?? null)) {
+                return 'Не выбран ПВЗ СДЭК.';
+            }
+        } elseif ((int) ($delivery['destination']['city_code'] ?? 0) < 1) {
+            return 'Для курьерской доставки СДЭК не хватает города получателя: выберите город и адрес СДЭК в заказе.';
+        }
+
+        return null;
+    }
+
     public function createExternalOrder(Order $order, CdekOrder $cdekOrder): array
     {
-        $this->assertSenderConfigured();
-        $delivery = $order->delivery_data ?? [];
-        $tariff = $delivery['tariff_code'] ?? null;
-        if (! $tariff) throw new InvalidArgumentException('Не выбран тариф СДЭК.');
+        if ($error = $this->readinessError($order)) throw new InvalidArgumentException($error);
 
+        $delivery = $order->delivery_data ?? [];
+        $tariff = $delivery['tariff_code'];
         $address = $order->loadMissing('address')->address;
         $recipientName = trim(implode(' ', array_filter([$address?->recipient_last_name, $address?->recipient_first_name, $address?->recipient_middle_name]))) ?: 'Покупатель';
         $recipientPhone = $address?->recipient_phone ?? $order->client?->phone;
-        if (! $recipientPhone) throw new InvalidArgumentException('Для оформления СДЭК нужен телефон получателя.');
         $destination = $delivery['destination'] ?? [];
         $isPickup = in_array($delivery['delivery_type'] ?? null, ['pickup', 'postamat'], true);
         $payload = [
@@ -270,7 +304,6 @@ class CdekDeliveryService extends DeliveryService
         if ($services !== []) $payload['services'] = $services;
         if ($isPickup) $payload['delivery_point'] = $delivery['pvz']['code'] ?? $delivery['pvz_code'] ?? null;
         else $payload['to_location'] = ['code' => (int) ($destination['city_code'] ?? 0), 'address' => $destination['address'] ?? $address?->address];
-        if (empty($payload['delivery_point']) && $isPickup) throw new InvalidArgumentException('Не выбран ПВЗ СДЭК.');
 
         return $this->client->request('POST', '/v2/orders', $payload, cdekOrderId: $cdekOrder->id);
     }
@@ -597,11 +630,37 @@ class CdekDeliveryService extends DeliveryService
     }
     private function orderItems(Order $order): array { return $order->loadMissing('items.product', 'items.variant')->items->map(fn ($item) => ['id' => $item->id, 'name' => $item->product?->name ?? $item->legacy_name ?? 'Товар', 'sku' => $item->variant?->sku ?? $item->product?->sku ?? $item->id, 'price' => (float) $item->price, 'quantity' => (int) $item->quantity, 'weight' => $item->variant?->weight ?: $item->product?->weight, 'length' => $item->variant?->length ?: $item->product?->length, 'width' => $item->variant?->width ?: $item->product?->width, 'height' => $item->variant?->height ?: $item->product?->height])->all(); }
     private function internalStatus(string $status): string { return match ($status) { 'DELIVERED' => ShipmentStatus::DELIVERED, 'NOT_DELIVERED', 'RETURNED_TO_SENDER' => ShipmentStatus::RETURNED, 'ACCEPTED', 'CREATED' => ShipmentStatus::NEW, default => ShipmentStatus::IN_TRANSIT }; }
+
+    /**
+     * Отправление под заказ. `shipping_address`, `recipient_name` и
+     * `recipient_phone` в таблице NOT NULL без дефолта, а `status_id` —
+     * внешний ключ: без этих полей MySQL в strict-режиме валил всю
+     * синхронизацию статусов (PollCdekDeliveryStatusesJob падал на каждом
+     * заказе).
+     */
     private function upsertShipment(CdekOrder $cdekOrder, array $payload): void
     {
-        $shipment = Shipment::updateOrCreate(['order_id' => $cdekOrder->order_id], ['delivery_method_id' => $cdekOrder->order->delivery_method_id, 'status_id' => ShipmentStatus::query()->where('code', $cdekOrder->internal_status)->value('id'), 'tracking_number' => $cdekOrder->cdek_number, 'provider_data' => $payload, 'cost' => $cdekOrder->price ?? 0]);
+        $order = $cdekOrder->order->loadMissing('address');
+        $address = $order->address;
+        $recipientName = trim(implode(' ', array_filter([
+            $address?->recipient_last_name, $address?->recipient_first_name, $address?->recipient_middle_name,
+        ]))) ?: 'Покупатель';
+        $delivery = $order->delivery_data ?? [];
+
+        $shipment = Shipment::updateOrCreate(['order_id' => $cdekOrder->order_id], [
+            'delivery_method_id' => $order->delivery_method_id,
+            'status_id' => ShipmentStatus::idFor($cdekOrder->internal_status ?: ShipmentStatus::NEW),
+            'tracking_number' => $cdekOrder->cdek_number,
+            'provider_data' => $payload,
+            'cost' => $cdekOrder->price ?? 0,
+            'shipping_address' => json_encode($order->delivery_address, JSON_UNESCAPED_UNICODE),
+            'city' => $delivery['destination']['city'] ?? $address?->city,
+            'tariff_code' => $cdekOrder->tariff_code,
+            'location_code' => $cdekOrder->pvz_code,
+            'recipient_name' => $recipientName,
+            'recipient_phone' => $address?->recipient_phone ?? $order->client?->phone ?? '',
+        ]);
         $cdekOrder->update(['shipment_id' => $shipment->id]);
-        $delivery = $cdekOrder->order->delivery_data ?? [];
-        $cdekOrder->order->update(['tracking_number' => $cdekOrder->cdek_number, 'delivery_data' => array_merge($delivery, ['cdek_number' => $cdekOrder->cdek_number, 'tracking_url' => $cdekOrder->tracking_url])]);
+        $order->update(['tracking_number' => $cdekOrder->cdek_number, 'delivery_data' => array_merge($delivery, ['cdek_number' => $cdekOrder->cdek_number, 'tracking_url' => $cdekOrder->tracking_url])]);
     }
 }

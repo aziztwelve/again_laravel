@@ -229,6 +229,14 @@ class OrderViewController extends Controller
             return $this->errorResponse('Заявка СДЭК отклонена. Исправьте сохранённую ошибку перед повторной отправкой.', 422, ['cdek_order' => $cdekOrder]);
         }
 
+        // Проверяем данные до постановки в очередь: иначе job падал в воркере,
+        // а менеджер после нажатия кнопки не видел ни ошибки, ни изменений
+        // (типичный случай — legacy-заказ с пустым delivery_data).
+        if ($error = app(CdekDeliveryService::class)->readinessError($order)) {
+            $cdekOrder->update(['last_error' => $error]);
+            return $this->errorResponse($error, 422, ['cdek_order' => $cdekOrder->fresh()]);
+        }
+
         CreateCdekOrderJob::dispatch($order->id);
         return $this->successResponse('Заявка СДЭК поставлена в очередь на создание.', ['cdek_order' => $cdekOrder->fresh()]);
     }

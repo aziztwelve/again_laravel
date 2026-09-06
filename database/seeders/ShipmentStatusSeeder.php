@@ -47,8 +47,10 @@ class ShipmentStatusSeeder extends Seeder
             ],
         ];
 
+        // Идемпотентно по `code`: сидер безопасно запускать точечно на сервере,
+        // где справочник мог остаться пустым (см. docs/deploy-runbook.md).
         foreach ($statuses as $status) {
-            ShipmentStatus::create($status);
+            ShipmentStatus::updateOrCreate(['code' => $status['code']], $status);
         }
     }
 } 

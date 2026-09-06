@@ -26,7 +26,14 @@ class Shipment extends Model
         'weight',
         'dimensions',
         'cost',
-        'notes'
+        'notes',
+        // Колонки из 2025_05_28_045322_add_fields_to_shipments_table: без них
+        // значения молча отбрасывались при массовом заполнении.
+        'location_code',
+        'city',
+        'tariff_code',
+        'period_min',
+        'period_max',
     ];
 
     protected $casts = [

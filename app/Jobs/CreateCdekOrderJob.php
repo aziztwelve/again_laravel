@@ -12,6 +12,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
+use InvalidArgumentException;
 use RuntimeException;
 
 class CreateCdekOrderJob implements ShouldQueue, ShouldBeUnique
@@ -47,8 +48,20 @@ class CreateCdekOrderJob implements ShouldQueue, ShouldBeUnique
             return;
         }
 
-        $result = $service->createExternalOrder($order, $cdekOrder);
-        if (! $result['successful']) throw new RuntimeException('CDEK order registration failed with HTTP '.$result['status']);
+        // Данные заказа неполные (частый случай — legacy-заказы без
+        // delivery_data). Повтор ничего не изменит: сохраняем причину в заявку,
+        // чтобы менеджер увидел её на странице СДЭК, и выходим без падения.
+        try {
+            $result = $service->createExternalOrder($order, $cdekOrder);
+        } catch (InvalidArgumentException $exception) {
+            $cdekOrder->update(['last_error' => $exception->getMessage()]);
+            return;
+        }
+
+        if (! $result['successful']) {
+            $cdekOrder->update(['last_error' => $this->apiError($result)]);
+            throw new RuntimeException('CDEK order registration failed with HTTP '.$result['status']);
+        }
         $request = $result['data']['requests'][0] ?? [];
         $cdekOrder->update([
             'request_uuid' => $request['request_uuid'] ?? null,
@@ -56,5 +69,17 @@ class CreateCdekOrderJob implements ShouldQueue, ShouldBeUnique
             'last_error' => ! empty($request['errors']) ? json_encode($request['errors'], JSON_UNESCAPED_UNICODE) : null,
         ]);
         SyncCdekOrderJob::dispatch($cdekOrder->id)->delay(now()->addMinute());
+    }
+
+    /** Читаемый текст ошибки ответа СДЭК для карточки заявки. */
+    private function apiError(array $result): string
+    {
+        $messages = collect(data_get($result, 'data.requests.*.errors.*.message'))
+            ->merge(collect(data_get($result, 'data.errors.*.message')))
+            ->filter()->unique()->implode('; ');
+
+        return $messages !== ''
+            ? $messages
+            : (data_get($result, 'data.message') ?: 'СДЭК отклонил заявку (HTTP '.$result['status'].').');
     }
 }
