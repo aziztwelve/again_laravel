@@ -34,6 +34,34 @@ class CdekClient
         return $response;
     }
 
+    /**
+     * Скачивает файл по ссылке API СДЭК (ссылки печати требуют OAuth —
+     * напрямую из браузера отдаются 401). Возвращает бинарное содержимое
+     * или null.
+     */
+    public function download(string $url, ?int $cdekOrderId = null): ?string
+    {
+        if (! ($this->settings['enabled'] ?? false) || ! filled($this->settings['account'] ?? null) || ! filled($this->settings['secure_password'] ?? null)) {
+            return null;
+        }
+
+        $token = $this->token($cdekOrderId);
+        if (! $token) return null;
+
+        $started = hrtime(true);
+        try {
+            $response = Http::timeout(60)->connectTimeout(5)->withToken($token)->get($url);
+            $duration = (int) ((hrtime(true) - $started) / 1_000_000);
+            $this->result($response->status(), ['message' => 'PDF download'], 'GET', $url, $url, [], $cdekOrderId, $duration);
+
+            return $response->successful() && str_starts_with((string) $response->header('Content-Type'), 'application/pdf')
+                ? $response->body()
+                : null;
+        } catch (ConnectionException) {
+            return null;
+        }
+    }
+
     private function token(?int $cdekOrderId = null): ?string
     {
         if ($token = Cache::get($this->tokenKey())) return $token;

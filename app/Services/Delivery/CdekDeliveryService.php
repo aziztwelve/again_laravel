@@ -417,6 +417,31 @@ class CdekDeliveryService extends DeliveryService
 
         return $result;
     }
+
+    /**
+     * Готовый PDF накладной (ссылки СДЭК требуют OAuth — скачиваем на
+     * сервере и отдаём браузеру прокси-ответом).
+     */
+    public function printWaybillPdf(CdekOrder $cdekOrder): ?string
+    {
+        $result = $this->printWaybill($cdekOrder);
+        $url = data_get($result, 'data.url');
+        if (! $result['successful'] || ! $url) return null;
+
+        return $this->client->download($url, $cdekOrder->id);
+    }
+
+    /**
+     * Готовый PDF штрих-кодов (см. printWaybillPdf).
+     */
+    public function printBarcodePdf(CdekOrder $cdekOrder): ?string
+    {
+        $result = $this->printBarcode($cdekOrder);
+        $url = data_get($result, 'data.url');
+        if (! $result['successful'] || ! $url) return null;
+
+        return $this->client->download($url, $cdekOrder->id);
+    }
     public function webhooks(): array
     {
         $result = $this->client->request('GET', '/v2/webhooks');

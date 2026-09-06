@@ -242,4 +242,42 @@ class CdekClientTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $service->printWaybill(new \App\Models\CdekOrder(['order_id' => 7]));
     }
+
+    public function test_it_downloads_print_pdf_through_oauth_proxy(): void
+    {
+        Http::fake([
+            'https://api.edu.cdek.ru/v2/oauth/token' => Http::response(['access_token' => 'test-token', 'expires_in' => 3600]),
+            'https://api.edu.cdek.ru/v2/print/barcodes' => Http::response(['entity' => ['uuid' => 'print-uuid']], 202),
+            'https://api.edu.cdek.ru/v2/print/barcodes/print-uuid' => Http::response(['entity' => ['url' => 'https://api.edu.cdek.ru/v2/print/barcodes/print-uuid.pdf']]),
+            'https://api.edu.cdek.ru/v2/print/barcodes/print-uuid.pdf' => Http::response('%PDF-1.4 fake', 200, ['Content-Type' => 'application/pdf']),
+        ]);
+        $service = new CdekDeliveryService([
+            'enabled' => true, 'mode' => 'sandbox', 'account' => 'account', 'secure_password' => 'secret',
+            'base_url' => ['sandbox' => 'https://api.edu.cdek.ru'],
+        ]);
+        $cdekOrder = new \App\Models\CdekOrder(['cdek_uuid' => 'uuid-1', 'order_id' => 7]);
+
+        $pdf = $service->printBarcodePdf($cdekOrder);
+
+        $this->assertSame('%PDF-1.4 fake', $pdf);
+        Http::assertSent(fn (Request $request) => $request->url() === 'https://api.edu.cdek.ru/v2/print/barcodes/print-uuid.pdf'
+            && $request->hasHeader('Authorization', 'Bearer test-token'));
+    }
+
+    public function test_it_returns_null_when_pdf_download_fails(): void
+    {
+        Http::fake([
+            'https://api.edu.cdek.ru/v2/oauth/token' => Http::response(['access_token' => 'test-token', 'expires_in' => 3600]),
+            'https://api.edu.cdek.ru/v2/print/barcodes' => Http::response(['entity' => ['uuid' => 'print-uuid']], 202),
+            'https://api.edu.cdek.ru/v2/print/barcodes/print-uuid' => Http::response(['entity' => ['url' => 'https://api.edu.cdek.ru/v2/print/barcodes/print-uuid.pdf']]),
+            'https://api.edu.cdek.ru/v2/print/barcodes/print-uuid.pdf' => Http::response(['message' => 'expired'], 404),
+        ]);
+        $service = new CdekDeliveryService([
+            'enabled' => true, 'mode' => 'sandbox', 'account' => 'account', 'secure_password' => 'secret',
+            'base_url' => ['sandbox' => 'https://api.edu.cdek.ru'],
+        ]);
+        $cdekOrder = new \App\Models\CdekOrder(['cdek_uuid' => 'uuid-1', 'order_id' => 7]);
+
+        $this->assertNull($service->printBarcodePdf($cdekOrder));
+    }
 }

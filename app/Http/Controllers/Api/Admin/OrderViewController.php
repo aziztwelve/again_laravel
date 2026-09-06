@@ -14,6 +14,7 @@ use App\Services\Order\OrderCustomFieldsService;
 use App\Services\Order\OrderDiscountService;
 use App\Services\Delivery\YandexDeliveryService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Response;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
@@ -248,7 +249,12 @@ class OrderViewController extends Controller
         return $this->successResponse('Заявка СДЭК поставлена в очередь на создание.', ['cdek_order' => $cdekOrder->fresh()]);
     }
 
-    public function cdekWaybill(Request $request, Order $order): JsonResponse
+    /**
+     * PDF печатных документов СДЭК (накладная/ШК). Ссылки СДЭК требуют
+     * OAuth и не открываются из браузера напрямую — скачиваем на сервере и
+     * отдаём прокси-ответом (inline PDF).
+     */
+    private function cdekPrintResponse(Request $request, Order $order, string $kind): Response|JsonResponse
     {
         if (! $this->orderAuthorizationService->canView($request->user(), $order)) {
             return $this->errorResponse('Доступ запрещён', 403);
@@ -256,38 +262,31 @@ class OrderViewController extends Controller
         $cdekOrder = $order->cdekOrder;
         if (! $cdekOrder?->cdek_uuid) return $this->errorResponse('Заявка СДЭК ещё не создана.', 422);
 
+        $service = app(CdekDeliveryService::class);
         try {
-            $result = app(CdekDeliveryService::class)->printWaybill($cdekOrder);
+            $pdf = $kind === 'barcode' ? $service->printBarcodePdf($cdekOrder) : $service->printWaybillPdf($cdekOrder);
         } catch (\InvalidArgumentException $exception) {
             return $this->errorResponse($exception->getMessage(), 422);
         }
-        if (! $result['successful']) return $this->errorResponse('СДЭК не вернул накладную.', 422, $result['data'] ?? []);
+        if ($pdf === null) return $this->errorResponse('СДЭК не вернул документ.', 422);
 
-        $url = $result['data']['url'] ?? null;
-        if (! $url) return $this->errorResponse('СДЭК не вернул ссылку на накладную.', 422);
+        $prefix = $kind === 'barcode' ? 'cdek-shk' : 'cdek-nakladnaya';
+        $filename = $prefix.'-order-'.($order->order_number ?: $order->id).'.pdf';
 
-        return $this->successResponse('Ссылка на накладную получена.', ['url' => $url]);
+        return response($pdf, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="'.$filename.'"',
+        ]);
     }
 
-    public function cdekBarcode(Request $request, Order $order): JsonResponse
+    public function cdekWaybill(Request $request, Order $order): Response|JsonResponse
     {
-        if (! $this->orderAuthorizationService->canView($request->user(), $order)) {
-            return $this->errorResponse('Доступ запрещён', 403);
-        }
-        $cdekOrder = $order->cdekOrder;
-        if (! $cdekOrder?->cdek_uuid) return $this->errorResponse('Заявка СДЭК ещё не создана.', 422);
+        return $this->cdekPrintResponse($request, $order, 'waybill');
+    }
 
-        try {
-            $result = app(CdekDeliveryService::class)->printBarcode($cdekOrder);
-        } catch (\InvalidArgumentException $exception) {
-            return $this->errorResponse($exception->getMessage(), 422);
-        }
-        if (! $result['successful']) return $this->errorResponse('СДЭК не вернул ШК.', 422, $result['data'] ?? []);
-
-        $url = $result['data']['url'] ?? null;
-        if (! $url) return $this->errorResponse('СДЭК не вернул ссылку на ШК.', 422);
-
-        return $this->successResponse('Ссылка на ШК получена.', ['url' => $url]);
+    public function cdekBarcode(Request $request, Order $order): Response|JsonResponse
+    {
+        return $this->cdekPrintResponse($request, $order, 'barcode');
     }
 
     public function cancelCdekDelivery(Request $request, Order $order, CdekDeliveryService $service): JsonResponse
