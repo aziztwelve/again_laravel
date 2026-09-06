@@ -310,6 +310,55 @@ nginx подключает `sites-enabled/*` целиком и дублирую�
 
 ## История деплоев
 
+- **2026-09-06 (11)** — «после нажатия ничего нет» на
+  https://againdev3.ru/admin/order/71716/cdek. Причина: у legacy-заказа
+  71716 `delivery_data` пустой (тарифа/города СДЭК нет вообще —
+  выбранная доставка `cdek_courier` пришла из импорта). Контроллер ставил
+  `CreateCdekOrderJob` в очередь и отвечал 200 «поставлено в очередь», а
+  job падал в воркере с `InvalidArgumentException: Не выбран тариф СДЭК.`
+  (failed_jobs 438) — в интерфейсе не менялось ничего. Из 23 986
+  cdek-заказов данные доставки есть только у 9, так что случай типовой.
+  Исправлено:
+  - `CdekDeliveryService::readinessError(Order)` — единая предпроверка
+    (настроен отправитель → тариф → телефон получателя → ПВЗ для
+    pickup/postamat или город для курьера). `createCdekDelivery`
+    вызывает её **до** dispatch и возвращает 422 с текстом причины,
+    попутно записывая её в `cdek_orders.last_error`;
+    `createExternalOrder()` использует ту же проверку вместо трёх
+    разрозненных бросков исключений;
+  - `CreateCdekOrderJob` при неполных данных сохраняет причину в
+    `last_error` и выходит без падения (повтор всё равно не помог бы), а
+    при ошибке API пишет читаемый текст ошибки СДЭК;
+  - фронт (`OrderCdekCard.vue`) после неудачного запроса перечитывает
+    заказ, поэтому причина остаётся на странице в красной плашке, а не
+    только во всплывающем сообщении.
+  Заодно починена синхронизация статусов: `PollCdekDeliveryStatusesJob`
+  валился на каждом заказе с `Column 'status_id' cannot be null` —
+  справочник `shipment_statuses` на сервере был пуст (0 строк), а
+  `shipments` требует NOT NULL `status_id`/`shipping_address`/
+  `recipient_name`/`recipient_phone`. Теперь `upsertShipment()` заполняет
+  получателя, адрес, город и тариф, статус берётся через
+  `ShipmentStatus::idFor()` (создаёт отсутствующий код),
+  `Shipment::$fillable` дополнен колонками из миграции 2025_05_28
+  (`location_code`, `city`, `tariff_code`, `period_min/max`),
+  `ShipmentStatusSeeder` стал идемпотентным (`updateOrCreate` по `code`)
+  и был запущен точечно на сервере — справочник заполнен (7 статусов).
+  Миграций нет. Тесты на сервере: новый `CdekOrderReadinessTest` 7/7,
+  новый `CdekShipmentSyncTest` 1/1 (13 assertions), регресс
+  `CdekClientTest` 10/10, `CdekStatusEventTest` 2/2,
+  `CdekOrderAfterPaymentTest` 2/2, `CdekWarehousesTest` 7/7,
+  `YandexTrackingInfoTest` 1/1. Проверено headless-браузером на живом API
+  с временным sanctum-токеном (удалён): 71716 — клик по кнопке даёт 422,
+  текст причины и во всплывающем сообщении, и на странице; 67886 —
+  «Обновить историю статусов» → 200, `creation_state=SUCCESSFUL`,
+  `shipment_id=4` (статус `new`, город «Санкт-Петербург», тариф 138,
+  `orders.tracking_number=10317088749`), история «05.09.2026 Создан /
+  Офис СДЭК», печать накладной и ШК возвращают PDF-ссылки;
+  `PollCdekDeliveryStatusesJob` прогнан вручную — без исключений.
+  Пересобраны nuxt-shop (`npm ci` + build + `pm2 restart`) и vue-admin.
+  Smoke: pm2 online, pending миграций 0, /up → 200. Heads: laravel
+  `2eed63c`, vue-admin `4fb7e70`, nuxt-shop `5af8f9f` (без изменений).
+
 - **2026-09-05 (10)** — страница СДЭК по заказу: блок действий по образцу
   эталона Insales. Пока заявка не создана — одна кнопка «Отправить данные в
   СДЭК». После создания — над кнопками таблица «История статусов заказа»
