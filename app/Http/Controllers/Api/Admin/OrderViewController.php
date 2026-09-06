@@ -228,6 +228,9 @@ class OrderViewController extends Controller
         if ($cdekOrder->creation_state === 'INVALID') {
             return $this->errorResponse('Заявка СДЭК отклонена. Исправьте сохранённую ошибку перед повторной отправкой.', 422, ['cdek_order' => $cdekOrder]);
         }
+        if (in_array($cdekOrder->creation_state, ['QUEUED', 'ACCEPTED'], true) || $cdekOrder->request_uuid) {
+            return $this->successResponse('Заявка СДЭК уже отправлена и ожидает обработки.', ['cdek_order' => $cdekOrder]);
+        }
 
         // Проверяем данные до постановки в очередь: иначе job падал в воркере,
         // а менеджер после нажатия кнопки не видел ни ошибки, ни изменений
@@ -237,7 +240,11 @@ class OrderViewController extends Controller
             return $this->errorResponse($error, 422, ['cdek_order' => $cdekOrder->fresh()]);
         }
 
+        // Фиксируем постановку до dispatch: повторные клики или запросы не
+        // создадут новую заявку, пока СДЭК обрабатывает первую.
+        $cdekOrder->update(['creation_state' => 'QUEUED', 'last_error' => null]);
         CreateCdekOrderJob::dispatch($order->id);
+
         return $this->successResponse('Заявка СДЭК поставлена в очередь на создание.', ['cdek_order' => $cdekOrder->fresh()]);
     }
 
