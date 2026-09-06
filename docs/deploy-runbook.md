@@ -310,6 +310,29 @@ nginx подключает `sites-enabled/*` целиком и дублирую�
 
 ## История деплоев
 
+- **2026-09-06 (12)** — «Печать ШК/накладной не работает»: PDF печатных
+  форм СДЭК отдаются по ссылкам, требующим OAuth (прямой переход из
+  браузера → 401 JSON), поэтому открытие url из (10) показывало пустую
+  вкладку. Сделано:
+  - backend: `CdekClient::download()` — скачивание файла по ссылке API с
+    bearer-токеном (проверяет Content-Type: application/pdf), в сервисе
+    `printWaybillPdf()`/`printBarcodePdf()` — тот же поллинг до готовности
+    + скачивание; эндпоинты `waybill`/`barcode` теперь отдают сам PDF
+    прокси-ответом (`inline; filename="cdek-nakladnaya-order-N.pdf"` /
+    `cdek-shk-order-N.pdf`), а не url;
+  - фронт: `openPrintUrl()` качает ответ как blob, открывает
+    `URL.createObjectURL` в заранее открытом окне (blob-URL ревокается при
+    закрытии), ошибки читает из blob-JSON.
+  Миграций/сидов нет; laravel — `optimize:clear` + рестарт pm2-воркеров,
+  vue-admin пересобран. Тесты: `CdekClientTest` 12/12 (новые: прокси-PDF —
+  поллинг 202 → GET url → скачивание с Bearer; 404 при скачивании →
+  null). Проверено headless-браузером с временным админом (удалён) на
+  заказе 67886: «Печать накладной» и «Печать ШК» → API 200
+  `application/pdf` с content-disposition, popup открывает blob-PDF,
+  тостов об ошибке нет, JS-ошибок нет. На 71716 кнопок печати нет (заявка
+  не создана — нет тарифа, ошибка видна на странице, см. (11)). Smoke:
+  pm2 online, /up → 200. Heads: laravel `cdeafe8`, vue-admin `68f0c3a`.
+
 - **2026-09-06 (11)** — «после нажатия ничего нет» на
   https://againdev3.ru/admin/order/71716/cdek. Причина: у legacy-заказа
   71716 `delivery_data` пустой (тарифа/города СДЭК нет вообще —
