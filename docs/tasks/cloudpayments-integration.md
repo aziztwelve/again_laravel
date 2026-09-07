@@ -48,10 +48,17 @@ Checkout -> POST /api/public/orders -> заказ pending
 
 ## Способы оплаты в Widget
 
-В checkout покупатель выбирает один из способов: банковская карта, T-Pay,
-СБП, SberPay или Mir Pay. Backend превращает выбор в допустимое для Widget
-значение и передаёт остальные методы в `restrictedPaymentMethods`, поэтому
-виджет не подменяет выбранный способ другой кнопкой.
+В checkout покупатель выбирает одну из двух опций:
+- «Оплата картами РФ, TPay, СБП» (`card_ru`) — виджет CloudPayments
+  показывает карты РФ, T-Pay и СБП одной группой;
+- «Яндекс Пэй и Сплит» (`yandex_pay`) — обслуживается Яндекс Пэй
+  (YandexPayService, отдельная интеграция).
+
+Backend превращает выбор в набор допустимых методов Widget и передаёт
+остальные в `restrictedPaymentMethods`, поэтому виджет не подменяет
+выбранный способ другой кнопкой. Коды отдельных методов CloudPayments
+(`cloudpayments_tpay` и др.) остаются в `WIDGET_METHODS`, чтобы неоплаченные
+заказы, оформленные до объединения опций, могли открыть виджет.
 
 Для работы каждого метода он должен быть активирован у терминала CloudPayments.
 Mir Pay включается фича-тогглом в настройках сайта CloudPayments или через
@@ -63,7 +70,7 @@ CloudPayments; отсутствие метода в терминале не ме
 
 | Метод | URL | Назначение |
 |---|---|---|
-| POST | `/api/public/orders/{viewToken}/cloudpayments/intent` | Возвращает безопасные параметры виджета для неоплаченного заказа с `payment_method=card_ru`. |
+| POST | `/api/public/orders/{viewToken}/cloudpayments/intent` | Возвращает безопасные параметры виджета для неоплаченного заказа с `payment_method=card_ru` (а также legacy-кодами отдельных методов CloudPayments). |
 | POST | `/api/webhooks/cloudpayments/check` | До авторизации: проверка существования, статуса, суммы и валюты. Ответ `{"code":0}` только при разрешении. |
 | POST | `/api/webhooks/cloudpayments/pay` | После успешной оплаты: `Payment=completed`, `Order.payment_status=paid`. |
 | POST | `/api/webhooks/cloudpayments/fail` | Регистрирует неудавшуюся попытку, заказ остаётся доступен для повторной оплаты. |

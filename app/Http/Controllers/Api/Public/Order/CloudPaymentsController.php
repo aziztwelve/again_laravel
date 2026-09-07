@@ -12,14 +12,26 @@ use Illuminate\Support\Facades\Log;
 
 class CloudPaymentsController extends Controller
 {
-    /** Коды CloudPayments Widget: ключ — способ оплаты в заказе. */
+    /**
+     * Коды CloudPayments Widget, сгруппированные по способу оплаты заказа:
+     * ключ — код `orders.payment_method`, значение — методы Widget, доступные
+     * покупателю в виджете.
+     *
+     * В чекауте две опции: «Оплата картами РФ, TPay, СБП» (card_ru — виджет
+     * показывает карты, T-Pay и СБП) и «Яндекс Пэй и Сплит» (обслуживается
+     * YandexPayService). Коды отдельных методов CloudPayments оставлены для
+     * неоплаченных заказов, оформленных до объединения опций.
+     */
     public const WIDGET_METHODS = [
-        'card_ru' => 'Card',
-        'cloudpayments_tpay' => 'TinkoffPay',
-        'cloudpayments_sbp' => 'Sbp',
-        'cloudpayments_sberpay' => 'SberPay',
-        'cloudpayments_mirpay' => 'MirPay',
+        'card_ru' => ['Card', 'TinkoffPay', 'Sbp'],
+        'cloudpayments_tpay' => ['TinkoffPay'],
+        'cloudpayments_sbp' => ['Sbp'],
+        'cloudpayments_sberpay' => ['SberPay'],
+        'cloudpayments_mirpay' => ['MirPay'],
     ];
+
+    /** Все известные методы Widget — из них собирается restrictedPaymentMethods. */
+    private const WIDGET_METHOD_CODES = ['Card', 'TinkoffPay', 'Sbp', 'SberPay', 'MirPay'];
 
     public function intent(string $viewToken): JsonResponse
     {
@@ -28,8 +40,8 @@ class CloudPaymentsController extends Controller
         }
 
         $order = Order::query()->where('view_token', $viewToken)->first();
-        $widgetMethod = self::WIDGET_METHODS[$order?->payment_method ?? ''] ?? null;
-        if (! $order || ! $order->canBePaid() || ! $widgetMethod) {
+        $allowedMethods = self::WIDGET_METHODS[$order?->payment_method ?? ''] ?? null;
+        if (! $order || ! $order->canBePaid() || ! $allowedMethods) {
             return response()->json(['success' => false, 'message' => 'Для этого заказа недоступна онлайн-оплата.'], 422);
         }
 
@@ -56,12 +68,13 @@ class CloudPaymentsController extends Controller
                 'externalId' => "payment-{$payment->id}",
                 'paymentSchema' => 'Single',
                 'culture' => 'ru-RU',
-                // Widget показывает только выбранный в checkout способ. Если
-                // он не включён в терминале CloudPayments, Widget сообщит об
-                // этом покупателю и платёж не будет создан.
-                'restrictedPaymentMethods' => array_values(array_filter(
-                    self::WIDGET_METHODS,
-                    fn (string $method): bool => $method !== $widgetMethod,
+                // Widget показывает только способы, входящие в выбранную в
+                // checkout группу (для card_ru — карты РФ, T-Pay и СБП).
+                // Методы, не включённые в терминале CloudPayments, Widget
+                // сообщит покупателю сам, платёж не будет создан.
+                'restrictedPaymentMethods' => array_values(array_diff(
+                    self::WIDGET_METHOD_CODES,
+                    $allowedMethods,
                 )),
                 'metadata' => ['payment_id' => $payment->id, 'order_id' => $order->id],
                 'receiptEmail' => $order->email ?? $order->client?->email,

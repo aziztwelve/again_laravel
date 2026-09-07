@@ -23,14 +23,15 @@ return [
     ],
 
     // Канонические коды способов оплаты витрины
-    // (совпадают с again_front/constants/payment.ts).
+    // (совпадают с again_front/constants/payment.ts). В чекауте две опции;
+    // отдельные методы CloudPayments — для правил, созданных до объединения.
     'payment_methods' => [
-        'card_ru' => 'Банковская карта',
+        'card_ru' => 'Оплата картами РФ, TPay, СБП',
         'cloudpayments_tpay' => 'T-Pay',
         'cloudpayments_sbp' => 'СБП',
         'cloudpayments_sberpay' => 'SberPay',
         'cloudpayments_mirpay' => 'Mir Pay',
-        'yandex_pay' => 'Яндекс Пэй',
+        'yandex_pay' => 'Яндекс Пэй и Сплит',
         'yandex_pay_split' => 'Яндекс Сплит',
     ],
 

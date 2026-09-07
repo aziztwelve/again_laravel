@@ -83,13 +83,13 @@ class OrderExportService extends ExportService
 
         // Способ оплаты — человекочитаемое название
         $paymentMethodLabels = [
-            'card_ru' => 'Оплата картой РФ',
+            'card_ru' => 'Оплата картами РФ, TPay, СБП',
             'cloudpayments_tpay' => 'T-Pay',
             'cloudpayments_sbp' => 'СБП',
             'cloudpayments_sberpay' => 'SberPay',
             'cloudpayments_mirpay' => 'Mir Pay',
             'sberpay' => 'SberPay, рассрочка, иностранная карта',
-            'yandex_pay' => 'Яндекс Пэй',
+            'yandex_pay' => 'Яндекс Пэй и Сплит',
             'yandex_pay_split' => 'Яндекс Сплит',
             'cash_on_delivery' => 'Наличными или картой при получении',
             'pickup_payment' => 'Оплата в точке самовывоза',
