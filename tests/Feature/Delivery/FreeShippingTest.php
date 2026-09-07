@@ -451,6 +451,28 @@ class FreeShippingTest extends TestCase
             ->assertJsonPath('candidates.1.price', fn ($value) => (float) $value === 590.0);
     }
 
+    public function test_public_evaluate_endpoint_returns_progress_for_each_configured_service_and_delivery_type(): void
+    {
+        $this->rule([
+            'min_order_amount' => 5000,
+            'services' => ['yandex'],
+            'delivery_types' => ['pickup', 'courier'],
+        ]);
+        $this->rule([
+            'min_order_amount' => 6000,
+            'services' => ['cdek'],
+            'delivery_types' => ['postamat'],
+        ]);
+        $product = $this->product(1000);
+
+        $this->postJson('/api/public/delivery/free-shipping/evaluate', [
+            'items' => [['product_id' => $product->id, 'quantity' => 1]],
+        ])->assertOk()
+            ->assertJsonFragment(['service' => 'yandex', 'delivery_type' => 'pickup'])
+            ->assertJsonFragment(['service' => 'yandex', 'delivery_type' => 'courier'])
+            ->assertJsonFragment(['service' => 'cdek', 'delivery_type' => 'postamat']);
+    }
+
     // === Админский CRUD ===
 
     public function test_admin_can_create_and_update_rule(): void

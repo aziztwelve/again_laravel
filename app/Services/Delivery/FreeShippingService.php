@@ -103,9 +103,10 @@ class FreeShippingService
     }
 
     /**
-     * All applicable thresholds for the checkout hint, grouped by delivery
-     * option. Unlike progress(), this intentionally keeps every rule so the
-     * buyer can compare pickup, courier and postamat delivery at once.
+     * All applicable thresholds for the checkout hint, grouped by service and
+     * delivery option. A rule may cover both Yandex pickup and courier, so
+     * expose both combinations instead of assigning the hint to the first
+     * selected delivery type only.
      */
     public function progresses(FreeShippingContext $context): array
     {
@@ -117,29 +118,37 @@ class FreeShippingService
                 continue;
             }
 
-            $deliveryType = collect($rule->delivery_types ?? [])
-                ->first(fn ($type) => in_array($type, ['pickup', 'courier', 'postamat'], true));
-
-            // The multi-line checkout hint is intended for delivery-specific
-            // rules. General promotions continue to use the legacy progress.
-            if (! $deliveryType) {
-                continue;
-            }
-
             $amount = $this->qualifyingAmount($rule, $context);
             $remaining = round((float) $rule->min_order_amount - $amount, 2);
             if ($remaining <= 0) {
                 continue;
             }
 
-            $progresses[$deliveryType] ??= [
-                'rule_id' => (int) $rule->id,
-                'rule_name' => (string) $rule->name,
-                'delivery_type' => $deliveryType,
-                'min_order_amount' => round((float) $rule->min_order_amount, 2),
-                'qualifying_amount' => round($amount, 2),
-                'remaining' => $remaining,
-            ];
+            $services = array_values(array_filter(
+                (array) $rule->services,
+                fn ($service) => in_array($service, ['cdek', 'yandex'], true),
+            ));
+            $deliveryTypes = array_values(array_filter(
+                (array) $rule->delivery_types,
+                fn ($type) => in_array($type, ['pickup', 'courier', 'postamat'], true),
+            ));
+
+            // A rule without a service or delivery-type condition is still a
+            // valid general rule. The storefront binds it to the active option.
+            foreach ($services ?: [null] as $service) {
+                foreach ($deliveryTypes ?: [null] as $deliveryType) {
+                    $key = ($service ?? 'any').':'.($deliveryType ?? 'any');
+                    $progresses[$key] ??= [
+                        'rule_id' => (int) $rule->id,
+                        'rule_name' => (string) $rule->name,
+                        'service' => $service,
+                        'delivery_type' => $deliveryType,
+                        'min_order_amount' => round((float) $rule->min_order_amount, 2),
+                        'qualifying_amount' => round($amount, 2),
+                        'remaining' => $remaining,
+                    ];
+                }
+            }
         }
 
         return array_values($progresses);
