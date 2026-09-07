@@ -103,10 +103,9 @@ class FreeShippingService
     }
 
     /**
-     * All applicable thresholds for the checkout hint, grouped by service and
-     * delivery option. A rule may cover both Yandex pickup and courier, so
-     * expose both combinations instead of assigning the hint to the first
-     * selected delivery type only.
+     * All applicable thresholds for the checkout hint, grouped by delivery
+     * service. The storefront intentionally uses one threshold for all
+     * variants of a service (Yandex or CDEK).
      */
     public function progresses(FreeShippingContext $context): array
     {
@@ -132,22 +131,24 @@ class FreeShippingService
                 (array) $rule->delivery_types,
                 fn ($type) => in_array($type, ['pickup', 'courier', 'postamat'], true),
             ));
-
-            // A rule without a service or delivery-type condition is still a
-            // valid general rule. The storefront binds it to the active option.
+            // A rule without a service condition is a valid general rule. The
+            // storefront binds it to the currently selected service.
             foreach ($services ?: [null] as $service) {
-                foreach ($deliveryTypes ?: [null] as $deliveryType) {
-                    $key = ($service ?? 'any').':'.($deliveryType ?? 'any');
-                    $progresses[$key] ??= [
-                        'rule_id' => (int) $rule->id,
-                        'rule_name' => (string) $rule->name,
-                        'service' => $service,
-                        'delivery_type' => $deliveryType,
-                        'min_order_amount' => round((float) $rule->min_order_amount, 2),
-                        'qualifying_amount' => round($amount, 2),
-                        'remaining' => $remaining,
-                    ];
+                // Постаматы есть только у СДЭК. Не позволяем случайно
+                // сохранённому правилу «Яндекс + постамат» попасть в подсказку.
+                if ($service === 'yandex' && $deliveryTypes === ['postamat']) {
+                    continue;
                 }
+
+                $key = $service ?? 'any';
+                $progresses[$key] ??= [
+                    'rule_id' => (int) $rule->id,
+                    'rule_name' => (string) $rule->name,
+                    'service' => $service,
+                    'min_order_amount' => round((float) $rule->min_order_amount, 2),
+                    'qualifying_amount' => round($amount, 2),
+                    'remaining' => $remaining,
+                ];
             }
         }
 
