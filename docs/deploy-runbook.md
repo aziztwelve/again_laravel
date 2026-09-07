@@ -310,6 +310,37 @@ nginx подключает `sites-enabled/*` целиком и дублирую�
 
 ## История деплоев
 
+- **2026-09-07 (13)** — пункты способов оплаты в чекауте
+  (https://againdev3.ru/checkout) объединены в две опции: «Оплата картами РФ,
+  TPay, СБП» (`card_ru` — открывает виджет CloudPayments: карты РФ, T-Pay и
+  СБП одной группой) и «Яндекс Пэй и Сплит» (`yandex_pay` — форма Яндекс Пэй:
+  карты Visa/Mastercard/МИР и Сплит; текст-подпись «Оплата частями, картами
+  Visa, Mastercard, МИР»). Сделано:
+  - nuxt-shop: `constants/payment.ts` — 2 опции вместо 7; отдельные коды
+    (`cloudpayments_tpay`/`_sbp`/`_sberpay`/`_mirpay`, `yandex_pay_split`)
+    перенесены в легаси-карту лейблов для старых заказов; на странице заказа
+    кнопка «Оплатить картой» → «Оплатить онлайн»;
+  - laravel: `CloudPaymentsController::WIDGET_METHODS` — значение стало
+    массивом методов Widget; для `card_ru` разрешены Card/TinkoffPay/Sbp
+    (`restrictedPaymentMethods` = SberPay/MirPay), легаси-коды отдельных
+    методов сохранены (неоплаченные старые заказы открывают виджет как
+    раньше); лейблы обновлены в OrderMessageBuilder, OrderHistoryService,
+    OrderExportService, Admin/OrderController, config/free_shipping.php;
+  - vue-admin: лейблы в `useOrderPaymentMethods.ts` и `OrderPrint.vue`.
+  Миграций/сидов нет; laravel — `optimize:clear` + рестарт pm2-воркеров,
+  оба фронта пересобраны (`pm2 restart nuxt-shop`). Тесты на сервере:
+  новый `CloudPaymentsIntentTest` 4/4 (card_ru → restricted только
+  SberPay/MirPay; легаси cloudpayments_sbp работает; yandex_pay → 422;
+  оплаченный заказ → 422), `YandexPayServiceTest` 4/4, `FreeShippingTest`
+  30/30. Проверено headless-браузером (basic auth витрины): чекаут — ровно
+  2 пункта, подпись Яндекса на месте, старых пунктов нет, преселект
+  card_ru; заказ 67884 (card_ru, pending) — лейбл способа и кнопка
+  «Оплатить онлайн», клик открывает виджет CloudPayments (iframe
+  widget.cloudpayments.ru, 1400×1000); заказ 67887 (yandex_pay, failed) —
+  кнопка Яндекс Пэй смонтирована (SDK, iframe sandbox 54px). JS-ошибок нет.
+  Smoke: pm2 online, pending миграций 0, /up → 200. Heads: laravel
+  `76e6367`, nuxt-shop `5f4d719`, vue-admin `a8f2238`.
+
 - **2026-09-06 (12)** — «Печать ШК/накладной не работает»: PDF печатных
   форм СДЭК отдаются по ссылкам, требующим OAuth (прямой переход из
   браузера → 401 JSON), поэтому открытие url из (10) показывало пустую
