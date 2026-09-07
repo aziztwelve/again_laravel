@@ -95,20 +95,26 @@ class CdekDeliveryService extends DeliveryService
         $query = trim($query);
         if ($query === '') return array_slice($points, 0, $limit);
 
-        // CDEK abbreviates street words in addresses; expand the query the
-        // same way so «Ленинский проспект» still matches «Ленинский пр-кт».
-        $needle = strtr(mb_strtolower($query), [
-            'проспект' => 'пр-кт', 'улица' => 'ул', 'бульвар' => 'б-р',
-            'переулок' => 'пер', 'проезд' => 'пр-д', 'шоссе' => 'ш',
-        ]);
+        // A manager often pastes a complete address ("Петергоф,
+        // Астрономическая улица, 8к2"), whereas CDEK returns city and
+        // address separately and abbreviates street types. Compare normalized
+        // words across all fields so this remains searchable.
+        $needle = $this->warehouseSearchWords($query);
         $matched = [];
         foreach ($points as $point) {
-            $city = mb_strtolower($point['city']);
+            $city = $this->warehouseSearchText($point['city']);
+            $region = $this->warehouseSearchText($point['region']);
+            $address = $this->warehouseSearchText($point['address']);
+            $haystack = trim("{$city} {$region} {$address}");
+            $matchesAllWords = $needle !== [] && collect($needle)
+                ->every(fn (string $word) => str_contains($haystack, $word));
+
             $score = match (true) {
-                str_starts_with($city, $needle) => 0,
-                str_contains($city, $needle) => 1,
-                str_contains(mb_strtolower($point['region']), $needle) => 2,
-                str_contains(mb_strtolower($point['address']), $needle) => 3,
+                str_starts_with($city, implode(' ', $needle)) => 0,
+                str_contains($city, implode(' ', $needle)) => 1,
+                str_contains($region, implode(' ', $needle)) => 2,
+                str_contains($address, implode(' ', $needle)) => 3,
+                $matchesAllWords => 4,
                 default => null,
             };
             if ($score !== null) $matched[] = ['score' => $score, 'point' => $point];
@@ -118,6 +124,35 @@ class CdekDeliveryService extends DeliveryService
             <=> [$b['score'], $b['point']['city'], $b['point']['address']]);
 
         return array_slice(array_column($matched, 'point'), 0, $limit);
+    }
+
+    /** @return array<int, string> */
+    private function warehouseSearchWords(string $value): array
+    {
+        // CDEK can omit the street type entirely ("Астрономическая" instead
+        // of "Астрономическая ул."), so it must not make an otherwise exact
+        // city-and-street query fail.
+        $optionalStreetWords = ['ул', 'пр', 'кт', 'б', 'р', 'пер', 'д', 'ш'];
+
+        return array_values(array_filter(
+            explode(' ', $this->warehouseSearchText($value)),
+            fn (string $word) => $word !== '' && ! in_array($word, $optionalStreetWords, true),
+        ));
+    }
+
+    private function warehouseSearchText(string $value): string
+    {
+        $value = strtr(mb_strtolower($value), [
+            'ё' => 'е',
+            'проспект' => 'пр-кт', 'улица' => 'ул', 'бульвар' => 'б-р',
+            'переулок' => 'пер', 'проезд' => 'пр-д', 'шоссе' => 'ш',
+        ]);
+
+        // Make "8к2" and CDEK's "8, к. 2" equivalent before tokenizing.
+        $value = preg_replace('/(?<=\p{L})(?=\d)|(?<=\d)(?=\p{L})/u', ' ', $value) ?? $value;
+        $value = preg_replace('/[^\p{L}\p{N}]+/u', ' ', $value) ?? $value;
+
+        return trim(preg_replace('/\s+/u', ' ', $value) ?? $value);
     }
 
     /** Tariffs available under the connected CDEK contract for the admin setup form. */

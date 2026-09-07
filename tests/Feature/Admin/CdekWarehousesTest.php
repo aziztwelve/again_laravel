@@ -52,6 +52,7 @@ class CdekWarehousesTest extends TestCase
                 ['code' => 'MSK1', 'location' => ['city' => 'Москва', 'city_code' => 44, 'region' => 'Москва', 'address' => 'Арбат, 10', 'address_full' => '', 'postal_code' => '119002']],
                 ['code' => 'MOSOBL1', 'location' => ['city' => 'Подольск', 'city_code' => 246, 'region' => 'Московская область', 'address' => 'Ленина, 5', 'address_full' => '', 'postal_code' => '142100']],
                 ['code' => 'EKB1', 'location' => ['city' => 'Екатеринбург', 'city_code' => 267, 'region' => 'Свердловская область', 'address' => 'Ленина, 8', 'address_full' => '', 'postal_code' => '620000']],
+                ['code' => 'PTG1', 'location' => ['city' => 'Петергоф', 'city_code' => 287, 'region' => 'Санкт-Петербург', 'address' => 'Астрономическая, 8, к. 2', 'address_full' => '', 'postal_code' => '198504']],
             ],
         );
     }
@@ -69,7 +70,8 @@ class CdekWarehousesTest extends TestCase
             ->assertJsonPath('warehouses.1.address', 'Арбат, 10')
             ->assertJsonPath('warehouses.2.address', 'Ленинский пр-кт, 2')
             ->assertJsonPath('warehouses.3.city', 'Подольск')
-            ->assertJsonPath('warehouses.4.city', 'Санкт-Петербург');
+            ->assertJsonPath('warehouses.4.city', 'Петергоф')
+            ->assertJsonPath('warehouses.5.city', 'Санкт-Петербург');
     }
 
     public function test_search_ranks_city_prefix_before_region_and_address(): void
@@ -95,6 +97,20 @@ class CdekWarehousesTest extends TestCase
         $this->getJson('/api/third-party-integrations/cdek/warehouses?query=НетТакогоГорода')
             ->assertOk()
             ->assertJsonCount(0, 'warehouses');
+    }
+
+    public function test_search_finds_a_warehouse_by_a_complete_city_and_address(): void
+    {
+        $this->getJson('/api/third-party-integrations/cdek/warehouses?query='.urlencode('Петергоф, Астрономическая улица, 8к2'))
+            ->assertOk()
+            ->assertJsonCount(1, 'warehouses')
+            ->assertJsonPath('warehouses.0.code', 'PTG1')
+            ->assertJsonPath('warehouses.0.city_code', 287);
+
+        $this->getJson('/api/third-party-integrations/cdek/warehouses?query='.urlencode('Петергоф, Астрономическая улица'))
+            ->assertOk()
+            ->assertJsonCount(1, 'warehouses')
+            ->assertJsonPath('warehouses.0.code', 'PTG1');
     }
 
     public function test_warehouse_list_is_cached_after_first_request(): void
