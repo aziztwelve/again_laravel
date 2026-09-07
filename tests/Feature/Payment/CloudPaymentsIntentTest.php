@@ -35,7 +35,7 @@ class CloudPaymentsIntentTest extends TestCase
         // Разрешены Card/TinkoffPay/Sbp — Restricted всё остальное.
         $this->assertSame(['SberPay', 'MirPay'], $payment['restrictedPaymentMethods']);
         $this->assertSame('pk_test_terminal', $payment['publicTerminalId']);
-        $this->assertSame(2500.0, $payment['amount']);
+        $this->assertSame(2500.0, (float) $payment['amount']);
         $this->assertMatchesRegularExpression('/^payment-\d+$/', $payment['externalId']);
 
         $this->assertDatabaseHas('payments', [
