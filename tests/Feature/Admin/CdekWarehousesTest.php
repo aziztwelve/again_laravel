@@ -21,7 +21,7 @@ class CdekWarehousesTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        Cache::forget('cdek:warehouses:ru');
+        Cache::forget('cdek:sender-offices:ru');
 
         DeliveryServiceSetting::query()->firstOrCreate(
             ['service_name' => 'cdek'],
@@ -107,6 +107,10 @@ class CdekWarehousesTest extends TestCase
             ->count();
 
         $this->assertSame(1, $deliverypointsCalls);
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/v2/deliverypoints')
+            && $request['is_reception'] === true
+            && ! isset($request['is_handout']));
     }
 
     public function test_settings_save_persists_sender_city_name(): void

@@ -61,17 +61,18 @@ class CdekDeliveryService extends DeliveryService
     }
 
     /**
-     * All RU handout points for the admin "sender city" picker: the manager
-     * picks a warehouse and the city code comes straight from CDEK. The full
+     * All RU reception points for the admin "sender city" picker: the manager
+     * picks an office/warehouse that accepts parcels and the city code comes
+     * straight from CDEK. The full
      * list is cached for a day (CDEK allows pickup-point data up to a day old);
      * a failed request is not cached. Search ranks city prefix > city contains
      * > region > address and returns at most $limit items.
      */
     public function warehouses(string $query = '', int $limit = 100): array
     {
-        $points = Cache::get('cdek:warehouses:ru');
+        $points = Cache::get('cdek:sender-offices:ru');
         if ($points === null) {
-            $result = $this->client->request('GET', '/v2/deliverypoints', query: ['country_code' => 'RU', 'is_handout' => true]);
+            $result = $this->client->request('GET', '/v2/deliverypoints', query: ['country_code' => 'RU', 'is_reception' => true]);
             if (! $result['successful']) return [];
 
             $points = collect($result['data'] ?? [])
@@ -88,7 +89,7 @@ class CdekDeliveryService extends DeliveryService
                 ->sortBy([['city', 'asc'], ['address', 'asc']], SORT_STRING)
                 ->values()
                 ->all();
-            Cache::put('cdek:warehouses:ru', $points, now()->addDay());
+            Cache::put('cdek:sender-offices:ru', $points, now()->addDay());
         }
 
         $query = trim($query);
