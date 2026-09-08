@@ -473,9 +473,10 @@ class FreeShippingTest extends TestCase
         $this->postJson('/api/public/delivery/free-shipping/evaluate', [
             'items' => [['product_id' => $product->id, 'quantity' => 1]],
         ])->assertOk()
-            ->assertJsonCount(2, 'progresses')
-            ->assertJsonFragment(['service' => 'yandex'])
-            ->assertJsonFragment(['service' => 'cdek']);
+            ->assertJsonCount(3, 'progresses')
+            ->assertJsonFragment(['service' => 'yandex', 'delivery_type' => 'pickup'])
+            ->assertJsonFragment(['service' => 'yandex', 'delivery_type' => 'courier'])
+            ->assertJsonFragment(['service' => 'cdek', 'delivery_type' => 'postamat']);
     }
 
     // === Админский CRUD ===

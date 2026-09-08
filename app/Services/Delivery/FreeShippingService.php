@@ -104,8 +104,8 @@ class FreeShippingService
 
     /**
      * All applicable thresholds for the checkout hint, grouped by delivery
-     * service. The storefront intentionally uses one threshold for all
-     * variants of a service (Yandex or CDEK).
+     * service and its delivery option. The storefront displays every method
+     * configured for the active service, without mixing Yandex and CDEK.
      */
     public function progresses(FreeShippingContext $context): array
     {
@@ -131,24 +131,34 @@ class FreeShippingService
                 (array) $rule->delivery_types,
                 fn ($type) => in_array($type, ['pickup', 'courier', 'postamat'], true),
             ));
-            // A rule without a service condition is a valid general rule. The
-            // storefront binds it to the currently selected service.
-            foreach ($services ?: [null] as $service) {
-                // Постаматы есть только у СДЭК. Не позволяем случайно
-                // сохранённому правилу «Яндекс + постамат» попасть в подсказку.
-                if ($service === 'yandex' && $deliveryTypes === ['postamat']) {
-                    continue;
-                }
 
-                $key = $service ?? 'any';
-                $progresses[$key] ??= [
-                    'rule_id' => (int) $rule->id,
-                    'rule_name' => (string) $rule->name,
-                    'service' => $service,
-                    'min_order_amount' => round((float) $rule->min_order_amount, 2),
-                    'qualifying_amount' => round($amount, 2),
-                    'remaining' => $remaining,
-                ];
+            // Hints are delivery-specific. General promotions continue to use
+            // the legacy single progress value instead of this list.
+            if ($deliveryTypes === []) {
+                continue;
+            }
+
+            // A rule without a service condition applies to the active
+            // provider; explicit rules keep their service identity.
+            foreach ($services ?: [null] as $service) {
+                foreach ($deliveryTypes as $deliveryType) {
+                    // Постаматы есть только у СДЭК. Не показываем случайно
+                    // сохранённое правило «Яндекс + постамат» на витрине.
+                    if ($service === 'yandex' && $deliveryType === 'postamat') {
+                        continue;
+                    }
+
+                    $key = ($service ?? 'any').':'.$deliveryType;
+                    $progresses[$key] ??= [
+                        'rule_id' => (int) $rule->id,
+                        'rule_name' => (string) $rule->name,
+                        'service' => $service,
+                        'delivery_type' => $deliveryType,
+                        'min_order_amount' => round((float) $rule->min_order_amount, 2),
+                        'qualifying_amount' => round($amount, 2),
+                        'remaining' => $remaining,
+                    ];
+                }
             }
         }
 
