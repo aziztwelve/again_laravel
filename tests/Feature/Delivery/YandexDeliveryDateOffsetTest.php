@@ -18,11 +18,11 @@ class YandexDeliveryDateOffsetTest extends TestCase
     {
         Sanctum::actingAs(User::factory()->create());
 
-        $this->getJson('/api/yandex-delivery/settings')
+        $this->getJson('/api/third-party-integrations/yandex-delivery/settings')
             ->assertOk()
             ->assertJsonPath('settings.delivery_date_offset_days', 2);
 
-        $this->putJson('/api/yandex-delivery/settings', ['delivery_date_offset_days' => 3])
+        $this->putJson('/api/third-party-integrations/yandex-delivery/settings', ['delivery_date_offset_days' => 3])
             ->assertOk()
             ->assertJsonPath('settings.delivery_date_offset_days', 3);
 
@@ -56,7 +56,14 @@ class YandexDeliveryDateOffsetTest extends TestCase
             ]],
         ])]);
 
-        $offers = app(YandexDeliveryService::class)->calculateOffers(
+        $offers = (new YandexDeliveryService([
+            'enabled' => true,
+            'mode' => 'sandbox',
+            'token' => 'test-token',
+            'platform_station_id' => 'source-1',
+            'base_url' => ['sandbox' => 'https://yandex.test'],
+            'delivery_date_offset_days' => 2,
+        ]))->calculateOffers(
             deliveryType: 'pickup',
             items: [['name' => 'Товар', 'price' => 100, 'quantity' => 1]],
             pvzId: 'pvz-1',
