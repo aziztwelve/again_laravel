@@ -19,7 +19,7 @@ class ProductsAndVariantsSyncWithMoySkladService
     private string $baseURL = "https://api.moysklad.ru/api/remap/1.2";
 
     // Константы для ограничений значений
-    private const MAX_WEIGHT = 99999.99; // Максимальный вес в кг
+    private const MAX_WEIGHT = 99999999.99; // Максимальный вес в граммах
     private const MAX_PRICE = 999999999.99; // Максимальная цена
     private const MAX_STOCK = 2147483647; // Максимальное количество для INT
     private const MIN_VALUE = 0; // Минимальное значение
@@ -134,18 +134,12 @@ class ProductsAndVariantsSyncWithMoySkladService
     }
 
     /**
-     * Безопасно извлекает и нормализует вес
+     * МойСклад отдаёт вес товара в граммах. Это же значение храним у товара:
+     * его напрямую используют расчёты СДЭК и Яндекс.Доставки.
      */
     private function extractWeight($data): float
     {
-        $weight = $data->weight ?? 0;
-
-        // Если вес в граммах, конвертируем в килограммы
-        if ($weight > 1000) {
-            $weight = $weight / 1000;
-        }
-
-        return $this->normalizeNumericValue($weight, self::MAX_WEIGHT);
+        return $this->normalizeNumericValue($data->weight ?? 0, self::MAX_WEIGHT);
     }
 
     /**
@@ -385,7 +379,8 @@ class ProductsAndVariantsSyncWithMoySkladService
                 'price' => $this->extractPrice($data->salePrices ?? []),
                 'cost_price' => $this->extractCostPrice($data->buyPrice ?? (object)['value' => 0]),
                 'stock_quantity' => $stockQty,
-                'weight' => $this->extractWeight($productData),
+                // У модификации может быть собственный вес в МойСклад.
+                'weight' => $this->extractWeight($data),
                 'type' => 'simple',
                 'is_active' => true,
                 'deleted_at' => null,
