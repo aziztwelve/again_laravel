@@ -15,6 +15,13 @@ Artisan::command('discounts:check-validity', function () {
 
 Schedule::command('email:sync')->everyFiveMinutes();
 
+// Telegram не может стабильно достучаться до текущего хостинга по webhook,
+// поэтому входящие сообщения забираем через Bot API. Обращение идёт через
+// Amnezia VPN, как и остальные вызовы Telegram.
+Schedule::command('telegram:poll-incoming')
+    ->everyMinute()
+    ->withoutOverlapping();
+
 //Schedule::command('birthday:process')->daily();
 Schedule::command('birthday:process')->dailyAt('10:00');
 
