@@ -46,6 +46,17 @@ class PollTelegramIncomingMessages extends Command
         $offset = Cache::get($cacheKey);
 
         try {
+            // Bot API запрещает getUpdates при активном webhook. В обычном
+            // режиме сразу выходим: polling остаётся страховкой, которую можно
+            // задействовать отключением webhook без изменения кода.
+            $webhook = $this->vpn->telegramHttp()
+                ->get("https://api.telegram.org/bot{$bot->token}/getWebhookInfo")
+                ->json('result', []);
+
+            if (! empty($webhook['url'])) {
+                return true;
+            }
+
             $response = $this->vpn->telegramHttp()->get(
                 "https://api.telegram.org/bot{$bot->token}/getUpdates",
                 array_filter([

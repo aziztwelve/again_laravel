@@ -15,9 +15,8 @@ Artisan::command('discounts:check-validity', function () {
 
 Schedule::command('email:sync')->everyFiveMinutes();
 
-// Telegram не может стабильно достучаться до текущего хостинга по webhook,
-// поэтому входящие сообщения забираем через Bot API. Обращение идёт через
-// Amnezia VPN, как и остальные вызовы Telegram.
+// Резервный приём: используется, если Telegram временно не может доставить
+// webhook до сервера. Не заменяет штатный webhook.
 Schedule::command('telegram:poll-incoming')
     ->everyMinute()
     ->withoutOverlapping();
