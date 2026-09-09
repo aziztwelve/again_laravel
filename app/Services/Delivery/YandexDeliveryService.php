@@ -123,6 +123,14 @@ class YandexDeliveryService extends DeliveryService
             'type' => $filter['type'] ?? 'pickup_point',
             'payment_method' => $filter['payment_method'] ?? 'already_paid',
             'is_yandex_branded' => $filter['is_yandex_branded'] ?? null,
+            'latitude' => isset($filter['latitude_from'], $filter['latitude_to']) ? [
+                'from' => (float) $filter['latitude_from'],
+                'to' => (float) $filter['latitude_to'],
+            ] : null,
+            'longitude' => isset($filter['longitude_from'], $filter['longitude_to']) ? [
+                'from' => (float) $filter['longitude_from'],
+                'to' => (float) $filter['longitude_to'],
+            ] : null,
         ], fn ($value) => $value !== null);
         $result = $this->client->request('POST', '/api/b2b/platform/pickup-points/list', $payload);
         return $result['successful'] ? collect($result['data']['points'] ?? []) : collect();

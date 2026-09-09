@@ -46,6 +46,10 @@ class YandexDeliveryController extends Controller
             'type'             => 'nullable|string',
             'payment_method'   => 'nullable|string',
             'is_yandex_branded'=> 'nullable|boolean',
+            'latitude_from'    => 'nullable|numeric|between:-90,90',
+            'latitude_to'      => 'nullable|numeric|between:-90,90',
+            'longitude_from'   => 'nullable|numeric|between:-180,180',
+            'longitude_to'     => 'nullable|numeric|between:-180,180',
         ]);
 
         $filter = array_filter($validated, fn ($v) => $v !== null);
