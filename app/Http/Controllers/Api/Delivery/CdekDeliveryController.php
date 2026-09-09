@@ -22,8 +22,18 @@ class CdekDeliveryController
 
     public function pickupPoints(Request $request): JsonResponse
     {
-        $data = $request->validate(['city_code' => 'required|integer', 'type' => 'nullable|in:PVZ,POSTAMAT,ALL']);
-        return response()->json(['success' => true, 'points' => $this->service->pickupPoints($data)]);
+        $data = $request->validate([
+            'city_code' => 'required|integer',
+            'type' => 'nullable|in:PVZ,POSTAMAT,ALL',
+            'nearby' => 'nullable|boolean',
+        ]);
+
+        $nearby = (bool) ($data['nearby'] ?? false);
+        $points = $nearby
+            ? $this->service->nearbyPickupPoints((int) $data['city_code'], $data['type'] ?? 'ALL')
+            : $this->service->pickupPoints($data);
+
+        return response()->json(['success' => true, 'points' => $points, 'nearby' => $nearby]);
     }
 
     public function calculate(Request $request): JsonResponse

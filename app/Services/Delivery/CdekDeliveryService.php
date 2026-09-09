@@ -45,6 +45,7 @@ class CdekDeliveryService extends DeliveryService
     {
         $query = array_filter([
             'city_code' => $filter['city_code'] ?? null,
+            'region_code' => $filter['region_code'] ?? null,
             'country_code' => isset($filter['country_code']) ? strtoupper($filter['country_code']) : 'RU',
             'type' => $filter['type'] ?? 'ALL',
             'is_handout' => $filter['is_handout'] ?? true,
@@ -58,6 +59,45 @@ class CdekDeliveryService extends DeliveryService
             $points = array_values(array_filter($points, fn (array $point) => ! array_key_exists('have_cashless', $point) || (bool) $point['have_cashless']));
         }
         return $points;
+    }
+
+    /** Nearest regional points when the selected settlement has none of its own. */
+    public function nearbyPickupPoints(int $cityCode, string $type = 'ALL'): array
+    {
+        return Cache::remember("cdek:nearby-points:{$cityCode}:{$type}", now()->addDay(), function () use ($cityCode, $type) {
+            $cityResult = $this->client->request('GET', '/v2/location/cities', query: ['code' => $cityCode]);
+            $cities = $cityResult['successful'] ? ($cityResult['data'] ?? []) : [];
+            $city = is_array($cities) && array_is_list($cities) ? ($cities[0] ?? null) : $cities;
+            $regionCode = data_get($city, 'region_code');
+            $latitude = data_get($city, 'latitude');
+            $longitude = data_get($city, 'longitude');
+
+            if (! $regionCode || ! is_numeric($latitude) || ! is_numeric($longitude)) return [];
+
+            return collect($this->pickupPoints(['region_code' => (int) $regionCode, 'type' => $type]))
+                ->map(function (array $point) use ($latitude, $longitude) {
+                    $pointLatitude = data_get($point, 'location.latitude');
+                    $pointLongitude = data_get($point, 'location.longitude');
+                    if (is_numeric($pointLatitude) && is_numeric($pointLongitude)) {
+                        $point['distance_km'] = $this->distanceKm((float) $latitude, (float) $longitude, (float) $pointLatitude, (float) $pointLongitude);
+                    }
+                    return $point;
+                })
+                ->filter(fn (array $point) => isset($point['distance_km']))
+                ->sortBy('distance_km')
+                ->values()
+                ->all();
+        });
+    }
+
+    private function distanceKm(float $fromLatitude, float $fromLongitude, float $toLatitude, float $toLongitude): float
+    {
+        $latitudeDelta = deg2rad($toLatitude - $fromLatitude);
+        $longitudeDelta = deg2rad($toLongitude - $fromLongitude);
+        $value = sin($latitudeDelta / 2) ** 2
+            + cos(deg2rad($fromLatitude)) * cos(deg2rad($toLatitude)) * sin($longitudeDelta / 2) ** 2;
+
+        return 6371 * 2 * atan2(sqrt($value), sqrt(1 - $value));
     }
 
     /**
