@@ -22,9 +22,17 @@ class YandexDeliveryDateOffsetTest extends TestCase
             ->assertOk()
             ->assertJsonPath('settings.delivery_date_offset_days', 2);
 
-        $this->putJson('/api/third-party-integrations/yandex-delivery/settings', ['delivery_date_offset_days' => 3])
+        $this->putJson('/api/third-party-integrations/yandex-delivery/settings', [
+            'delivery_date_offset_days' => 3,
+            'token' => 'new-token',
+            'widget_code' => 'widget-code',
+            'api_url' => 'https://delivery.example.test',
+        ])
             ->assertOk()
-            ->assertJsonPath('settings.delivery_date_offset_days', 3);
+            ->assertJsonPath('settings.delivery_date_offset_days', 3)
+            ->assertJsonPath('settings.api_token_configured', true)
+            ->assertJsonPath('settings.widget_code', 'widget-code')
+            ->assertJsonPath('settings.api_url', 'https://delivery.example.test');
 
         $this->assertSame(3, DeliveryServiceSetting::query()
             ->where('service_name', 'yandex')

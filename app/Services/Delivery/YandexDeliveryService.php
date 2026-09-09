@@ -37,7 +37,10 @@ class YandexDeliveryService extends DeliveryService
         $config = config('services.yandex_delivery');
         $this->settings = array_replace_recursive($config, $database, $methodSettings);
         $mode = $this->settings['mode'] ?? 'sandbox';
-        $this->settings['base_url'] = $this->settings['base_url'][$mode] ?? null;
+        $customBaseUrl = trim((string) ($this->settings['api_url'] ?? ''));
+        $this->settings['base_url'] = $customBaseUrl !== ''
+            ? $customBaseUrl
+            : ($this->settings['base_url'][$mode] ?? null);
         $this->payloadBuilder ??= app(PayloadBuilder::class);
         $this->statusMapper ??= app(StatusMapper::class);
         $this->customerStatusMapper ??= app(CustomerStatusMapper::class);
