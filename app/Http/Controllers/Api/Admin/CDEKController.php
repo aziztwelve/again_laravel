@@ -196,7 +196,11 @@ class CDEKController extends Controller
         return response()->json(['success' => true, 'message' => 'Настройки СДЭК сохранены', 'settings' => $settings]);
     }
 
-    /** Keep the CDEK page threshold as an additional (OR) rule in the shared engine. */
+    /**
+     * The CDEK page may create a legacy default rule once. Afterwards the
+     * shared «Free shipping» page owns that rule completely: saving CDEK
+     * integration settings must not reset its amount or any conditions.
+     */
     private function syncCdekFreeShippingRule(DeliveryServiceSetting $record, array $settings): array
     {
         $threshold = max(0, (float) data_get($settings, 'price_rules.threshold', 0));
@@ -204,10 +208,7 @@ class CDEKController extends Controller
             ? FreeShippingRule::query()->find($settings['free_shipping_rule_id'])
             : null;
 
-        if ($threshold <= 0) {
-            if ($rule) $rule->update(['is_active' => false]);
-            return $settings;
-        }
+        if ($rule || $threshold <= 0) return $settings;
 
         $attributes = [
             'name' => 'СДЭК: бесплатная доставка из настроек',
@@ -220,16 +221,10 @@ class CDEKController extends Controller
             'starts_at' => null,
             'ends_at' => null,
         ];
-        if (! $rule) {
-            // Имя нужно только для автоматически созданного правила. Дальше
-            // менеджер может переименовать его в разделе «Бесплатная доставка».
-            $rule = FreeShippingRule::create($attributes);
-        } else {
-            // Сохранение настроек СДЭК не должно возвращать ручное название
-            // правила к системному «СДЭК: бесплатная доставка из настроек».
-            unset($attributes['name']);
-            $rule->update($attributes);
-        }
+        // Имя и условия задаются только для первого, автоматически созданного
+        // правила. Все последующие изменения делает менеджер в отдельном
+        // разделе «Бесплатная доставка».
+        $rule = FreeShippingRule::create($attributes);
         $settings['free_shipping_rule_id'] = $rule->id;
         $record->update(['settings' => $settings]);
         app(\App\Services\Delivery\FreeShippingService::class)->flushCache();
