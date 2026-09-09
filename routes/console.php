@@ -18,7 +18,7 @@ Schedule::command('email:sync')->everyFiveMinutes();
 // Резервный приём: используется, если Telegram временно не может доставить
 // webhook до сервера. Не заменяет штатный webhook.
 Schedule::command('telegram:poll-incoming')
-    ->everyMinute()
+    ->everyFifteenSeconds()
     ->withoutOverlapping();
 
 //Schedule::command('birthday:process')->daily();
