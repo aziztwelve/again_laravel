@@ -67,6 +67,7 @@ use App\Http\Controllers\Api\Admin\ThirdPartyIntegrations\Vk\VKWebhookController
 use App\Http\Controllers\Api\Admin\ThirdPartyIntegrations\VKSettingsController;
 use App\Http\Controllers\Api\Admin\UnitController;
 use App\Http\Controllers\Api\Admin\UserController;
+use App\Http\Controllers\Api\Admin\YandexDeliverySettingsController;
 use App\Http\Controllers\Api\Admin\Utm\MarketingChannelController;
 use App\Http\Controllers\Api\Admin\Utm\UtmAnalyticsController;
 use App\Http\Controllers\Api\Admin\Utm\UtmLinkController;
@@ -1130,6 +1131,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::get('/warehouses', [CDEKController::class, 'warehouses']);
             Route::put('/settings', [CDEKController::class, 'saveSettings']);
             Route::post('/settings', [CDEKController::class, 'update_cdek_settings']);
+        });
+        Route::prefix('/yandex-delivery')->group(function () {
+            Route::get('/settings', [YandexDeliverySettingsController::class, 'show']);
+            Route::put('/settings', [YandexDeliverySettingsController::class, 'update']);
         });
         Route::prefix('/moysklad')->group(function () {
             Route::post('/settings', [MoySkladController::class, 'update_moy_sklad_settings']);

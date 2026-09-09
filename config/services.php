@@ -65,6 +65,8 @@ return [
         'platform_station_id' => env('YANDEX_DELIVERY_PLATFORM_STATION_ID'),
         'merchant_id' => env('YANDEX_DELIVERY_MERCHANT_ID'),
         'geocoder_key' => env('YANDEX_DELIVERY_GEOCODER_KEY'),
+        // Буфер к сроку из оффера Яндекс.Доставки, который показываем покупателю.
+        'delivery_date_offset_days' => (int) env('YANDEX_DELIVERY_DATE_OFFSET_DAYS', 2),
         'base_url' => [
             'sandbox' => 'https://b2b.taxi.tst.yandex.net',
             'production' => 'https://b2b-authproxy.taxi.yandex.net',

@@ -13,6 +13,7 @@ use App\Services\Delivery\Yandex\CustomerStatusMapper;
 use App\Services\Delivery\Yandex\StatusMapper;
 use App\Services\Delivery\Yandex\YandexDeliveryClient;
 use App\Services\Notifications\YandexDeliveryNotificationService;
+use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -266,13 +267,28 @@ class YandexDeliveryService extends DeliveryService
                 'currency' => $details['currency'] ?? data_get($offer, 'pricing.currency') ?? 'RUB',
                 // Platform API uses min/max; keep a stable from/to contract for
                 // the checkout and derive the displayed delivery day from it.
-                'delivery_date' => $intervalFrom ?? $intervalTo ?? $offer['delivery_date'] ?? null,
+                'delivery_date' => $this->applyDeliveryDateOffset($intervalFrom ?? $intervalTo ?? $offer['delivery_date'] ?? null),
                 'delivery_interval' => $intervalFrom || $intervalTo ? [
-                    'from' => $intervalFrom,
-                    'to' => $intervalTo,
+                    'from' => $this->applyDeliveryDateOffset($intervalFrom),
+                    'to' => $this->applyDeliveryDateOffset($intervalTo),
                 ] : null,
             ];
         })->filter(fn (array $offer) => $offer['offer_id'])->values()->all();
+    }
+
+    /** Adds the configured operational buffer to a date supplied by Platform API. */
+    private function applyDeliveryDateOffset(?string $date): ?string
+    {
+        if (blank($date)) return $date;
+
+        $days = max(0, (int) ($this->settings['delivery_date_offset_days'] ?? 2));
+        if ($days === 0) return $date;
+
+        try {
+            return Carbon::parse($date)->addDays($days)->toIso8601String();
+        } catch (\Throwable) {
+            return $date;
+        }
     }
 
     /** Converts Platform API values such as "402.6 RUB" to a ruble amount. */
