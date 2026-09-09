@@ -930,6 +930,18 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::prefix('orders')->name('orders.')->group(function () {
         Route::get('/', [OrderController::class, 'index'])->name('index');
         Route::post('/', [OrderController::class, 'store'])->name('store');
+        // Справочник для формы заказа в админке. Должен идти до /{order},
+        // чтобы "payment-methods" не интерпретировался как идентификатор.
+        // Коды совпадают с двумя способами оплаты в чекауте витрины.
+        Route::get('/payment-methods', static function () {
+            return response()->json([
+                'success' => true,
+                'data' => collect(config('free_shipping.payment_methods', []))
+                    ->map(fn (string $label, string $value) => compact('value', 'label'))
+                    ->values()
+                    ->all(),
+            ]);
+        })->name('payment-methods');
         Route::get('/stats', [OrderStatsController::class, 'stats'])->name('stats');
         Route::get('/user', [OrderController::class, 'getUserOrders']);
         Route::get('/yandex-delivery/analytics', [\App\Http\Controllers\Api\Admin\YandexDeliveryAnalyticsController::class, 'summary'])->name('yandex.analytics');

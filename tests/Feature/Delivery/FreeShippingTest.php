@@ -128,10 +128,10 @@ class FreeShippingTest extends TestCase
 
     public function test_payment_method_condition(): void
     {
-        $this->rule(['min_order_amount' => 1000, 'payment_methods' => ['cloudpayments_sbp']]);
+        $this->rule(['min_order_amount' => 1000, 'payment_methods' => ['yandex_pay']]);
 
         $context = $this->context(2000);
-        $context->paymentMethod = 'cloudpayments_sbp';
+        $context->paymentMethod = 'yandex_pay';
         $this->assertNotNull($this->service()->evaluate($context));
 
         $context->paymentMethod = 'card_ru';
@@ -492,7 +492,7 @@ class FreeShippingTest extends TestCase
             'min_order_amount' => 5000,
             'services' => ['cdek'],
             'delivery_types' => ['pickup'],
-            'payment_methods' => ['cloudpayments_sbp'],
+            'payment_methods' => ['yandex_pay'],
             'product_ids' => [$product->id],
             'country_ids' => [$countryId],
             'region_ids' => [$regionId],
@@ -530,6 +530,18 @@ class FreeShippingTest extends TestCase
             'min_order_amount' => 100,
             'services' => ['boxberry'],
         ])->assertUnprocessable()->assertJsonValidationErrors('services.0');
+    }
+
+    public function test_admin_order_payment_methods_match_checkout(): void
+    {
+        Sanctum::actingAs(User::factory()->create());
+
+        $this->getJson('/api/orders/payment-methods')
+            ->assertOk()
+            ->assertJsonPath('data', [
+                ['value' => 'card_ru', 'label' => 'Оплата картами РФ, TPay, СБП'],
+                ['value' => 'yandex_pay', 'label' => 'Яндекс Пэй и Сплит'],
+            ]);
     }
 
     public function test_admin_can_create_postamat_only_rule(): void
