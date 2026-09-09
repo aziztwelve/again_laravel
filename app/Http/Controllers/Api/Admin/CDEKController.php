@@ -220,8 +220,16 @@ class CDEKController extends Controller
             'starts_at' => null,
             'ends_at' => null,
         ];
-        $rule ??= FreeShippingRule::create($attributes);
-        $rule->update($attributes);
+        if (! $rule) {
+            // Имя нужно только для автоматически созданного правила. Дальше
+            // менеджер может переименовать его в разделе «Бесплатная доставка».
+            $rule = FreeShippingRule::create($attributes);
+        } else {
+            // Сохранение настроек СДЭК не должно возвращать ручное название
+            // правила к системному «СДЭК: бесплатная доставка из настроек».
+            unset($attributes['name']);
+            $rule->update($attributes);
+        }
         $settings['free_shipping_rule_id'] = $rule->id;
         $record->update(['settings' => $settings]);
         app(\App\Services\Delivery\FreeShippingService::class)->flushCache();
