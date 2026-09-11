@@ -229,6 +229,7 @@ class ProductController extends Controller
     {
         $validated = $this->validate_of_product($request);
         $validated = $this->decodeMarketplaceLinks($validated);
+        $validated = $this->sanitizeProductDescription($validated);
 
         DB::beginTransaction();
 
@@ -384,6 +385,7 @@ class ProductController extends Controller
     {
         $validated = $this->validate_of_product_update($request, $id);
         $validated = $this->decodeMarketplaceLinks($validated);
+        $validated = $this->sanitizeProductDescription($validated);
 
 
         DB::beginTransaction();
@@ -504,6 +506,88 @@ class ProductController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Описание товара выводится на витрине как HTML. Оставляем разметку,
+     * которую создаёт редактор, но не даём сохранить скрипты и event-атрибуты.
+     */
+    private function sanitizeProductDescription(array $validated): array
+    {
+        if (! array_key_exists('description', $validated) || blank($validated['description'])) {
+            return $validated;
+        }
+
+        $document = new \DOMDocument('1.0', 'UTF-8');
+        $previous = libxml_use_internal_errors(true);
+        $document->loadHTML(
+            '<div>'.$validated['description'].'</div>',
+            LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD
+        );
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+
+        $allowedTags = array_flip([
+            'a', 'b', 'blockquote', 'br', 'code', 'col', 'colgroup', 'div', 'em', 'figure',
+            'figcaption', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'iframe', 'img',
+            'li', 'ol', 'p', 'pre', 'span', 'strong', 'table', 'tbody', 'td', 'th', 'thead', 'tr', 'u', 'ul',
+            'video', 'source',
+        ]);
+        $allowedAttributes = array_flip([
+            'allow', 'allowfullscreen', 'alt', 'class', 'colspan', 'controls', 'frameborder', 'height',
+            'href', 'rel', 'rowspan', 'src', 'style', 'target', 'title', 'type', 'width',
+        ]);
+        $xpath = new \DOMXPath($document);
+
+        /** @var \DOMElement $element */
+        foreach (iterator_to_array($xpath->query('//*')) as $element) {
+            $tag = strtolower($element->tagName);
+            if (! isset($allowedTags[$tag])) {
+                $element->parentNode?->removeChild($element);
+                continue;
+            }
+
+            foreach (iterator_to_array($element->attributes) as $attribute) {
+                $name = strtolower($attribute->name);
+                $value = trim($attribute->value);
+                if (str_starts_with($name, 'on') || ! isset($allowedAttributes[$name])) {
+                    $element->removeAttribute($attribute->name);
+                    continue;
+                }
+
+                if (in_array($name, ['href', 'src'], true) && ! $this->isSafeProductDescriptionUrl($value, $tag === 'iframe')) {
+                    $element->removeAttribute($attribute->name);
+                }
+
+                if ($name === 'style' && preg_match('/(?:expression|url\s*\(|@import|javascript:|behavior:)/iu', $value)) {
+                    $element->removeAttribute($attribute->name);
+                }
+            }
+        }
+
+        $validated['description'] = trim($document->saveHTML($document->documentElement) ?: '');
+
+        return $validated;
+    }
+
+    private function isSafeProductDescriptionUrl(string $url, bool $iframe = false): bool
+    {
+        if ($url === '' || str_starts_with($url, '/storage/')) {
+            return true;
+        }
+
+        $parts = parse_url($url);
+        if (! is_array($parts) || ! in_array(strtolower($parts['scheme'] ?? ''), ['http', 'https'], true)) {
+            return false;
+        }
+
+        if (! $iframe) {
+            return true;
+        }
+
+        $host = strtolower($parts['host'] ?? '');
+
+        return in_array($host, ['www.youtube.com', 'youtube.com', 'player.vimeo.com', 'vkvideo.ru', 'vk.com'], true);
     }
 
 
