@@ -237,6 +237,20 @@ class ConversationService
             ->update(['status' => Message::STATUS_READ]);
     }
 
+    public function markAsUnread(Conversation $conversation): void
+    {
+        $lastIncoming = $conversation->messages()
+            ->where('direction', Message::DIRECTION_INCOMING)
+            ->latest('id')
+            ->first();
+
+        if ($lastIncoming) {
+            $lastIncoming->update(['status' => Message::STATUS_DELIVERED]);
+        }
+
+        $conversation->update(['unread_messages_count' => 1]);
+    }
+
     public function assignManager(Conversation $conversation, ?User $manager = null): void
     {
         if (! $manager) {

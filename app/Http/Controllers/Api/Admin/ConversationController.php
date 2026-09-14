@@ -315,6 +315,18 @@ class ConversationController extends Controller
         return ConversationResource::make($conversation);
     }
 
+    public function markAsRead(Conversation $conversation)
+    {
+        $this->conversationService->markAsRead($conversation);
+        return ConversationResource::make($conversation->fresh());
+    }
+
+    public function markAsUnread(Conversation $conversation)
+    {
+        $this->conversationService->markAsUnread($conversation);
+        return ConversationResource::make($conversation->fresh());
+    }
+
     /**
      * Привязывает сохранённого клиента к анонимному диалогу.
      */
