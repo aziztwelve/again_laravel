@@ -111,15 +111,23 @@ class OrderFilterService
     /**
      * Фильтр по статусу заказа
      */
-    private function filterByStatus(Builder $query, string $status): Builder
+    private function filterByStatus(Builder $query, string|array $status): Builder
     {
-        try {
-            $statusEnum = OrderStatus::from($status);
-            return $query->where('status', $statusEnum);
-        } catch (\ValueError $e) {
-            // Невалидный статус - возвращаем query без фильтра
-            return $query;
-        }
+        $statuses = collect((array) $status)
+            ->filter(fn ($value) => is_string($value) && $value !== '')
+            ->map(function (string $value) {
+                try {
+                    return OrderStatus::from($value)->value;
+                } catch (\ValueError) {
+                    return null;
+                }
+            })
+            ->filter()
+            ->values()
+            ->all();
+
+        // Невалидные значения не должны превращать список заказов в пустой.
+        return $statuses === [] ? $query : $query->whereIn('status', $statuses);
     }
 
     /**
