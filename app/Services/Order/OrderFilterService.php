@@ -560,7 +560,10 @@ class OrderFilterService
     public function validateFilterParams(Request $request): array
     {
         return $request->validate([
-            'status' => 'nullable|string',
+            // Одиночный статус приходит строкой, мультивыбор из админки —
+            // массивом (`status[]`). Допустимы оба формата.
+            'status' => 'nullable',
+            'status.*' => 'string',
             'payment_status' => 'nullable|string',
             'date_from' => 'nullable|date',
             'date_to' => 'nullable|date|after_or_equal:date_from',
