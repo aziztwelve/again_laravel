@@ -60,16 +60,16 @@ class ConversationController extends Controller
 
 
 
-        // Поиск по клиенту (имя, email, телефон)
-        if (!empty($validated['search'])) {
-            $search = $validated['search'];
+        // Число в поиске прежде всего означает номер чата. Раньше поиск по
+        // содержимому сообщения тоже находил, например, «204», а сортировка
+        // по дате ставила его выше точного чата «278».
+        $search = trim((string) ($validated['search'] ?? ''));
+        if ($search !== '' && ctype_digit($search) && Conversation::whereKey($search)->exists()) {
+            $query->whereKey($search);
+        // Поиск по клиенту (имя, email, телефон) и тексту последнего сообщения.
+        } elseif ($search !== '') {
 
             $query->where(function ($q) use ($search) {
-                // Поиск по ID conversation
-                if (is_numeric($search)) {
-                    $q->orWhere('id', $search);
-                }
-
                 // Поиск по клиенту
                 $q->orWhereHas('client', function ($clientQuery) use ($search) {
                     // По email клиента
