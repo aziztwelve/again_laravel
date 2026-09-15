@@ -70,7 +70,7 @@ class ReadStatusTest extends TestCase
         $this->assertSame($conversation->id, $payload['conversation_id']);
         $this->assertSame($message->id, $payload['message_id']);
         $this->assertSame(Message::DIRECTION_INCOMING, $payload['message_direction']);
-        $this->assertSame('Анна Иванова', $payload['client_name']);
+        $this->assertSame('Иванова Анна', $payload['client_name']);
         $this->assertSame('Подскажите, пожалуйста, статус заказа', $payload['message_preview']);
     }
 
