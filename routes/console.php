@@ -19,7 +19,9 @@ Schedule::command('email:sync')->everyFiveMinutes();
 // webhook до сервера. Не заменяет штатный webhook.
 Schedule::command('telegram:poll-incoming')
     ->everyFifteenSeconds()
-    ->withoutOverlapping();
+    // При аварийном завершении процесса не блокируем polling на стандартные
+    // 24 часа: один запрос к Telegram занимает значительно меньше 2 минут.
+    ->withoutOverlapping(2);
 
 //Schedule::command('birthday:process')->daily();
 Schedule::command('birthday:process')->dailyAt('10:00');
