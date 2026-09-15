@@ -5,6 +5,9 @@ namespace Tests\Feature\Conversation;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\User;
+use App\Models\Client;
+use App\Models\UserProfile;
+use App\Events\ConversationUpdated;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Tests\TestCase;
 
@@ -42,6 +45,33 @@ class ReadStatusTest extends TestCase
 
         $this->assertSame(Message::STATUS_READ, $firstIncoming->fresh()->status);
         $this->assertSame(Message::STATUS_DELIVERED, $lastIncoming->fresh()->status);
+    }
+
+    public function test_conversation_event_includes_an_incoming_message_preview(): void
+    {
+        $client = Client::create(['email' => 'notification-'.uniqid().'@example.com']);
+        UserProfile::create([
+            'client_id' => $client->id,
+            'first_name' => 'Анна',
+            'last_name' => 'Иванова',
+        ]);
+        $conversation = Conversation::create([
+            'source' => 'telegram',
+            'external_id' => 'notification-'.uniqid(),
+            'client_id' => $client->id,
+            'status' => 'new',
+            'last_message_at' => now(),
+            'unread_messages_count' => 1,
+        ]);
+        $message = $this->message($conversation, 'Подскажите, пожалуйста, статус заказа', Message::STATUS_DELIVERED);
+
+        $payload = (new ConversationUpdated($conversation, $message))->broadcastWith();
+
+        $this->assertSame($conversation->id, $payload['conversation_id']);
+        $this->assertSame($message->id, $payload['message_id']);
+        $this->assertSame(Message::DIRECTION_INCOMING, $payload['message_direction']);
+        $this->assertSame('Анна Иванова', $payload['client_name']);
+        $this->assertSame('Подскажите, пожалуйста, статус заказа', $payload['message_preview']);
     }
 
     private function message(

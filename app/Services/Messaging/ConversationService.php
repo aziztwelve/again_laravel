@@ -183,7 +183,7 @@ class ConversationService
 
             try {
                 event(new \App\Events\MessageCreated($message));
-                event(new \App\Events\ConversationUpdated($conversation));
+                event(new \App\Events\ConversationUpdated($conversation, $message));
             } catch (\Exception $e) {
                 Log::warning('MessageCreated broadcast failed, but message saved:', [
                     'message_id' => $message->id,
