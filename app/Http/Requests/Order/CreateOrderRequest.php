@@ -180,10 +180,10 @@ class CreateOrderRequest extends FormRequest
             return;
         }
 
-        if ($deliveryDate->isThursday() || $deliveryDate->isWeekend()) {
+        if ($deliveryDate->isWeekend()) {
             $validator->errors()->add(
                 'delivery_address.delivery_date',
-                'Доставка по четвергам и выходным дням недоступна.'
+                'Доставка по выходным дням недоступна.'
             );
         }
     }
