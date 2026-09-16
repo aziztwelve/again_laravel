@@ -5,6 +5,7 @@ namespace App\Http\Requests\Order;
 use App\Enums\OrderStatus;
 use App\Enums\PaymentStatus;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -137,7 +138,54 @@ class CreateOrderRequest extends FormRequest
             }
 
             $this->validatePromotions($validator);
+            $this->validateDeliveryDate($validator);
         });
+    }
+
+    /**
+     * Правила желаемой даты доставки из публичного checkout.
+     *
+     * Клиентский datepicker скрывает недоступные дни, но это ограничение
+     * дублируется на сервере, чтобы его нельзя было обойти прямым API-запросом.
+     */
+    private function validateDeliveryDate($validator): void
+    {
+        // В админке менеджер может назначить дату вручную, поэтому правило
+        // относится только к публичному checkout.
+        if (! $this->routeIs('public.orders.store')) {
+            return;
+        }
+
+        $value = $this->input('delivery_address.delivery_date');
+        if (empty($value)) {
+            return;
+        }
+
+        try {
+            $deliveryDate = Carbon::parse($value)->startOfDay();
+        } catch (\Throwable) {
+            // Формат уже проверяется правилом `date`.
+            return;
+        }
+
+        $orderDate = now()->startOfDay();
+        $minimumDate = $orderDate->copy()->addDays($orderDate->isThursday() ? 1 : 2);
+
+        if ($deliveryDate->lt($minimumDate)) {
+            $validator->errors()->add(
+                'delivery_address.delivery_date',
+                'Выберите дату доставки не ранее '.$minimumDate->format('d.m.Y').'.'
+            );
+
+            return;
+        }
+
+        if ($deliveryDate->isThursday() || $deliveryDate->isWeekend()) {
+            $validator->errors()->add(
+                'delivery_address.delivery_date',
+                'Доставка по четвергам и выходным дням недоступна.'
+            );
+        }
     }
 
     /**
