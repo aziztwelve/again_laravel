@@ -565,9 +565,44 @@ class ProductController extends Controller
             }
         }
 
+        $this->removeLeadingDescriptionWhitespace($document->documentElement);
+
         $validated['description'] = trim($document->saveHTML($document->documentElement) ?: '');
 
         return $validated;
+    }
+
+    /**
+     * Old editors may create a chain of empty divs separated by newlines.
+     * These whitespace nodes have no semantic meaning, but `white-space:
+     * pre-line` and similar content styles can render them as a large gap.
+     */
+    private function removeLeadingDescriptionWhitespace(\DOMElement $container): void
+    {
+        $current = $container;
+
+        while (true) {
+            while (
+                $current->firstChild instanceof \DOMText
+                && trim(str_replace("\u{00A0}", '', $current->firstChild->textContent)) === ''
+            ) {
+                $current->removeChild($current->firstChild);
+            }
+
+            $firstElement = null;
+            foreach ($current->childNodes as $child) {
+                if ($child instanceof \DOMElement) {
+                    $firstElement = $child;
+                    break;
+                }
+            }
+
+            if ($firstElement === null || strtolower($firstElement->tagName) !== 'div') {
+                return;
+            }
+
+            $current = $firstElement;
+        }
     }
 
     private function isSafeProductDescriptionUrl(string $url, bool $iframe = false): bool
