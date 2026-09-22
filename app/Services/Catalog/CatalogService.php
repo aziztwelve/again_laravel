@@ -80,9 +80,10 @@ class CatalogService
             ]);
 
 
-        // Категория «Скоро в продаже»: ручная подборка из админки, но в неё
-        // попадают только товары без остатка целиком либо с цветом, у которого
-        // нет ни одного варианта в наличии.
+        // Категория «Скоро в продаже» наполняется автоматически товарами,
+        // которые нельзя купить. У наборов общий остаток может быть заполнен
+        // в МойСклад, хотя все их варианты уже закончились, поэтому одного
+        // products.stock_quantity для такого случая недостаточно.
         $isComingSoon = false;
         $category = null;
 
@@ -105,27 +106,15 @@ class CatalogService
                 } elseif ($category->is_coming_soon) {
                     $isComingSoon = true;
                     $query
-                        ->whereHas('categories', function ($q) use ($category) {
-                            $q->where('categories.id', $category->id);
-                        })
                         ->where(function ($q) {
                             $q->where('stock_quantity', '<=', 0)
-                                ->orWhereHas('variants', function ($variantQuery) {
-                                    // Для цвета нужны отсутствовать все его размеры.
-                                    // Одиночный отсутствующий размер при наличии
-                                    // другого размера этого же цвета не выводит
-                                    // товар в «Скоро в продаже».
-                                    $variantQuery
-                                        ->whereNotNull('color_id')
-                                        ->where('stock_quantity', '<=', 0)
-                                        ->whereNotExists(function ($inStockColorVariant) {
-                                            $inStockColorVariant
-                                                ->selectRaw('1')
-                                                ->from('product_variants as in_stock_variants')
-                                                ->whereColumn('in_stock_variants.product_id', 'product_variants.product_id')
-                                                ->whereColumn('in_stock_variants.color_id', 'product_variants.color_id')
-                                                ->whereNull('in_stock_variants.deleted_at')
-                                                ->where('in_stock_variants.stock_quantity', '>', 0);
+                                ->orWhere(function ($variantlessProductQuery) {
+                                    $variantlessProductQuery
+                                        ->where('has_variants', true)
+                                        ->whereDoesntHave('variants', function ($variantQuery) {
+                                            $variantQuery
+                                                ->where('stock_quantity', '>', 0)
+                                                ->where('price', '>', 0);
                                         });
                                 });
                         });
