@@ -37,6 +37,7 @@ class UpdateOtoBannerDTO
         public readonly ?int                     $displayDelaySeconds = null,
         public readonly ?array                   $segmentIds = null,
         public readonly mixed                    $image = null,
+        public readonly bool                     $promoCodeIdProvided = false,
         public readonly ?int                     $promoCodeId = null,
     )
     {
@@ -49,6 +50,7 @@ class UpdateOtoBannerDTO
         $buttonTextProvided = $request->exists('button_text');
         $privacyTextProvided = $request->exists('privacy_text');
         $inputFieldPlaceholderProvided = $request->exists('input_field_placeholder');
+        $promoCodeIdProvided = $request->exists('promo_code_id');
 
         return new self(
             titleProvided: $titleProvided,
@@ -80,7 +82,12 @@ class UpdateOtoBannerDTO
             displayDelaySeconds: $request->input('display_delay_seconds'),
             segmentIds: $request->input('segment_ids'),
             image: $request->file('image'),
-            promoCodeId: $request->integer('promo_code_id'),
+            // Пустое значение означает снять привязку. Не преобразуем его в 0:
+            // такой ID нарушает внешний ключ и не даёт сохранить даже новую картинку.
+            promoCodeIdProvided: $promoCodeIdProvided,
+            promoCodeId: $promoCodeIdProvided && $request->filled('promo_code_id')
+                ? $request->integer('promo_code_id')
+                : null,
         );
     }
 
@@ -106,8 +113,7 @@ class UpdateOtoBannerDTO
         if ($this->inputFieldRequired !== null) $data['input_field_required'] = $this->inputFieldRequired;
         if ($this->displayDelaySeconds !== null) $data['display_delay_seconds'] = $this->displayDelaySeconds;
         if ($this->segmentIds !== null) $data['segment_ids'] = $this->segmentIds;
-        if ($this->promoCodeId !== null) $data['promo_code_id'] = $this->promoCodeId;
+        if ($this->promoCodeIdProvided) $data['promo_code_id'] = $this->promoCodeId;
         return $data;
     }
 }
-
