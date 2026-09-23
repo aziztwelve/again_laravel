@@ -366,6 +366,15 @@ class ProductsAndVariantsSyncWithMoySkladService
 
             $variantBarcode = $this->extractBarcode($data);
 
+            // У наборов и других модификаций МойСклад может хранить цену
+            // только у родительского товара. Не записываем в локальный вариант
+            // ноль: такая модификация есть в наличии, но витрина не может её
+            // заказать и ошибочно относит товар к «Скоро в продаже».
+            $variantPrice = $this->extractPrice($data->salePrices ?? []);
+            if ($variantPrice <= 0) {
+                $variantPrice = (float) $product->price;
+            }
+
             $attributes = [
                 'uuid' => $data->id,
                 'product_id' => $product->id,
@@ -376,7 +385,7 @@ class ProductsAndVariantsSyncWithMoySkladService
                 'sku' => ($data->code ?? null) ?: null,
                 'barcode' => $variantBarcode,
                 'code' => $data->code ?? null,
-                'price' => $this->extractPrice($data->salePrices ?? []),
+                'price' => $variantPrice,
                 'cost_price' => $this->extractCostPrice($data->buyPrice ?? (object)['value' => 0]),
                 'stock_quantity' => $stockQty,
                 // У модификации может быть собственный вес в МойСклад.

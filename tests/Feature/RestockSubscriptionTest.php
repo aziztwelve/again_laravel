@@ -295,4 +295,31 @@ class RestockSubscriptionTest extends TestCase
         $this->assertTrue($ids->contains($outOfStock->id));
         $this->assertTrue($ids->contains($unavailableVariants->id));
     }
+
+    public function test_coming_soon_category_does_not_include_in_stock_variant_without_own_price(): void
+    {
+        $category = Category::create([
+            'name' => 'Скоро в продаже '.uniqid(),
+            'is_coming_soon' => true,
+            'show_in_catalog_menu' => true,
+        ]);
+        $product = $this->product([
+            'stock_quantity' => 5,
+            'has_variants' => true,
+        ]);
+        ProductVariant::create([
+            'product_id' => $product->id,
+            'name' => 'В наличии',
+            'sku' => 'in-stock-no-price-'.uniqid(),
+            'price' => 0,
+            'stock_quantity' => 5,
+        ]);
+
+        $response = $this->getJson('/api/public/catalog/products?per_page=50&category_slug='.$category->slug);
+
+        $response->assertOk();
+
+        $ids = collect($response->json('data'))->pluck('id');
+        $this->assertFalse($ids->contains($product->id));
+    }
 }

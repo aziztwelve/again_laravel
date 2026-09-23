@@ -112,9 +112,12 @@ class CatalogService
                                     $variantlessProductQuery
                                         ->where('has_variants', true)
                                         ->whereDoesntHave('variants', function ($variantQuery) {
-                                            $variantQuery
-                                                ->where('stock_quantity', '>', 0)
-                                                ->where('price', '>', 0);
+                                            // Наличие определяется остатком, а не ценой.
+                                            // У модификации МойСклад может не прислать
+                                            // отдельную цену: в этом случае синхронизация
+                                            // наследует цену товара, но товар не должен
+                                            // попадать в «Скоро в продаже» в промежутке.
+                                            $variantQuery->where('stock_quantity', '>', 0);
                                         });
                                 });
                         });

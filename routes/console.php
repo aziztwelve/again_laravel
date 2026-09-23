@@ -31,6 +31,14 @@ Schedule::command('giftcards:send-scheduled')
     ->withoutOverlapping()
     ->runInBackground();
 
+// Каталог и остатки на витрине являются зеркалом МойСклад. Ручной запуск
+// синхронизации оставлял варианты со старыми/пустыми остатками, из-за чего
+// товары с наличием ошибочно попадали в «Скоро в продаже».
+Schedule::command('moysklad:sync-catalog')
+    ->everyTenMinutes()
+    ->withoutOverlapping(15)
+    ->runInBackground();
+
 // Брошенные корзины: три касания через 2/24/48 ч от последней активности,
 // без ограничения по часовому поясу. См.
 // docs/tasks/abandoned-cart.md.
