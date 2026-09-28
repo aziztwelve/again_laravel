@@ -88,6 +88,11 @@ class CdekShipmentSyncTest extends TestCase
         $order->refresh();
         $this->assertSame('10317088749', $order->tracking_number);
         $this->assertSame('10317088749', $order->delivery_data['cdek_number']);
+        $this->assertSame(
+            'https://www.cdek.ru/ru/tracking?order_id=10317088749',
+            $order->delivery_data['cdek_tracking_url'],
+        );
+        $this->assertArrayNotHasKey('tracking_url', $order->delivery_data);
 
         // Повторная синхронизация не создаёт второе отправление.
         app(CdekDeliveryService::class)->sync($cdekOrder->fresh());

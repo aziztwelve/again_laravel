@@ -143,7 +143,11 @@ class ProductsAndVariantsSyncWithMoySkladService
     }
 
     /**
-     * Безопасно извлекает цену
+     * Извлекает цену до скидки из второго типа цены МойСклад.
+     *
+     * Первый тип цены содержит цену после скидки. Если цена до скидки не
+     * заполнена (равна нулю), используем цену после скидки, чтобы не
+     * синхронизировать товар с нулевой ценой.
      */
     private function extractPrice($priceData): float
     {
@@ -151,7 +155,10 @@ class ProductsAndVariantsSyncWithMoySkladService
             return 0.0;
         }
 
-        $price = ($priceData[0]->value ?? 0) / 100;
+        $priceBeforeDiscount = ($priceData[1]->value ?? 0) / 100;
+        $priceAfterDiscount = ($priceData[0]->value ?? 0) / 100;
+        $price = $priceBeforeDiscount > 0 ? $priceBeforeDiscount : $priceAfterDiscount;
+
         return $this->normalizeNumericValue($price, self::MAX_PRICE);
     }
 

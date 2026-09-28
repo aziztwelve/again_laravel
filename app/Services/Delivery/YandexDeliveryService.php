@@ -210,9 +210,15 @@ class YandexDeliveryService extends DeliveryService
             'tracking_number' => $trackingNumber,
             'request_id' => $existing?->request_id ?? (string) \Illuminate\Support\Str::uuid(), 'last_synced_at' => now(),
         ]);
-        $updatedDelivery = array_merge($delivery, ['tracking_url' => $trackingUrl]);
+        // Храним данные Яндекс.Доставки под отдельными ключами. Общие
+        // tracking_url/tracking_number могут быть заполнены СДЭК и не должны
+        // попадать в блок Яндекс.Доставки.
+        $updatedDelivery = array_merge($delivery, [
+            'yandex_claim_id' => $requestId,
+            'yandex_tracking_url' => $trackingUrl,
+        ]);
         if ($trackingNumber) {
-            $updatedDelivery['tracking_number'] = $trackingNumber;
+            $updatedDelivery['yandex_tracking_number'] = $trackingNumber;
         }
         if ($order->delivery_data !== $updatedDelivery) {
             $order->update(['delivery_data' => $updatedDelivery]);
