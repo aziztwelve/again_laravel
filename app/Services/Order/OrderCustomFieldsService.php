@@ -35,7 +35,8 @@ class OrderCustomFieldsService
                 'label' => 'Номер для отслеживания заказа СДЭК',
                 'type' => 'text',
                 'source' => self::SOURCE_META,
-                'meta_key' => 'cdek_tracking_number',
+                // Ключ оставлен совместимым с импортом InSales.
+                'meta_key' => 'cdek_track_number',
             ],
             [
                 'key' => 'tracking_number',

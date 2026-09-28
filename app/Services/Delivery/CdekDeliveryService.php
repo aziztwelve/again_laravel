@@ -766,12 +766,25 @@ class CdekDeliveryService extends DeliveryService
         // Яндекс.Доставка тоже сохраняет их, из-за чего данные разных служб
         // могли отображаться как относящиеся к одному провайдеру.
         unset($delivery['tracking_url'], $delivery['tracking_number']);
-        $order->update([
-            'tracking_number' => $cdekOrder->cdek_number,
+        $legacyMeta = is_array($order->legacy_meta) ? $order->legacy_meta : [];
+        if (filled($cdekOrder->cdek_number)) {
+            $legacyMeta['cdek_track_number'] = $cdekOrder->cdek_number;
+        }
+
+        $attributes = [
             'delivery_data' => array_merge($delivery, [
                 'cdek_number' => $cdekOrder->cdek_number,
                 'cdek_tracking_url' => $cdekOrder->tracking_url,
             ]),
-        ]);
+            'legacy_meta' => $legacyMeta ?: null,
+        ];
+
+        // orders.tracking_number — легаси-поле «Трек-номер ЯД». Убираем из
+        // него только тот номер, который ранее автоматически записал СДЭК.
+        if ($order->tracking_number === $cdekOrder->cdek_number) {
+            $attributes['tracking_number'] = null;
+        }
+
+        $order->update($attributes);
     }
 }

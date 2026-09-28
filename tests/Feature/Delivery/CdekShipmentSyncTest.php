@@ -48,6 +48,8 @@ class CdekShipmentSyncTest extends TestCase
             'total_amount' => 5000,
             'delivery_method_id' => $method->id,
             'delivery_cost' => 390,
+            // Исторически СДЭК записывал номер в легаси-поле Яндекс.Доставки.
+            'tracking_number' => '10317088749',
             'delivery_data' => [
                 'provider' => 'cdek', 'delivery_type' => 'courier', 'tariff_code' => 137,
                 'price' => 390, 'destination' => ['city_code' => 44, 'city' => 'Москва', 'address' => 'Арбат, 10'],
@@ -88,7 +90,8 @@ class CdekShipmentSyncTest extends TestCase
         $this->assertSame('10317088749', $shipment->tracking_number);
 
         $order->refresh();
-        $this->assertSame('10317088749', $order->tracking_number);
+        $this->assertNull($order->tracking_number);
+        $this->assertSame('10317088749', $order->legacy_meta['cdek_track_number']);
         $this->assertSame('10317088749', $order->delivery_data['cdek_number']);
         $this->assertSame(
             'https://www.cdek.ru/ru/tracking?order_id=10317088749',
