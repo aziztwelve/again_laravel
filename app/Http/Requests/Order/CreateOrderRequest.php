@@ -333,7 +333,6 @@ class CreateOrderRequest extends FormRequest
             'delivery_address.address' => 'required|string|max:1000',
             'delivery_address.entrance' => 'nullable|string|max:50',
             'delivery_address.floor' => 'nullable|string|max:50',
-            'delivery_address.intercom' => 'nullable|string|max:50',
             'delivery_address.delivery_comment' => 'nullable|string|max:1000',
             'delivery_address.delivery_date' => 'nullable|date',
             'delivery_address.buyer_comment' => 'nullable|string|max:1000',

@@ -199,7 +199,6 @@ class OrderExportService extends ExportService
         if (is_array($deliveryAddress)) {
             $entrance = ! empty($deliveryAddress['entrance']) ? 'подъезд '.$deliveryAddress['entrance'] : null;
             $floor = ! empty($deliveryAddress['floor']) ? 'этаж '.$deliveryAddress['floor'] : null;
-            $intercom = ! empty($deliveryAddress['intercom']) ? 'домофон '.$deliveryAddress['intercom'] : null;
 
             return implode(', ', array_filter([
                 $deliveryAddress['country'] ?? null,
@@ -209,7 +208,6 @@ class OrderExportService extends ExportService
                 $deliveryAddress['address'] ?? null,
                 $entrance,
                 $floor,
-                $intercom,
                 $deliveryAddress['delivery_comment'] ?? null,
                 $deliveryAddress['buyer_comment'] ?? null,
             ]));

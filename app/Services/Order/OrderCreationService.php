@@ -123,7 +123,6 @@ class OrderCreationService
                 'address' => $deliveryAddress['address'] ?? null,
                 'entrance' => $deliveryAddress['entrance'] ?? null,
                 'floor' => $deliveryAddress['floor'] ?? null,
-                'intercom' => $deliveryAddress['intercom'] ?? null,
                 'delivery_comment' => $deliveryAddress['delivery_comment'] ?? null,
                 'delivery_date' => $this->formatDeliveryDate($deliveryDate),
                 'buyer_comment' => $deliveryAddress['buyer_comment'] ?? null,

@@ -23,7 +23,6 @@ class OrderAddress extends Model
         'address',
         'entrance',
         'floor',
-        'intercom',
         'delivery_comment',
         'delivery_date',
         'buyer_comment',

@@ -300,7 +300,6 @@ class OrderUpdateService
                 'address' => $addressData['address'] ?? null,
                 'entrance' => $addressData['entrance'] ?? null,
                 'floor' => $addressData['floor'] ?? null,
-                'intercom' => $addressData['intercom'] ?? null,
                 'delivery_comment' => $addressData['delivery_comment'] ?? null,
                 'delivery_date' => $this->formatDeliveryDate($addressData['delivery_date'] ?? null),
                 'buyer_comment' => $addressData['buyer_comment'] ?? null,
