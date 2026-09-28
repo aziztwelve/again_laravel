@@ -51,6 +51,8 @@ class CdekShipmentSyncTest extends TestCase
             'delivery_data' => [
                 'provider' => 'cdek', 'delivery_type' => 'courier', 'tariff_code' => 137,
                 'price' => 390, 'destination' => ['city_code' => 44, 'city' => 'Москва', 'address' => 'Арбат, 10'],
+                // Старый общий ключ должен быть заменён на cdek_tracking_url.
+                'tracking_url' => 'https://old.example.test/tracking',
             ],
         ]);
         $order->address()->create([

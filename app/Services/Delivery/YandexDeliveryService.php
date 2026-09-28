@@ -213,6 +213,7 @@ class YandexDeliveryService extends DeliveryService
         // Храним данные Яндекс.Доставки под отдельными ключами. Общие
         // tracking_url/tracking_number могут быть заполнены СДЭК и не должны
         // попадать в блок Яндекс.Доставки.
+        unset($delivery['tracking_url'], $delivery['tracking_number']);
         $updatedDelivery = array_merge($delivery, [
             'yandex_claim_id' => $requestId,
             'yandex_tracking_url' => $trackingUrl,

@@ -765,6 +765,7 @@ class CdekDeliveryService extends DeliveryService
         // Не используем общие ключи tracking_url/tracking_number в delivery_data:
         // Яндекс.Доставка тоже сохраняет их, из-за чего данные разных служб
         // могли отображаться как относящиеся к одному провайдеру.
+        unset($delivery['tracking_url'], $delivery['tracking_number']);
         $order->update([
             'tracking_number' => $cdekOrder->cdek_number,
             'delivery_data' => array_merge($delivery, [
