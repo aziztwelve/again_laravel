@@ -4,7 +4,9 @@ namespace Tests\Feature\Payment;
 
 use App\Enums\PaymentStatus;
 use App\Models\Order;
+use App\Models\OrderItem;
 use App\Models\Payment;
+use App\Models\Product;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Tests\TestCase;
 
@@ -75,6 +77,32 @@ class CloudPaymentsIntentTest extends TestCase
         $response = $this->postJson("/api/public/orders/{$order->view_token}/cloudpayments/intent");
 
         $response->assertStatus(422)->assertJsonPath('success', false);
+    }
+
+    public function test_intent_sends_cloudkassir_receipt_with_discount_in_item_amount(): void
+    {
+        $order = $this->pendingOrder('card_ru');
+        $order->update(['total_amount' => 400]);
+        $product = Product::factory()->create(['name' => 'Тестовый товар для чека']);
+
+        OrderItem::create([
+            'order_id' => $order->id,
+            'product_id' => $product->id,
+            'quantity' => 2,
+            'price' => 200,
+            'discount' => 100,
+        ]);
+
+        $response = $this->postJson("/api/public/orders/{$order->view_token}/cloudpayments/intent");
+
+        $response->assertOk()
+            ->assertJsonPath('payment.amount', 400)
+            ->assertJsonPath('payment.receipt.items.0.label', 'Тестовый товар для чека')
+            ->assertJsonPath('payment.receipt.items.0.price', 250)
+            ->assertJsonPath('payment.receipt.items.0.quantity', 2)
+            ->assertJsonPath('payment.receipt.items.0.amount', 400)
+            ->assertJsonPath('payment.receipt.items.0.vat', 20)
+            ->assertJsonPath('payment.receipt.amounts.electronic', 400);
     }
 
     private function pendingOrder(string $paymentMethod): Order

@@ -9,6 +9,7 @@ use App\Models\Payment;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class CloudPaymentsController extends Controller
 {
@@ -50,6 +51,11 @@ class CloudPaymentsController extends Controller
             return response()->json(['success' => false, 'message' => 'Для заказа нет суммы к оплате.'], 422);
         }
 
+        // CloudKassir формирует кассовый чек из receipt, переданного в Widget.
+        // В цену строки кладём цену до скидки, а amount оставляем итогом строки:
+        // так скидка не становится отдельной отрицательной товарной позицией.
+        $receipt = $this->buildReceipt($order, $amount);
+
         $payment = Payment::create([
             'order_id' => $order->id,
             'provider' => 'cloudpayment',
@@ -77,6 +83,7 @@ class CloudPaymentsController extends Controller
                     $allowedMethods,
                 )),
                 'metadata' => ['payment_id' => $payment->id, 'order_id' => $order->id],
+                'receipt' => $receipt,
                 'receiptEmail' => $order->email ?? $order->client?->email,
             ],
         ]);
@@ -230,5 +237,77 @@ class CloudPaymentsController extends Controller
         return $payment->provider === 'cloudpayment'
             && round((float) $request->input('Amount'), 2) === round((float) $payment->amount, 2)
             && strtoupper((string) $request->input('Currency', 'RUB')) === $payment->currency;
+    }
+
+    /**
+     * Формирует данные CloudKassir для Widget.
+     *
+     * CloudPayments требует, чтобы сумма receipt.items совпадала с суммой
+     * способов оплаты. При частичной оплате сертификатом разница передаётся
+     * как встречное предоставление (provision), а не как отрицательная строка.
+     *
+     * @return array{items: array<int, array<string, float|int|string>>, email?: string, amounts: array<string, float>}|null
+     */
+    private function buildReceipt(Order $order, float $paymentAmount): ?array
+    {
+        $order->loadMissing(['items.product']);
+
+        $items = $order->items
+            ->map(function ($item): array {
+                $quantity = max(1, (int) $item->quantity);
+                $amount = round((float) $item->price * $quantity, 2);
+                $lineDiscount = max(0, round((float) ($item->discount ?? 0), 2));
+
+                return [
+                    'label' => Str::limit((string) ($item->product?->name ?? $item->legacy_name ?? 'Товар'), 128, ''),
+                    // price — исходная цена одной единицы, amount — итог по
+                    // строке после скидки. Такой формат рекомендует CloudPayments.
+                    'price' => round(($amount + $lineDiscount) / $quantity, 2),
+                    'quantity' => $quantity,
+                    'amount' => $amount,
+                    'vat' => (int) config('payment.providers.cloudpayment.receipt_vat', 20),
+                ];
+            })
+            ->values();
+
+        $deliveryCost = round((float) ($order->delivery_cost ?? 0), 2);
+        if ($deliveryCost > 0) {
+            $items->push([
+                'label' => 'Доставка',
+                'price' => $deliveryCost,
+                'quantity' => 1,
+                'amount' => $deliveryCost,
+                'vat' => (int) config('payment.providers.cloudpayment.receipt_vat', 20),
+            ]);
+        }
+
+        $receiptTotal = round($items->sum('amount'), 2);
+        if ($items->isEmpty() || $receiptTotal < $paymentAmount) {
+            Log::warning('CloudPayments receipt was not attached: inconsistent order totals', [
+                'order_id' => $order->id,
+                'receipt_total' => $receiptTotal,
+                'payment_amount' => $paymentAmount,
+            ]);
+
+            return null;
+        }
+
+        $amounts = ['electronic' => $paymentAmount];
+        $nonElectronicAmount = round($receiptTotal - $paymentAmount, 2);
+        if ($nonElectronicAmount > 0) {
+            $amounts['provision'] = $nonElectronicAmount;
+        }
+
+        $receipt = [
+            'items' => $items->all(),
+            'amounts' => $amounts,
+        ];
+
+        $email = $order->email ?? $order->client?->email;
+        if (filled($email)) {
+            $receipt['email'] = $email;
+        }
+
+        return $receipt;
     }
 }

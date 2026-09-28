@@ -42,6 +42,9 @@ return [
             'public_id' => env('CLOUDPAYMENT_PUBLIC_ID'),
             'api_secret' => env('CLOUDPAYMENT_API_SECRET'),
             'api_url' => env('CLOUDPAYMENT_API_URL', 'https://api.cloudpayments.ru'),
+            // Ставка НДС для позиций CloudKassir. По умолчанию совпадает с
+            // текущей настройкой HelixMedia; при другой ставке задать в .env.
+            'receipt_vat' => (int) env('CLOUDPAYMENTS_RECEIPT_VAT', 20),
         ],
 
         'robokassa' => [
