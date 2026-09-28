@@ -310,6 +310,35 @@ nginx подключает `sites-enabled/*` целиком и дублирую�
 
 ## История деплоев
 
+- **2026-09-28 (14)** — чекаут: поле адреса стало «Улица, дом» (номер дома
+  вводится в поле адреса), «Подъезд» переименован в «Номер квартиры», поле
+  «Домофон» удалено полностью. Сделано:
+  - nuxt-shop (`bb17cea`): `Delivery.vue` — плейсхолдеры и удаление поля;
+    `useCheckoutSubmit.ts`, `pages/checkout/index.vue`, `types/order.ts` —
+    ключ `intercom` убран из формы и payload'а. Номер квартиры по-прежнему
+    уходит в легаси-ключ `entrance` (контракт с бэком не менялся);
+  - laravel (`6d9e855`): миграция `2026_09_28_100000` — dropColumn
+    `order_addresses.intercom` (заполненных значений 13 из 37 314, данные не
+    переносились); чистка `CreateOrderRequest`/`UpdateOrderRequest`,
+    `OrderCreationService`/`OrderUpdateService`, `OrderAddress` ($fillable),
+    `Order` (нормализация delivery_data), `OrderExportService` («домофон N»
+    убран из строки адреса);
+  - vue-admin (`e1c6a79`): поле «Домофон» убрано из формы создания заказа,
+    инлайн-редактирования (`useOrderInlineEdit`, `OrderDeliveryRow`,
+    `SideDelivery`, `update/order`) и типа `OrderDeliveryAddress`.
+  Деплой: laravel — `composer install` + миграция + `optimize:clear` +
+  рестарт pm2-воркеров; vue-admin пересобран; nuxt-shop не пересобирался
+  повторно (собран ранее в этот день на `bb17cea`). Тесты на сервере:
+  `FreeShippingTest`+`UtmTrackingTest`+`PromotionStackingTest`+
+  `CdekShipmentSyncTest`+`MoySkladWeightTest` — 57/57. Известный старый
+  красный `GuestClientServiceTest` (1 из 7: сервис дедуплицирует гостей по
+  email, тест ждёт отдельного клиента при другом телефоне; конфликт
+  тест-код существует до этой выкатки, laravel не менялся). Smoke: pm2
+  online, pending 0, `/up` → 200, `/admin/` → 200, колонки `intercom` в БД
+  нет. Heads: laravel `6d9e855`, nuxt-shop `bb17cea`, vue-admin `e1c6a79`.
+  Проверка формы витрины в браузере — за пользователем (правило: фронт
+  тестирует пользователь).
+
 - **2026-09-07 (13)** — пункты способов оплаты в чекауте
   (https://againdev3.ru/checkout) объединены в две опции: «Оплата картами РФ,
   TPay, СБП» (`card_ru` — открывает виджет CloudPayments: карты РФ, T-Pay и
