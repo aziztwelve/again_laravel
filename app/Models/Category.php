@@ -27,6 +27,7 @@ class Category extends Model
         'show_in_catalog_menu',
         'show_as_home_banner',
         'menu_order',
+        'home_banner_order',
         'banner_image',
 
         'banner_image_desktop',
@@ -42,6 +43,7 @@ class Category extends Model
         'is_new_product' => 'boolean',
         'is_coming_soon' => 'boolean',
         'menu_order' => 'integer',
+        'home_banner_order' => 'integer',
     ];
 
 

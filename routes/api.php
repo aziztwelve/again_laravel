@@ -833,8 +833,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // Categories
     Route::group(['prefix' => 'categories', 'as' => 'categories.'], function () {
         Route::get('/', [CategoryController::class, 'index']);
+        Route::get('/order-options', [CategoryController::class, 'orderOptions']);
         Route::get('/products', [CategoryController::class, 'get_products_of_category']);
         Route::post('/', [CategoryController::class, 'store']);
+        Route::post('/reorder', [CategoryController::class, 'reorder']);
         Route::put('/{category}', [CategoryController::class, 'update']);
         Route::delete('/{category}', [CategoryController::class, 'destroy']);
     });

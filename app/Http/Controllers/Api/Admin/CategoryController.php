@@ -10,8 +10,10 @@ use App\Models\Category;
 use App\Models\CategoryProduct;
 use App\Models\Product;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 
 class CategoryController extends Controller
 {
@@ -65,6 +67,7 @@ class CategoryController extends Controller
             'is_new_product' => 'nullable|boolean',
             'is_coming_soon' => 'nullable|boolean',
             'menu_order' => 'nullable|integer|min:0',
+            'home_banner_order' => 'nullable|integer|min:0',
             'banner_image' => 'nullable|image|max:10240',
 
 
@@ -81,6 +84,7 @@ class CategoryController extends Controller
         $category->is_new_product = $validated['is_new_product'] ?? false;
         $category->is_coming_soon = $validated['is_coming_soon'] ?? false;
         $category->menu_order = $validated['menu_order'] ?? 0;
+        $category->home_banner_order = $validated['home_banner_order'] ?? 0;
 
         // Загрузка баннера
         if ($request->hasFile('banner_image')) {
@@ -135,6 +139,7 @@ class CategoryController extends Controller
             'is_new_product' => 'nullable|boolean',
             'is_coming_soon' => 'nullable|boolean',
             'menu_order' => 'nullable|integer|min:0',
+            'home_banner_order' => 'nullable|integer|min:0',
             'banner_image' => 'nullable|image|max:5120',
             'remove_banner_image' => 'nullable|boolean',
 
@@ -153,6 +158,7 @@ class CategoryController extends Controller
         $category->is_new_product = $validated['is_new_product'] ?? $category->is_new_product;
         $category->is_coming_soon = $validated['is_coming_soon'] ?? $category->is_coming_soon;
         $category->menu_order = $validated['menu_order'] ?? $category->menu_order;
+        $category->home_banner_order = $validated['home_banner_order'] ?? $category->home_banner_order;
 
         // Удаление старого баннера если загружен новый или если запрошено удаление
         if ($request->hasFile('banner_image') || $request->boolean('remove_banner_image')) {
@@ -260,6 +266,97 @@ class CategoryController extends Controller
             'category_name' => $category->name,
             'products' => ProductNumberTwoResouce::collection($products),
         ]);
+    }
+
+    public function orderOptions(Request $request)
+    {
+        $validated = $request->validate([
+            'type' => ['required', Rule::in(['menu', 'home_banner'])],
+        ]);
+
+        $isMenu = $validated['type'] === 'menu';
+        $orderColumn = $isMenu ? 'menu_order' : 'home_banner_order';
+        $categories = Category::query()
+            ->when($isMenu, fn ($query) => $query->where('show_in_catalog_menu', true))
+            ->when(!$isMenu, fn ($query) => $query->where('show_as_home_banner', true))
+            ->orderBy($orderColumn)
+            ->orderBy('name')
+            ->get(['id', 'name', 'parent_id', 'menu_order', 'home_banner_order']);
+
+        $parentNames = Category::whereIn(
+            'id',
+            $categories->pluck('parent_id')->filter()->unique()
+        )->pluck('name', 'id');
+
+        $groups = $categories->groupBy(fn ($category) => $category->parent_id ?? 'root')
+            ->map(function ($items, $parentId) use ($parentNames, $orderColumn, $isMenu) {
+                $parentId = $parentId === 'root' ? null : (int) $parentId;
+
+                return [
+                    'parent_id' => $parentId,
+                    'parent_name' => $parentId === null
+                        ? ($isMenu ? 'Корневые категории' : 'Баннеры на главной')
+                        : $parentNames[$parentId],
+                    'categories' => $items->values()->map(fn ($category) => [
+                        'id' => $category->id,
+                        'name' => $category->name,
+                        'parent_id' => $category->parent_id,
+                        'order' => (int) $category->{$orderColumn},
+                    ])->all(),
+                ];
+            })->values()->all();
+
+        if ($isMenu) {
+            usort($groups, function (array $left, array $right) {
+                if ($left['parent_id'] === null) return -1;
+                if ($right['parent_id'] === null) return 1;
+                return strcasecmp($left['parent_name'], $right['parent_name']);
+            });
+        }
+
+        return response()->json(['data' => $groups]);
+    }
+
+    public function reorder(Request $request)
+    {
+        $validated = $request->validate([
+            'type' => ['required', Rule::in(['menu', 'home_banner'])],
+            'groups' => ['required', 'array', 'min:1'],
+            'groups.*.parent_id' => ['nullable', 'integer', 'exists:categories,id'],
+            'groups.*.category_ids' => ['required', 'array'],
+            'groups.*.category_ids.*' => ['integer', 'distinct', 'exists:categories,id'],
+        ]);
+
+        $categoryIds = collect($validated['groups'])
+            ->pluck('category_ids')
+            ->flatten();
+        abort_if($categoryIds->duplicates()->isNotEmpty(), 422, 'Категория указана несколько раз.');
+
+        $isMenu = $validated['type'] === 'menu';
+        $flagColumn = $isMenu ? 'show_in_catalog_menu' : 'show_as_home_banner';
+        $orderColumn = $isMenu ? 'menu_order' : 'home_banner_order';
+
+        DB::transaction(function () use ($validated, $flagColumn, $orderColumn) {
+            foreach ($validated['groups'] as $group) {
+                $query = Category::query()
+                    ->whereIn('id', $group['category_ids'])
+                    ->where($flagColumn, true);
+
+                if ($group['parent_id'] === null) {
+                    $query->whereNull('parent_id');
+                } else {
+                    $query->where('parent_id', $group['parent_id']);
+                }
+
+                abort_if($query->count() !== count($group['category_ids']), 422, 'Список категорий устарел. Обновите страницу.');
+
+                foreach ($group['category_ids'] as $index => $categoryId) {
+                    Category::whereKey($categoryId)->update([$orderColumn => $index + 1]);
+                }
+            }
+        });
+
+        return response()->json(['success' => true]);
     }
 
     /** @return array<int, array{position: int}> */

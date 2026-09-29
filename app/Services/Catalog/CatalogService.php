@@ -17,7 +17,8 @@ class CatalogService
             ->where('show_in_catalog_menu', true)
             ->whereIsRoot()
             ->with(['children' => function ($q) {
-                $q->where('show_in_catalog_menu', true)
+                $q->reorder()
+                    ->where('show_in_catalog_menu', true)
                     ->orderBy('menu_order', 'asc')
                     ->orderBy('name', 'asc')
                     ->select(['id', 'name', 'slug', 'parent_id', 'is_new_product', 'is_coming_soon']);
@@ -34,7 +35,8 @@ class CatalogService
     public function getHomeBanners()
     {
         $banners = Category::where('show_as_home_banner', true)
-            ->orderBy('menu_order', 'asc')
+            ->orderBy('home_banner_order', 'asc')
+            ->orderBy('name', 'asc')
             ->get([
                 'id',
                 'name',
