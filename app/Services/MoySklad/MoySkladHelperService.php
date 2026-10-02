@@ -64,14 +64,26 @@ class MoySkladHelperService
 
     public function get_products()
     {
-        return $this->moySklad->query()->entity()->product()->get();
+        // get() возвращает только одну страницу API. Для синхронизации
+        // каталога это опасно: товар на следующей странице был бы ошибочно
+        // принят за удалённый из МойСклад. getGenerator() проходит все
+        // страницы по nextHref.
+        return (object) [
+            'rows' => iterator_to_array(
+                $this->moySklad->query()->entity()->product()->getGenerator(),
+                false,
+            ),
+        ];
     }
 
     public function get_product_variants()
     {
-        $modifications = $this->moySklad->query()->entity()->variant()->get();
-
-        return $modifications;
+        return (object) [
+            'rows' => iterator_to_array(
+                $this->moySklad->query()->entity()->variant()->getGenerator(),
+                false,
+            ),
+        ];
     }
 
     /**
