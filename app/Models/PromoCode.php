@@ -18,6 +18,7 @@ class PromoCode extends Model
     public const CUSTOMER_TYPE_AUTHORIZED = 'authorized';
     public const CUSTOMER_TYPE_GUEST = 'guest';
     public const CUSTOMER_TYPE_ALL = 'all';
+    public const CUSTOMER_TYPE_HIDDEN = 'hidden';
 
     // Константы для типов применения скидок
     const DISCOUNT_BEHAVIOR_REPLACE = 'replace'; // Заменяет скидку продукта
@@ -77,6 +78,10 @@ class PromoCode extends Model
     public function isAvailableForCustomerType(?string $customerType): bool
     {
         $target = $this->customer_type ?: self::CUSTOMER_TYPE_ALL;
+
+        if ($target === self::CUSTOMER_TYPE_HIDDEN) {
+            return false;
+        }
 
         return $target === self::CUSTOMER_TYPE_ALL || $target === $customerType;
     }

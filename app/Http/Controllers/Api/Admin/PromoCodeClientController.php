@@ -84,6 +84,7 @@ class PromoCodeClientController extends Controller
 
         // Получаем активные промокоды, доступные для клиента
         $query = PromoCode::where('is_active', true)
+            ->where('customer_type', '!=', PromoCode::CUSTOMER_TYPE_HIDDEN)
             ->where(function ($q) {
                 // Проверка срока действия
                 $q->where('expires_at', '>', now())

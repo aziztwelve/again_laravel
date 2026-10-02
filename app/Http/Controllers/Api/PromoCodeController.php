@@ -77,7 +77,7 @@ class PromoCodeController extends Controller
 
             'max_uses' => 'nullable|integer|min:1',
             'is_active' => 'boolean',
-            'customer_type' => 'nullable|in:authorized,guest,all',
+            'customer_type' => 'nullable|in:authorized,guest,all,hidden',
             'client_ids' => [
                 'nullable',
                 'array',
@@ -169,7 +169,7 @@ class PromoCodeController extends Controller
             'is_unlimited' => 'sometimes|boolean',
             'max_uses' => 'nullable|integer|min:1',
             'is_active' => 'boolean',
-            'customer_type' => 'nullable|in:authorized,guest,all',
+            'customer_type' => 'nullable|in:authorized,guest,all,hidden',
             'client_ids' => [
                 'nullable',
                 'array',
@@ -256,6 +256,29 @@ class PromoCodeController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Промокод удалён'
+        ]);
+    }
+
+    /**
+     * Быстро скрывает до 50 промокодов: выставляет специальную аудиторию,
+     * при которой код не показывается и не применяется покупателям.
+     */
+    public function hide(Request $request)
+    {
+        $validated = $request->validate([
+            'promo_code_ids' => ['required', 'array', 'min:1', 'max:50'],
+            'promo_code_ids.*' => ['integer', 'distinct', 'exists:promo_codes,id'],
+        ]);
+
+        $hiddenCount = PromoCode::query()
+            ->whereIn('id', $validated['promo_code_ids'])
+            ->where('customer_type', '!=', PromoCode::CUSTOMER_TYPE_HIDDEN)
+            ->update(['customer_type' => PromoCode::CUSTOMER_TYPE_HIDDEN]);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Скрыто промокодов: {$hiddenCount}",
+            'hidden_count' => $hiddenCount,
         ]);
     }
 
