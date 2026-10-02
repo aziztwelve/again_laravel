@@ -36,8 +36,10 @@ class StoreSegmentRequest extends FormRequest
             'conditions' => 'nullable|array',
             'conditions.period' => [
                 'nullable',
-                Rule::in(['all_time', 'last_month', 'last_6_months', 'last_year'])
+                Rule::in(['all_time', 'last_month', 'last_6_months', 'last_year', 'custom'])
             ],
+            'conditions.period_from' => 'nullable|required_if:conditions.period,custom|date|before_or_equal:conditions.period_to',
+            'conditions.period_to' => 'nullable|required_if:conditions.period,custom|date|after_or_equal:conditions.period_from',
             'conditions.min_orders_count' => 'nullable|integer|min:0',
             'conditions.max_orders_count' => 'nullable|integer|min:0|gte:conditions.min_orders_count',
             'conditions.min_total_amount' => 'nullable|numeric|min:0',
@@ -62,6 +64,12 @@ class StoreSegmentRequest extends FormRequest
             'recalculate_frequency.in' => 'Некорректная частота пересчёта',
             'conditions.array' => 'Условия должны быть переданы в виде массива',
             'conditions.period.in' => 'Некорректный период для условий',
+            'conditions.period_from.required_if' => 'Укажите дату начала заданного периода',
+            'conditions.period_from.date' => 'Дата начала периода должна быть корректной датой',
+            'conditions.period_from.before_or_equal' => 'Дата начала не может быть позже даты окончания',
+            'conditions.period_to.required_if' => 'Укажите дату окончания заданного периода',
+            'conditions.period_to.date' => 'Дата окончания периода должна быть корректной датой',
+            'conditions.period_to.after_or_equal' => 'Дата окончания не может быть раньше даты начала',
             'conditions.min_orders_count.integer' => 'Минимальное количество заказов должно быть целым числом',
             'conditions.min_orders_count.min' => 'Минимальное количество заказов не может быть отрицательным',
             'conditions.max_orders_count.integer' => 'Максимальное количество заказов должно быть целым числом',
@@ -85,6 +93,8 @@ class StoreSegmentRequest extends FormRequest
             'is_active' => 'активность',
             'recalculate_frequency' => 'частота пересчёта',
             'conditions.period' => 'период',
+            'conditions.period_from' => 'дата начала периода',
+            'conditions.period_to' => 'дата окончания периода',
             'conditions.min_orders_count' => 'минимальное количество заказов',
             'conditions.max_orders_count' => 'максимальное количество заказов',
             'conditions.min_total_amount' => 'минимальная сумма покупок',

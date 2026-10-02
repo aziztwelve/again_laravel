@@ -6,6 +6,8 @@ class SegmentConditionsDTO
 {
     public function __construct(
         public readonly ?string $period = null,
+        public readonly ?string $periodFrom = null,
+        public readonly ?string $periodTo = null,
         public readonly ?int $minOrdersCount = null,
         public readonly ?int $maxOrdersCount = null,
         public readonly ?float $minTotalAmount = null,
@@ -23,6 +25,8 @@ class SegmentConditionsDTO
 
         return new self(
             period: $conditions['period'] ?? null,
+            periodFrom: $conditions['period_from'] ?? null,
+            periodTo: $conditions['period_to'] ?? null,
             minOrdersCount: isset($conditions['min_orders_count'])
                 ? (int) $conditions['min_orders_count']
                 : null,
@@ -45,6 +49,8 @@ class SegmentConditionsDTO
     {
         return array_filter([
             'period' => $this->period,
+            'period_from' => $this->periodFrom,
+            'period_to' => $this->periodTo,
             'min_orders_count' => $this->minOrdersCount,
             'max_orders_count' => $this->maxOrdersCount,
             'min_total_amount' => $this->minTotalAmount,
@@ -58,6 +64,8 @@ class SegmentConditionsDTO
     public function hasConditions(): bool
     {
         return $this->period !== null
+            || $this->periodFrom !== null
+            || $this->periodTo !== null
             || $this->minOrdersCount !== null
             || $this->maxOrdersCount !== null
             || $this->minTotalAmount !== null
@@ -73,8 +81,22 @@ class SegmentConditionsDTO
             'last_month' => now()->subMonth(),
             'last_6_months' => now()->subMonths(6),
             'last_year' => now()->subYear(),
+            'custom' => $this->periodFrom ? \Carbon\Carbon::parse($this->periodFrom)->startOfDay() : null,
             'all_time' => null,
             default => null,
         };
+    }
+
+    /**
+     * Получить дату окончания периода. Для предустановленных периодов
+     * окончанием является текущий момент, поэтому ограничение не требуется.
+     */
+    public function getEndDate(): ?\Carbon\Carbon
+    {
+        if ($this->period !== 'custom' || !$this->periodTo) {
+            return null;
+        }
+
+        return \Carbon\Carbon::parse($this->periodTo)->endOfDay();
     }
 }

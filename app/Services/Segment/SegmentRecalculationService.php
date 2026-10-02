@@ -87,6 +87,10 @@ class SegmentRecalculationService
                 if ($startDate = $conditions->getStartDate()) {
                     $join->where('orders.created_at', '>=', $startDate);
                 }
+
+                if ($endDate = $conditions->getEndDate()) {
+                    $join->where('orders.created_at', '<=', $endDate);
+                }
             })
             ->groupBy('clients.id');
 

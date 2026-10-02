@@ -51,7 +51,7 @@ class SegmentDetailResource extends JsonResource
         if (isset($conditions['period'])) {
             $formatted['period'] = [
                 'value' => $conditions['period'],
-                'label' => $this->getPeriodLabel($conditions['period'])
+                'label' => $this->getPeriodLabel($conditions)
             ];
         }
 
@@ -86,14 +86,25 @@ class SegmentDetailResource extends JsonResource
     /**
      * Получить название периода
      */
-    protected function getPeriodLabel(string $period): string
+    protected function getPeriodLabel(array $conditions): string
     {
-        return match ($period) {
+        if ($conditions['period'] === 'custom') {
+            $from = isset($conditions['period_from'])
+                ? \Carbon\Carbon::parse($conditions['period_from'])->format('d.m.Y')
+                : null;
+            $to = isset($conditions['period_to'])
+                ? \Carbon\Carbon::parse($conditions['period_to'])->format('d.m.Y')
+                : null;
+
+            return $from && $to ? "С {$from} по {$to}" : 'Заданный период';
+        }
+
+        return match ($conditions['period']) {
             'all_time' => 'За всё время',
             'last_month' => 'За последний месяц',
             'last_6_months' => 'За последние 6 месяцев',
             'last_year' => 'За последний год',
-            default => $period,
+            default => $conditions['period'],
         };
     }
 
