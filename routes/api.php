@@ -704,6 +704,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::group(['prefix' => 'promo-codes'], function () {
         Route::get('/', [PromoCodeController::class, 'index']);
         Route::post('/', [PromoCodeController::class, 'store']);
+        Route::post('/hide-in-profile', [PromoCodeController::class, 'hideInProfile']);
         Route::post('/{promoCode}/duplicate', [PromoCodeController::class, 'duplicate']);
         Route::put('/{promoCode}', [PromoCodeController::class, 'update']);
         Route::delete('/{promoCode}', [PromoCodeController::class, 'destroy']);
