@@ -24,6 +24,15 @@ class ProductsAndVariantsSyncWithMoySkladService
     private const MAX_STOCK = 2147483647; // Максимальное количество для INT
     private const MIN_VALUE = 0; // Минимальное значение
 
+    // В МойСклад могут остаться технические названия принтов. На витрине
+    // используем короткие названия, поэтому сопоставляем оба варианта.
+    private const COLOR_NAME_ALIASES = [
+        'красный орнамент' => 'Заря',
+        'синий орнамент' => 'Мороз',
+        'леопардовый орнамент' => 'Леопард',
+        'леопардовый принт' => 'Леопард',
+    ];
+
     public function __construct()
     {
         $settings = DeliveryServiceSetting::where('service_name', 'moysklad')->first();
@@ -338,9 +347,13 @@ class ProductsAndVariantsSyncWithMoySkladService
 
 
             if (!empty($color_name)) {
-                $findColorFromTable = Color::where(function ($sql) use ($color_name) {
-                    $sql->where('name', 'like', "%{$color_name}%")
-                        ->orWhere('normalized_name', 'like', "%{$color_name}%");
+                $normalizedColorName = str_replace('ё', 'е', mb_strtolower(trim($color_name)));
+                $displayColorName = self::COLOR_NAME_ALIASES[$normalizedColorName] ?? $color_name;
+                $normalizedDisplayColorName = str_replace('ё', 'е', mb_strtolower($displayColorName));
+
+                $findColorFromTable = Color::where(function ($sql) use ($displayColorName, $normalizedDisplayColorName) {
+                    $sql->where('name', $displayColorName)
+                        ->orWhere('normalized_name', $normalizedDisplayColorName);
                 })->first();
             }
 
