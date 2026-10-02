@@ -109,34 +109,44 @@ function setupClientEvents() {
 // WHATSAPP CLIENT SETUP
 // ============================================
 
-// client = new Client({
-//   authStrategy: new (require('whatsapp-web.js').LocalAuth)(),
-// });
-
-
 const useChromium = process.env.USE_CHROMIUM === 'true';
+const socksProxy = (process.env.WHATSAPP_SOCKS_PROXY || '').trim();
 
-client = new Client({
-  authStrategy: new (require('whatsapp-web.js').LocalAuth)(),
-  puppeteer: useChromium
+function createWhatsAppClient() {
+  const args = useChromium
+    ? [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+    ]
+    : [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+    ];
+
+  // Chromium умеет работать с SOCKS5 без авторизации. На production это
+  // локально не открытый proxy: Dante ограничивает подключение IP сервера.
+  if (socksProxy) {
+    args.push(`--proxy-server=${socksProxy}`);
+  }
+
+  return new Client({
+    authStrategy: new (require('whatsapp-web.js').LocalAuth)(),
+    puppeteer: useChromium
     ? {
       headless: true,
       executablePath: '/usr/bin/chromium-browser',
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-      ],
+      args,
     }
     : {
       headless: false, // чтобы локально видеть окно
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-      ],
+      args,
     },
-});
+  });
+}
+
+client = createWhatsAppClient();
 
 
 setupClientEvents();
@@ -228,9 +238,7 @@ app.post('/logout', async (req, res) => {
 
     // Пересоздаём client для нового подключения
     await client.destroy();
-    client = new Client({
-      authStrategy: new (require('whatsapp-web.js').LocalAuth)(),
-    });
+    client = createWhatsAppClient();
 
     // Переподключаем события
     setupClientEvents();
