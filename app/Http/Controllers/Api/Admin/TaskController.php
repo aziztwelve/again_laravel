@@ -37,6 +37,7 @@ class TaskController extends Controller
             'priority',
             'creator.profile',
             'assignee.profile',
+            'order:id,order_number',
             'labels',
             'comments.user.profile'
         ])->latest();
@@ -123,6 +124,10 @@ class TaskController extends Controller
                     ] : null,
                     'assignee_id' => $task->assignee_id,
                     'order_id' => $task->order_id,
+                    'order' => $task->order ? [
+                        'id' => $task->order->id,
+                        'order_number' => $task->order->order_number,
+                    ] : null,
                     'labels' => $task->labels,
                     'due_date' => $task->due_date,
                     'estimated_time' => $task->estimated_time,
