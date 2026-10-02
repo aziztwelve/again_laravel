@@ -111,6 +111,7 @@ function setupClientEvents() {
 
 const useChromium = process.env.USE_CHROMIUM === 'true';
 const socksProxy = (process.env.WHATSAPP_SOCKS_PROXY || '').trim();
+const authDataPath = (process.env.WHATSAPP_AUTH_PATH || '').trim();
 
 function createWhatsAppClient() {
   const args = useChromium
@@ -135,7 +136,9 @@ function createWhatsAppClient() {
   }
 
   return new Client({
-    authStrategy: new (require('whatsapp-web.js').LocalAuth)(),
+    authStrategy: new (require('whatsapp-web.js').LocalAuth)(
+      authDataPath ? { dataPath: authDataPath } : {},
+    ),
     puppeteer: useChromium
     ? {
       headless: true,
