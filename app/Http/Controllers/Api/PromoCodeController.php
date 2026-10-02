@@ -77,7 +77,6 @@ class PromoCodeController extends Controller
 
             'max_uses' => 'nullable|integer|min:1',
             'is_active' => 'boolean',
-            'is_hidden_in_profile' => 'boolean',
             'customer_type' => 'nullable|in:authorized,guest,all',
             'client_ids' => [
                 'nullable',
@@ -170,7 +169,6 @@ class PromoCodeController extends Controller
             'is_unlimited' => 'sometimes|boolean',
             'max_uses' => 'nullable|integer|min:1',
             'is_active' => 'boolean',
-            'is_hidden_in_profile' => 'boolean',
             'customer_type' => 'nullable|in:authorized,guest,all',
             'client_ids' => [
                 'nullable',
@@ -258,29 +256,6 @@ class PromoCodeController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Промокод удалён'
-        ]);
-    }
-
-    /**
-     * Hide up to fifty promo codes from the customer's profile without
-     * deactivating them or affecting checkout validation.
-     */
-    public function hideInProfile(Request $request)
-    {
-        $validated = $request->validate([
-            'promo_code_ids' => ['required', 'array', 'min:1', 'max:50'],
-            'promo_code_ids.*' => ['integer', 'distinct', 'exists:promo_codes,id'],
-        ]);
-
-        $hiddenCount = PromoCode::query()
-            ->whereIn('id', $validated['promo_code_ids'])
-            ->where('is_hidden_in_profile', false)
-            ->update(['is_hidden_in_profile' => true]);
-
-        return response()->json([
-            'success' => true,
-            'message' => "Скрыто промокодов: {$hiddenCount}",
-            'hidden_count' => $hiddenCount,
         ]);
     }
 

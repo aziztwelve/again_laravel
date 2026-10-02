@@ -84,7 +84,6 @@ class PromoCodeClientController extends Controller
 
         // Получаем активные промокоды, доступные для клиента
         $query = PromoCode::where('is_active', true)
-            ->where('is_hidden_in_profile', false)
             ->where(function ($q) {
                 // Проверка срока действия
                 $q->where('expires_at', '>', now())
