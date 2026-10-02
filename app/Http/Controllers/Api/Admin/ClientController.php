@@ -108,6 +108,11 @@ class ClientController extends Controller
                     'phone' => $client?->profile?->phone,
                     'address' => $client?->profile?->address,
                     'bonus_balance' => $client->bonus_balance,
+                    'subscribed_to_newsletter' => (bool) $client->subscribed_to_newsletter,
+                    'personal_data_consent' => (bool) $client->personal_data_consent,
+                    'messenger_subscription' => (bool) $client->messenger_subscription,
+                    'rfm_segment' => $client->rfm_segment,
+                    'group_name' => $client->group_name,
                     'level' => $client->level,
                     'orders_count' => $client->orders_count,
                     'created_at' => $client->created_at,
@@ -397,6 +402,7 @@ class ClientController extends Controller
             'birthday' => 'nullable|date',
             'address' => 'nullable|string',
             'phone' => 'nullable|string|max:255',
+            'subscribed_to_newsletter' => 'nullable|boolean',
         ]);
 
         if ($validator->fails()) {
@@ -421,6 +427,12 @@ class ClientController extends Controller
             DB::beginTransaction();
 
             $user_profile = $this->check_users_with_same_email($client);
+
+            if ($request->has('subscribed_to_newsletter')) {
+                $client->update([
+                    'subscribed_to_newsletter' => $request->boolean('subscribed_to_newsletter'),
+                ]);
+            }
 
             if ($user_profile) {
                 $user_profile->update([
