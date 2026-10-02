@@ -119,6 +119,9 @@ function createWhatsAppClient() {
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-gpu',
+      // SOCKS5 проксирует TCP, но не QUIC/HTTP3 (UDP). Отключаем QUIC, чтобы
+      // авторизация и WebSocket WhatsApp Web всегда шли через Amnezia.
+      '--disable-quic',
     ]
     : [
       '--no-sandbox',
