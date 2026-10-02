@@ -50,6 +50,11 @@ class TelegramService
         ?int             $orderId = null
     )
     {
+        // При приёме через polling Telegraph не создаёт TelegraphChat сам,
+        // в отличие от обработки webhook. Без этой записи администратор не
+        // сможет ответить в диалоге: адаптер не найдёт бота для chat_id.
+        $this->ensureTelegraphChat($telegramUserId, $requestData, $botToken);
+
         $conversation = null;
 
         if ($client_profile) {
@@ -93,6 +98,40 @@ class TelegramService
         if ($descriptors) {
             DownloadTelegramAttachmentsJob::dispatch($message->id, $descriptors, $botToken ? $this->resolveBotId($botToken) : null);
         }
+    }
+
+    /**
+     * Сохраняет чат Telegram вместе с ботом, через которого пришло сообщение.
+     * Это делает polling и webhook равноправными для исходящих ответов.
+     */
+    private function ensureTelegraphChat(int $telegramUserId, array $requestData, ?string $botToken): void
+    {
+        if (! $botToken) {
+            return;
+        }
+
+        $bot = TelegraphBot::query()->where('token', $botToken)->first();
+
+        if (! $bot) {
+            Log::warning('Telegram bot was not found while registering an incoming chat.');
+
+            return;
+        }
+
+        $chatData = is_array($requestData['chat'] ?? null) ? $requestData['chat'] : [];
+        $name = trim((string) ($chatData['title'] ?? ''));
+
+        if ($name === '') {
+            $name = trim(implode(' ', array_filter([
+                $chatData['first_name'] ?? null,
+                $chatData['last_name'] ?? null,
+            ])));
+        }
+
+        $bot->chats()->firstOrCreate(
+            ['chat_id' => (string) $telegramUserId],
+            ['name' => $name !== '' ? $name : 'Telegram #'.$telegramUserId],
+        );
     }
 
     /**
