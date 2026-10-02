@@ -17,11 +17,16 @@ class GiftCardSummaryResource extends JsonResource
             'type' => $this->type,
             'status' => $this->status,
 
+            'sender_name' => $this->sender_name,
+            'sender_email' => $this->sender_email,
+            'sender_phone' => $this->sender_phone,
+
             'recipient_name' => $this->recipient_name,
             'recipient_email' => $this->recipient_email,
 
             'delivery_channel' => $this->delivery_channel,
             'sent_at' => $this->sent_at?->toIso8601String(),
+            'is_sent' => $this->sent_at !== null,
 
             'purchase_order_number' => $this->purchaseOrder?->order_number,
 
