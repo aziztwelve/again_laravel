@@ -45,8 +45,14 @@ class ProductsAndVariantsSyncWithMoySkladService
         $stock = $helper->check_stock();
 
         $variantsGrouped = collect($variants)->groupBy(fn($v) => optional($v->product->meta)->href ?? '');
-
-        $syncedUUIDs = [];
+        // Для «Скоро в продаже» важен сам факт присутствия записи в
+        // МойСклад, а не успешность её локального upsert. Иначе временная
+        // ошибка обработки одной позиции ошибочно покажет её отсутствующей.
+        $moyskladProductUUIDs = collect($products)
+            ->pluck('id')
+            ->filter()
+            ->values()
+            ->all();
 
 
 //        return;
@@ -54,7 +60,6 @@ class ProductsAndVariantsSyncWithMoySkladService
             try {
 
                 $product = $this->upsertProduct($productData, $stock, $moyskladUnits);
-                $syncedUUIDs[] = $productData->id;
 
                 $this->syncVariantsForProduct($product, $stock, $productData, $variantsGrouped);
             } catch (Exception $e) {
@@ -64,7 +69,7 @@ class ProductsAndVariantsSyncWithMoySkladService
             }
         }
 
-        $this->removeDeletedProducts($syncedUUIDs);
+        $this->removeDeletedProducts($moyskladProductUUIDs);
         // МойСклад — источник каталога. Локальные товары без UUID не выгружаем.
     }
 
@@ -435,7 +440,7 @@ class ProductsAndVariantsSyncWithMoySkladService
 
     }
 
-    private function removeDeletedProducts(array $syncedUUIDs): void
+    private function removeDeletedProducts(array $moyskladProductUUIDs): void
     {
         // Товар, которого нет в ответе МойСклад, не удаляем с витрины.
         // Он должен оставаться доступен для просмотра в разделе «Скоро в
@@ -446,7 +451,7 @@ class ProductsAndVariantsSyncWithMoySkladService
         // не даст повторно убрать их из каталога.
         Product::withTrashed()
             ->whereNotNull('uuid')
-            ->whereNotIn('uuid', $syncedUUIDs)
+            ->whereNotIn('uuid', $moyskladProductUUIDs)
             ->orderBy('id')
             ->each(function (Product $product): void {
                 if ($product->trashed()) {
