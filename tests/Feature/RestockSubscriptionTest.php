@@ -296,6 +296,39 @@ class RestockSubscriptionTest extends TestCase
         $this->assertTrue($ids->contains($unavailableVariants->id));
     }
 
+    public function test_coming_soon_category_includes_a_product_restored_after_it_disappears_from_moysklad(): void
+    {
+        $category = Category::create([
+            'name' => 'Скоро в продаже '.uniqid(),
+            'is_coming_soon' => true,
+            'show_in_catalog_menu' => true,
+        ]);
+        $product = $this->product([
+            'uuid' => (string) \Illuminate\Support\Str::uuid(),
+            'stock_quantity' => 8,
+            'has_variants' => true,
+        ]);
+        $variant = ProductVariant::create([
+            'product_id' => $product->id,
+            'name' => 'Последний остаток',
+            'sku' => 'missing-from-ms-'.uniqid(),
+            'price' => 1000,
+            'stock_quantity' => 8,
+        ]);
+
+        // Такую запись оставляла прежняя синхронизация, когда товара не
+        // находилось в МойСклад. Миграция восстанавливает её с остатком 0.
+        $product->delete();
+        $product->restore();
+        $product->update(['stock_quantity' => 0]);
+        $variant->update(['stock_quantity' => 0]);
+
+        $response = $this->getJson('/api/public/catalog/products?per_page=50&category_slug='.$category->slug);
+
+        $response->assertOk();
+        $this->assertTrue(collect($response->json('data'))->pluck('id')->contains($product->id));
+    }
+
     public function test_coming_soon_category_does_not_include_in_stock_variant_without_own_price(): void
     {
         $category = Category::create([

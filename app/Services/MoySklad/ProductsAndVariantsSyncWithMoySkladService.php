@@ -437,9 +437,29 @@ class ProductsAndVariantsSyncWithMoySkladService
 
     private function removeDeletedProducts(array $syncedUUIDs): void
     {
-        Product::whereNotNull('uuid')
+        // Товар, которого нет в ответе МойСклад, не удаляем с витрины.
+        // Он должен оставаться доступен для просмотра в разделе «Скоро в
+        // продаже», но его нельзя купить до следующей синхронизации с МС.
+        //
+        // withTrashed() важен для позиций, скрытых предыдущей версией этой
+        // синхронизации: после миграции они будут восстановлены, а этот код
+        // не даст повторно убрать их из каталога.
+        Product::withTrashed()
+            ->whereNotNull('uuid')
             ->whereNotIn('uuid', $syncedUUIDs)
-            ->delete();
+            ->orderBy('id')
+            ->each(function (Product $product): void {
+                if ($product->trashed()) {
+                    $product->restore();
+                }
+
+                $product->update(['stock_quantity' => 0]);
+
+                // Иначе у варианта останется последний остаток из МС: в
+                // карточке «Скоро в продаже» он будет выглядеть доступным.
+                ProductVariant::where('product_id', $product->id)
+                    ->update(['stock_quantity' => 0]);
+            });
     }
 
 }
