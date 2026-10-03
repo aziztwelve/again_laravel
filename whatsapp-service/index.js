@@ -56,6 +56,22 @@ function setupClientEvents() {
     qrCode = null; // Очищаем QR после успешного подключения
   });
 
+  // Не выводим session payload: он даёт доступ к аккаунту. Оставляем только
+  // безопасные статусы, чтобы отличить успешное сканирование QR от сбоя
+  // загрузки WhatsApp Web.
+  client.on('authenticated', () => {
+    console.log('WhatsApp authentication accepted');
+  });
+
+  client.on('auth_failure', () => {
+    console.error('WhatsApp authentication failed');
+    isReady = false;
+  });
+
+  client.on('loading_screen', (percent) => {
+    console.log(`WhatsApp loading: ${percent}%`);
+  });
+
   // Message Event
   client.on('message', async (message) => {
     console.log('Message received:', message.body);
