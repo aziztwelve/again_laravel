@@ -296,7 +296,7 @@ class RestockSubscriptionTest extends TestCase
         $this->assertTrue($ids->contains($unavailableVariants->id));
     }
 
-    public function test_coming_soon_category_includes_a_product_restored_after_it_disappears_from_moysklad(): void
+    public function test_coming_soon_category_hides_a_product_that_disappeared_from_moysklad(): void
     {
         $category = Category::create([
             'name' => 'Скоро в продаже '.uniqid(),
@@ -316,17 +316,16 @@ class RestockSubscriptionTest extends TestCase
             'stock_quantity' => 8,
         ]);
 
-        // Такую запись оставляла прежняя синхронизация, когда товара не
-        // находилось в МойСклад. Миграция восстанавливает её с остатком 0.
-        $product->delete();
-        $product->restore();
-        $product->update(['stock_quantity' => 0]);
+        // Такую запись оставляет синхронизация, когда товара нет в МойСклад:
+        // запись деактивируется и прячется с витрины вместе с «Скоро в
+        // продаже», а не копится в разделе (см. removeDeletedProducts).
+        $product->update(['is_active' => false, 'stock_quantity' => 0]);
         $variant->update(['stock_quantity' => 0]);
 
         $response = $this->getJson('/api/public/catalog/products?per_page=50&category_slug='.$category->slug);
 
         $response->assertOk();
-        $this->assertTrue(collect($response->json('data'))->pluck('id')->contains($product->id));
+        $this->assertFalse(collect($response->json('data'))->pluck('id')->contains($product->id));
     }
 
     public function test_coming_soon_category_does_not_include_in_stock_variant_without_own_price(): void
