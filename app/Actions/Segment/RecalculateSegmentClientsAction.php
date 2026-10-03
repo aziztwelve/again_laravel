@@ -22,8 +22,8 @@ class RecalculateSegmentClientsAction
     /**
      * Пересчитать все сегменты
      */
-    public function executeAll(): void
+    public function executeAll(bool $onlyAutoRecalculable = true): array
     {
-        $this->recalculationService->recalculateAll();
+        return $this->recalculationService->recalculateAll($onlyAutoRecalculable);
     }
 }

@@ -28,22 +28,26 @@ class SegmentPromoCodeSyncService
     public function syncSpecificPromoCodeesToClients(array $promoCodeIds, array $clientIds): void
     {
         $now = now();
-        $insertData = [];
 
-        foreach ($clientIds as $clientId) {
-            foreach ($promoCodeIds as $promoCodeId) {
-                $insertData[] = [
-                    'client_id' => $clientId,
-                    'promo_code_id' => $promoCodeId,
-                    'created_at' => $now,
-                    'updated_at' => $now,
-                ];
+        // Чанками: синхронизация сегмента может затрагивать десятки тысяч клиентов
+        foreach (array_chunk($clientIds, 500) as $clientChunk) {
+            $insertData = [];
+
+            foreach ($clientChunk as $clientId) {
+                foreach ($promoCodeIds as $promoCodeId) {
+                    $insertData[] = [
+                        'client_id' => $clientId,
+                        'promo_code_id' => $promoCodeId,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ];
+                }
             }
-        }
 
-        if (!empty($insertData)) {
-            // Используем insertOrIgnore для избежания дубликатов
-            DB::table('promo_code_client')->insertOrIgnore($insertData);
+            if (!empty($insertData)) {
+                // Используем insertOrIgnore для избежания дубликатов
+                DB::table('promo_code_client')->insertOrIgnore($insertData);
+            }
         }
     }
 

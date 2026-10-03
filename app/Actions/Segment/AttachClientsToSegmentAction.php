@@ -24,22 +24,23 @@ class AttachClientsToSegmentAction
             throw new \InvalidArgumentException('Не указаны ID клиентов');
         }
 
-        $authorizedClientIds = Client::query()
+        // Фильтр по verified_at снят: почти все клиенты боевой базы
+        // неверифицированы, ручное добавление в сегмент было недоступно.
+        $existingClientIds = Client::query()
             ->whereIn('id', $clientIds)
-            ->whereNotNull('verified_at')
             ->pluck('id')
             ->all();
 
-        if (count($authorizedClientIds) !== count(array_unique($clientIds))) {
-            throw new \InvalidArgumentException('В сегмент можно добавлять только авторизованных клиентов');
+        if (count($existingClientIds) !== count(array_unique($clientIds))) {
+            throw new \InvalidArgumentException('Некоторые из выбранных клиентов не существуют');
         }
 
-        DB::transaction(function () use ($segment, $authorizedClientIds) {
+        DB::transaction(function () use ($segment, $existingClientIds) {
             // Прикрепляем клиентов к сегменту
-            $this->repository->attachClients($segment, $authorizedClientIds);
+            $this->repository->attachClients($segment, $existingClientIds);
 
             // Синхронизируем промокоды с новыми клиентами
-            $this->promoCodeSyncService->syncPromoCodeesToClients($segment, $authorizedClientIds);
+            $this->promoCodeSyncService->syncPromoCodeesToClients($segment, $existingClientIds);
         });
     }
 }

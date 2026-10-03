@@ -562,6 +562,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Создать сегмент
         Route::post('/', [SegmentController::class, 'store'])->name('store');
 
+        // Синхронизировать все сегменты с актуальными заказами/клиентами
+        Route::post('/recalculate-all', [SegmentController::class, 'recalculateAll'])->name('recalculate-all');
+
         // Получить сегмент
         Route::get('/{segment}', [SegmentController::class, 'show'])->name('show');
 

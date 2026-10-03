@@ -45,9 +45,11 @@ class SegmentRecalculationService
 
             // Добавляем новых клиентов
             if (!empty($clientsToAdd)) {
-                $segment->clients()->attach($clientsToAdd, [
-                    'added_at' => now()
-                ]);
+                foreach (array_chunk($clientsToAdd, 500) as $chunk) {
+                    $segment->clients()->attach($chunk, [
+                        'added_at' => now()
+                    ]);
+                }
 
                 // Синхронизируем промокоды с новыми клиентами
                 $this->promoCodeSyncService->syncPromoCodeesToClients($segment, $clientsToAdd);
@@ -72,8 +74,10 @@ class SegmentRecalculationService
      */
     protected function findClientsMatchingConditions(SegmentConditionsDTO $conditions): array
     {
-        $query = Client::query()
-            ->whereNotNull('verified_at'); // Только верифицированные клиенты
+        // Верификация (clients.verified_at) не используется как фильтр: в боевой
+        // базе верифицировано ~14 из 25 тыс. клиентов, из-за чего сегменты не
+        // видели реальные заказы. Сегмент = все клиенты, подходящие под условия.
+        $query = Client::query();
 
         // Подзапрос для расчёта статистики по заказам
         $query->select('clients.id')
@@ -121,16 +125,34 @@ class SegmentRecalculationService
     }
 
     /**
-     * Пересчитать все активные сегменты
+     * Пересчитать все активные сегменты.
+     *
+     * @param bool $onlyAutoRecalculable true — только сегменты с частотой on_view
+     *                                   (штатный фоновый пересчёт); false — все
+     *                                   активные, включая manual (ручная
+     *                                   синхронизация из админки).
+     * @return array<int, array{id: int, name: string, clients_count: int}>
      */
-    public function recalculateAll(): void
+    public function recalculateAll(bool $onlyAutoRecalculable = true): array
     {
-        $segments = Segment::active()
-            ->where('recalculate_frequency', 'on_view')
-            ->get();
+        $query = Segment::active();
 
-        foreach ($segments as $segment) {
-            $this->recalculate($segment);
+        if ($onlyAutoRecalculable) {
+            $query->where('recalculate_frequency', 'on_view');
         }
+
+        $results = [];
+
+        foreach ($query->get() as $segment) {
+            $this->recalculate($segment);
+
+            $results[] = [
+                'id' => $segment->id,
+                'name' => $segment->name,
+                'clients_count' => $segment->clients()->count(),
+            ];
+        }
+
+        return $results;
     }
 }

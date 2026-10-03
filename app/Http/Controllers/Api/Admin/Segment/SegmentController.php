@@ -504,6 +504,34 @@ class SegmentController extends Controller
     }
 
     /**
+     * Синхронизировать все сегменты с актуальными данными по заказам и клиентам
+     *
+     * POST /api/segments/recalculate-all
+     */
+    public function recalculateAll(): JsonResponse
+    {
+        try {
+            $segments = $this->recalculateAction->executeAll(onlyAutoRecalculable: false);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Сегменты синхронизированы с актуальными данными',
+                'data' => [
+                    'recalculated_count' => count($segments),
+                    'segments' => $segments,
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Ошибка при синхронизации сегментов',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Переключить активность сегмента
      *
      * POST /api/segments/{id}/toggle-active
