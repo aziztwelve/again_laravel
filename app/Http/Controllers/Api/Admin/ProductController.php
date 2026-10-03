@@ -41,8 +41,17 @@ class ProductController extends Controller
 
             $product_stock_sklad = [];
             if ($isAdmin) {
-                $moySkaldController = new MoySkladController();
-                $product_stock_sklad = $moySkaldController->get_products_stock();
+                // Живые остатки МойСклад — по требованию, поверх БД. Сбой API
+                // (лимит запросов, таймаут) не должен ломать список товаров:
+                // check_stock() теперь бросает исключение на непрочитанном
+                // отчёте, здесь падаем на остатки из БД (последняя успешная
+                // синхронизация, максимум 10 минут назад).
+                try {
+                    $product_stock_sklad = (new MoySkladController())->get_products_stock();
+                } catch (Exception $e) {
+                    report($e);
+                    $product_stock_sklad = [];
+                }
             }
 
             $products = $this->products_query($request);

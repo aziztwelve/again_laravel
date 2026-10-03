@@ -142,17 +142,18 @@ trait ProductsTrait
     public function solve_products_inventory($products = [], $product_stock_sklad = [], $isAdmin = false)
     {
         foreach ($products as &$product) {
-            if ($isAdmin && isset($product_stock_sklad[$product->uuid])) {
-                // Если админ — берём "живые" остатки из MoySklad
-                $product->inventory_balance = $product_stock_sklad[$product->uuid]['stock'] ?? 0.0;
-            } else {
-                // Если клиент — показываем данные из БД
-                $product->inventory_balance = $product->stock_quantity ?? 0.0;
-            }
+            $variants = $product['variants'] ?? [];
 
-            if (!empty($product['variants'])) {
+            if (!empty($variants)) {
+                // Остаток товара с вариантами = сумма остатков вариантов, без
+                // остатка родительской строки: отчёт МойСклад (groupBy=variant
+                // по умолчанию) отдаёт и товар, и его модификации отдельными
+                // строками, поэтому прежнее сложение задваивало остаток в
+                // админке. Витрина решает наличие так же — по вариантам
+                // (CatalogService, категория «Скоро в продаже»).
+                $product->inventory_balance = 0;
 
-                foreach ($product['variants'] as &$variant) {
+                foreach ($variants as &$variant) {
                     if ($isAdmin && isset($product_stock_sklad[$variant->uuid])) {
                         $variant_total_qty = $product_stock_sklad[$variant->uuid]['stock'] ?? 0.0;
                     } else {
@@ -162,8 +163,16 @@ trait ProductsTrait
                     $variant->inventory_balance = $variant_total_qty;
                     $product->inventory_balance += $variant_total_qty;
                 }
+                unset($variant);
+            } elseif ($isAdmin && isset($product_stock_sklad[$product->uuid])) {
+                // Простые товары: берём "живые" остатки из MoySklad
+                $product->inventory_balance = $product_stock_sklad[$product->uuid]['stock'] ?? 0.0;
+            } else {
+                // Показываем данные из БД (последней синхронизации)
+                $product->inventory_balance = $product->stock_quantity ?? 0.0;
             }
         }
+        unset($product);
     }
 
 

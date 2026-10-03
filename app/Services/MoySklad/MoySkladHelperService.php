@@ -99,6 +99,10 @@ class MoySkladHelperService
      * Физический остаток сохранён отдельно в 'physical_stock'.
      *
      * @return array<string, array{stock: int, physical_stock: int, reserve: int}>
+     *
+     * @throws Exception — отчёт не удалось прочитать целиком (см. код ниже):
+     *                    caller обязан прервать работу, а не использовать
+     *                    частичные данные как «нулевые остатки».
      */
     public function check_stock()
     {
@@ -111,18 +115,28 @@ class MoySkladHelperService
                 'Authorization' => 'Bearer ' . $this->token,
                 'Accept-Encoding' => 'gzip',
                 'Content-Type' => 'application/json',
-            ])->get("{$this->baseURL}/report/stock/all", [
-                'limit' => $limit,
-                'offset' => $offset,
-            ]);
+            ])
+                ->timeout(60)
+                ->retry(3, 500)
+                ->get("{$this->baseURL}/report/stock/all", [
+                    'limit' => $limit,
+                    'offset' => $offset,
+                ]);
 
             if (!$response->successful()) {
+                // Частичный отчёт опасен: синхронизация считает отсутствие
+                // строки нулевым остатком и обнуляет товары, которые есть в
+                // наличии, — они ошибочно попадают в «Скоро в продаже».
+                // Прерываем синхронизацию целиком: витрина сохранит последние
+                // достоверные остатки до следующего успешного запуска.
                 \Illuminate\Support\Facades\Log::error('MoySklad: не удалось получить отчёт по остаткам', [
                     'status' => $response->status(),
                     'body' => $response->body(),
                 ]);
 
-                return $result;
+                throw new Exception(
+                    "МойСклад: отчёт по остаткам недоступен (HTTP {$response->status()}, offset {$offset})"
+                );
             }
 
             $rows = $response->json('rows') ?? [];
