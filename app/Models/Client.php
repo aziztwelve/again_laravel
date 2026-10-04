@@ -31,6 +31,7 @@ class Client extends Authenticatable
         'bonus_balance' => 'decimal:2',
         'subscribed_to_newsletter' => 'boolean',
         'personal_data_consent' => 'boolean',
+        'personal_data_consent_at' => 'datetime',
         'messenger_subscription' => 'boolean',
     ];
 

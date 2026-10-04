@@ -23,6 +23,7 @@ class ClientResource extends JsonResource
             'bonus_balance' => $this->bonus_balance,
             'subscribed_to_newsletter' => (bool) $this->subscribed_to_newsletter,
             'personal_data_consent' => (bool) $this->personal_data_consent,
+            'personal_data_consent_at' => $this->personal_data_consent_at?->toISOString(),
             'messenger_subscription' => (bool) $this->messenger_subscription,
             'rfm_segment' => $this->rfm_segment,
             'group_name' => $this->group_name,

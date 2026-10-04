@@ -402,6 +402,7 @@ class ClientController extends Controller
             'birthday' => 'nullable|date',
             'address' => 'nullable|string',
             'phone' => 'nullable|string|max:255',
+            'personal_data_consent' => 'nullable|boolean',
             'subscribed_to_newsletter' => 'nullable|boolean',
         ]);
 
@@ -431,6 +432,19 @@ class ClientController extends Controller
             if ($request->has('subscribed_to_newsletter')) {
                 $client->update([
                     'subscribed_to_newsletter' => $request->boolean('subscribed_to_newsletter'),
+                ]);
+            }
+
+            if ($request->has('personal_data_consent')) {
+                $hasConsent = $request->boolean('personal_data_consent');
+
+                $client->update([
+                    'personal_data_consent' => $hasConsent,
+                    // Дату заполняет только явное подтверждение самого клиента
+                    // в настройках профиля; для старых записей её не подменяем.
+                    'personal_data_consent_at' => $hasConsent
+                        ? ($client->personal_data_consent_at ?? now())
+                        : null,
                 ]);
             }
 
