@@ -708,6 +708,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/', [PromoCodeController::class, 'index']);
         Route::post('/', [PromoCodeController::class, 'store']);
         Route::post('/hide', [PromoCodeController::class, 'hide']);
+        Route::post('/show', [PromoCodeController::class, 'show']);
         Route::post('/{promoCode}/duplicate', [PromoCodeController::class, 'duplicate']);
         Route::put('/{promoCode}', [PromoCodeController::class, 'update']);
         Route::delete('/{promoCode}', [PromoCodeController::class, 'destroy']);

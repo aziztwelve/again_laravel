@@ -282,6 +282,26 @@ class PromoCodeController extends Controller
         ]);
     }
 
+    /** Возвращает скрытые промокоды в стандартную аудиторию «Все пользователи». */
+    public function show(Request $request)
+    {
+        $validated = $request->validate([
+            'promo_code_ids' => ['required', 'array', 'min:1', 'max:50'],
+            'promo_code_ids.*' => ['integer', 'distinct', 'exists:promo_codes,id'],
+        ]);
+
+        $shownCount = PromoCode::query()
+            ->whereIn('id', $validated['promo_code_ids'])
+            ->where('customer_type', PromoCode::CUSTOMER_TYPE_HIDDEN)
+            ->update(['customer_type' => PromoCode::CUSTOMER_TYPE_ALL]);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Показано промокодов: {$shownCount}",
+            'shown_count' => $shownCount,
+        ]);
+    }
+
     /**
      * Создать копию промокода вместе со связями (товары, клиенты, сегменты).
      * Код генерируется уникальным, изображение копируется в отдельный файл,
