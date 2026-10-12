@@ -104,7 +104,7 @@ class LegacyOrderDeliveryRepairTest extends TestCase
     public function test_dry_run_does_not_modify_orders(): void
     {
         $order = Order::factory()->create(['legacy_meta' => ['transaction_id' => 'keep']]);
-        $before = $order->getRawOriginal();
+        $before = $order->fresh()->getRawOriginal();
         $path = $this->source($order, 'Unknown carrier');
         $this->artisan('sync:legacy-order-delivery', ['file' => $path, '--dry-run' => true])->assertExitCode(0);
         $this->assertSame($before, $order->fresh()->getRawOriginal());
