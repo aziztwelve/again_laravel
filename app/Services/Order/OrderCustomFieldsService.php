@@ -40,7 +40,7 @@ class OrderCustomFieldsService
             ],
             [
                 'key' => 'tracking_number',
-                'label' => 'Трек-номер ЯД',
+                'label' => 'Трек-номер',
                 'type' => 'text',
                 'source' => self::SOURCE_COLUMN,
                 'column' => 'tracking_number',
@@ -65,6 +65,7 @@ class OrderCustomFieldsService
                 'type' => 'text',
                 'source' => self::SOURCE_META,
                 'meta_key' => 'russian_post_tracking_number',
+                'meta_aliases' => ['russian_post_track'],
             ],
             [
                 'key' => 'cloudkassir_second_receipt',
@@ -149,6 +150,11 @@ class OrderCustomFieldsService
                     : $value;
                 $columnsTouched = true;
             } else {
+                // После редактирования старый ключ не должен возвращать
+                // очищенное пользователем значение через fallback.
+                foreach ($def['meta_aliases'] ?? [] as $alias) {
+                    unset($meta[$alias]);
+                }
                 if ($value === null || $value === '') {
                     unset($meta[$def['meta_key']]);
                 } else {
@@ -175,6 +181,16 @@ class OrderCustomFieldsService
         $raw = $def['source'] === self::SOURCE_COLUMN
             ? $order->{$def['column']}
             : ($meta[$def['meta_key']] ?? null);
+
+        // Канонический ключ имеет приоритет, включая намеренно пустой текст.
+        if ($def['source'] === self::SOURCE_META && ! array_key_exists($def['meta_key'], $meta)) {
+            foreach ($def['meta_aliases'] ?? [] as $alias) {
+                if (array_key_exists($alias, $meta)) {
+                    $raw = $meta[$alias];
+                    break;
+                }
+            }
+        }
 
         return match ($def['type']) {
             'checkbox' => (bool) $raw,

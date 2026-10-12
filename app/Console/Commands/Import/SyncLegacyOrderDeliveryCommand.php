@@ -19,7 +19,8 @@ class SyncLegacyOrderDeliveryCommand extends Command
     protected $signature = 'sync:legacy-order-delivery
         {file : Путь к CSV-выгрузке InSales}
         {--dry-run : Только собрать статистику, ничего не записывая}
-        {--limit=0 : Обработать не более указанного числа заказов}';
+        {--limit=0 : Обработать не более указанного числа заказов}
+        {--reconcile-delivery-names : Сверить старое название только если текущая служба совпадает с CSV}';
 
     protected $description = 'Заполнить пустые службу доставки и трек-номер у импортированных заказов из CSV InSales';
 
@@ -52,6 +53,9 @@ class SyncLegacyOrderDeliveryCommand extends Command
             'delivery_filled' => 0,
             'delivery_unresolved' => 0,
             'legacy_delivery_name_filled' => 0,
+            'legacy_delivery_name_reconciled' => 0,
+            'cdek_tracking_field_filled' => 0,
+            'post_tracking_field_filled' => 0,
             'tracking_already_present' => 0,
             'tracking_filled' => 0,
             'changed_orders' => 0,
@@ -61,7 +65,7 @@ class SyncLegacyOrderDeliveryCommand extends Command
         foreach (array_chunk(array_keys($sourceOrders), 500) as $orderNumbers) {
             $orders = Order::query()
                 ->whereIn('order_number', $orderNumbers)
-                ->get(['id', 'order_number', 'delivery_method_id', 'tracking_number', 'legacy_delivery_method']);
+                ->get(['id', 'order_number', 'delivery_method_id', 'tracking_number', 'legacy_delivery_method', 'legacy_meta']);
 
             $foundNumbers = $orders->pluck('order_number')->all();
             $stats['orders_missing'] += count(array_diff($orderNumbers, $foundNumbers));
@@ -88,6 +92,12 @@ class SyncLegacyOrderDeliveryCommand extends Command
                     if ($this->isEmpty($order->legacy_delivery_method)) {
                         $changes['legacy_delivery_method'] = mb_substr($source['delivery_method'], 0, 512);
                         $stats['legacy_delivery_name_filled']++;
+                    } elseif ($this->option('reconcile-delivery-names')
+                        && $order->legacy_delivery_method !== $source['delivery_method']
+                        && $order->delivery_method_id !== null
+                        && (int) $order->delivery_method_id === $this->resolveDeliveryMethodId($source['delivery_method'])) {
+                        $changes['legacy_delivery_method'] = mb_substr($source['delivery_method'], 0, 512);
+                        $stats['legacy_delivery_name_reconciled']++;
                     }
                 }
 
@@ -98,6 +108,28 @@ class SyncLegacyOrderDeliveryCommand extends Command
                     } else {
                         $stats['tracking_already_present']++;
                     }
+                }
+
+                $meta = is_array($order->legacy_meta) ? $order->legacy_meta : [];
+                $metaChanged = false;
+                foreach ([
+                    'cdek_track_number' => ['cdek_track_number', 'cdek_tracking_field_filled'],
+                    'russian_post_track' => ['russian_post_track', 'post_tracking_field_filled'],
+                ] as $sourceKey => [$metaKey, $stat]) {
+                    // Сохраняем все отдельные номера, а не только общий трек.
+                    // Более новые значения из админки не заменяем.
+                    $hasCanonicalPost = $sourceKey === 'russian_post_track'
+                        && ! $this->isEmpty($meta['russian_post_tracking_number'] ?? null);
+                    if ($source[$sourceKey] !== null
+                        && $this->isEmpty($meta[$metaKey] ?? null)
+                        && ! $hasCanonicalPost) {
+                        $meta[$metaKey] = $source[$sourceKey];
+                        $metaChanged = true;
+                        $stats[$stat]++;
+                    }
+                }
+                if ($metaChanged) {
+                    $changes['legacy_meta'] = $meta;
                 }
 
                 if ($changes !== []) {
@@ -145,6 +177,8 @@ class SyncLegacyOrderDeliveryCommand extends Command
 
             $orders[$orderNumber] = [
                 'delivery_method' => $this->value($header['delivery_method'] ?? null),
+                'cdek_track_number' => $this->value($header['cdek_track_number'] ?? null),
+                'russian_post_track' => $this->value($header['russian_post_track'] ?? null),
                 // В InSales общий трек часто пуст, а номер СДЭК/Почты России
                 // находится в отдельной колонке. Берём общий номер, если он есть.
                 'tracking_number' => $this->value($header['tracking_number'] ?? null)
