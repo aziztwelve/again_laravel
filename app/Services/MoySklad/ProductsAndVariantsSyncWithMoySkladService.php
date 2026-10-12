@@ -234,7 +234,6 @@ class ProductsAndVariantsSyncWithMoySkladService
         $attributes = [
             'uuid' => $data->id,
             'name' => mb_substr($data->name ?? '', 0, 255), // Ограничиваем длину
-            'description' => $data->description ?? null,
             'default_unit_id' => $unit?->id,
             'price' => $this->extractPrice($data->salePrices ?? []),
             'cost_price' => $this->extractCostPrice($data->buyPrice ?? (object)['value' => 0]),
@@ -265,6 +264,11 @@ class ProductsAndVariantsSyncWithMoySkladService
 //        $product = Product::withTrashed()
 //            ->where('barcode', $this->extractBarcode($data))
 //            ->update([]);
+
+        // Описание импортируем один раз. Дальше им управляет админка сайта:
+        // периодическая синхронизация не должна стирать HTML и переносы,
+        // в том числе когда редактор намеренно оставил описание пустым.
+        $attributes['description'] = $data->description ?? null;
 
         return Product::create($attributes);
     }
