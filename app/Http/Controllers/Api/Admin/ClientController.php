@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Client\ClientResource;
 use App\Models\Client;
+use App\Services\Client\ClientConsentService;
 use App\Traits\ClientControllerTrait;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -110,6 +111,8 @@ class ClientController extends Controller
                     'bonus_balance' => $client->bonus_balance,
                     'subscribed_to_newsletter' => (bool) $client->subscribed_to_newsletter,
                     'personal_data_consent' => (bool) $client->personal_data_consent,
+                    'privacy_policy_accepted' => (bool) $client->privacy_policy_accepted,
+                    'oferta_accepted' => (bool) $client->oferta_accepted,
                     'messenger_subscription' => (bool) $client->messenger_subscription,
                     'rfm_segment' => $client->rfm_segment,
                     'group_name' => $client->group_name,
@@ -222,12 +225,12 @@ class ClientController extends Controller
                 ]);
 
                 $client->update([
-                    'subscribed_to_newsletter' => (bool) ($validated['subscribed_to_newsletter'] ?? false),
-                    'personal_data_consent' => (bool) ($validated['personal_data_consent'] ?? false),
                     'messenger_subscription' => (bool) ($validated['messenger_subscription'] ?? false),
                     'rfm_segment' => $validated['rfm_segment'] ?? null,
                     'group_name' => $validated['group_name'] ?? null,
                 ]);
+
+                app(ClientConsentService::class)->sync($client, $validated);
 
                 return $client->load('profile');
             });
@@ -288,8 +291,6 @@ class ClientController extends Controller
                 // Обновляем поля самого клиента (email + флаги согласий/подписок + RFM/группа)
                 $clientData = [
                     'email' => $validated['email'],
-                    'subscribed_to_newsletter' => (bool) ($validated['subscribed_to_newsletter'] ?? $client->subscribed_to_newsletter),
-                    'personal_data_consent' => (bool) ($validated['personal_data_consent'] ?? $client->personal_data_consent),
                     'messenger_subscription' => (bool) ($validated['messenger_subscription'] ?? $client->messenger_subscription),
                 ];
 
@@ -300,6 +301,7 @@ class ClientController extends Controller
                 }
 
                 $client->update($clientData);
+                app(ClientConsentService::class)->sync($client, $validated);
             });
 
             return response()->json([
@@ -403,6 +405,8 @@ class ClientController extends Controller
             'address' => 'nullable|string',
             'phone' => 'nullable|string|max:255',
             'personal_data_consent' => 'nullable|boolean',
+            'privacy_policy_accepted' => 'sometimes|boolean',
+            'oferta_accepted' => 'sometimes|boolean',
             'subscribed_to_newsletter' => 'nullable|boolean',
         ]);
 
@@ -429,24 +433,7 @@ class ClientController extends Controller
 
             $user_profile = $this->check_users_with_same_email($client);
 
-            if ($request->has('subscribed_to_newsletter')) {
-                $client->update([
-                    'subscribed_to_newsletter' => $request->boolean('subscribed_to_newsletter'),
-                ]);
-            }
-
-            if ($request->has('personal_data_consent')) {
-                $hasConsent = $request->boolean('personal_data_consent');
-
-                $client->update([
-                    'personal_data_consent' => $hasConsent,
-                    // Дату заполняет только явное подтверждение самого клиента
-                    // в настройках профиля; для старых записей её не подменяем.
-                    'personal_data_consent_at' => $hasConsent
-                        ? ($client->personal_data_consent_at ?? now())
-                        : null,
-                ]);
-            }
+            app(ClientConsentService::class)->sync($client, $validator->validated(), true);
 
             if ($user_profile) {
                 $user_profile->update([

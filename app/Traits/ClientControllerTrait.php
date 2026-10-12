@@ -69,6 +69,8 @@ trait ClientControllerTrait
             'middle_name' => 'nullable|string|max:255',
             'subscribed_to_newsletter' => 'nullable|boolean',
             'personal_data_consent' => 'nullable|boolean',
+            'privacy_policy_accepted' => 'sometimes|boolean',
+            'oferta_accepted' => 'sometimes|boolean',
             'messenger_subscription' => 'nullable|boolean',
             'delivery_region' => 'nullable|string|max:255',
             'delivery_street' => 'nullable|string|max:255',

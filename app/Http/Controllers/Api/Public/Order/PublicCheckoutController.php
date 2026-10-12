@@ -10,6 +10,7 @@ use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
 use App\Services\Client\GuestClientService;
+use App\Services\Client\ClientConsentService;
 use App\Services\Delivery\CdekDeliveryService;
 use App\Services\Delivery\FreeShippingService;
 use App\Services\GiftCard\GiftCardService;
@@ -275,6 +276,12 @@ class PublicCheckoutController extends Controller
 
             // 10. Уведомления (поддерживает гостя через order->email)
             $this->sendNotifications($order, $orderClient);
+
+            // Persist checkout choices on the same client that the admin card displays.
+            $consentClient = $orderClient ?? $guestClient ?? null;
+            if ($consentClient !== null) {
+                app(ClientConsentService::class)->sync($consentClient, $validated, true);
+            }
 
             DB::commit();
 

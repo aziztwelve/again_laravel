@@ -324,6 +324,11 @@ class CreateOrderRequest extends FormRequest
     public function rules(): array
     {
         $rules = [
+            // Optional for cached storefronts; supplied mandatory consents must be accepted.
+            'privacy_policy_accepted' => 'sometimes|boolean|accepted',
+            'personal_data_consent' => 'sometimes|boolean|accepted',
+            'oferta_accepted' => 'sometimes|boolean|accepted',
+            'subscribed_to_newsletter' => 'sometimes|boolean',
             // Адрес доставки
             'delivery_address' => 'required|array',
             'delivery_address.country' => 'required|string|max:255',
