@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Helpers\PaginationHelper;
 use App\Http\Controllers\Controller;
+use App\Http\Resources\OrderHistoryResource;
 use App\Http\Requests\Order\AddOrderItemsRequest;
 use App\Http\Requests\Order\CancelOrderRequest;
 use App\Http\Requests\Order\CreateOrderRequest;
@@ -487,23 +488,28 @@ class OrderController extends Controller
             return response()->json(['error' => 'Клиент не найден!'], 404);
         }
 
-        $perPage = $request->query('per_page', 10);
+        $validated = $request->validate(['per_page' => 'sometimes|integer|min:1|max:100']);
+        $perPage = $validated['per_page'] ?? 10;
 
         $orders = Order::with([
-            'items.product',
-            'items.variant',
+            'items.product.images',
+            'items.variant.images',
             'items.color' => function ($sql) {
                 $sql->select(['id', 'name', 'code']);
             },
             'deliveryMethod',
             'deliveryTarget',
+            'address',
+            'yandexOrder',
+            'cdekOrder',
         ])
             ->where('client_id', $client->id)
             ->orderByDesc('created_at')
+            ->orderByDesc('id')
             ->paginate($perPage);
 
         return response()->json([
-            'orders' => $orders->items(), // только список заказов
+            'orders' => OrderHistoryResource::collection($orders->getCollection())->resolve($request),
             'pagination' => PaginationHelper::format($orders),
         ]);
     }

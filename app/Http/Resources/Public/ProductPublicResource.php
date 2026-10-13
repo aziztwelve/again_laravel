@@ -57,6 +57,7 @@ class ProductPublicResource extends JsonResource
             // Собираем доступные варианты
             $available_variants->push([
                 'id' => $variant->id,
+                'is_active' => (bool) $variant->is_active,
                 'color_id' => $variant->color_id,
                 'size' => $variant->name,
                 'quantity' => $variant->stock_quantity,

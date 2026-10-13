@@ -166,8 +166,10 @@ class Order extends Model
     {
         $fallbackValue = $this->normalizeDeliveryAddressValue($value);
 
-        if ($this->relationLoaded('address') && $this->address) {
-            return $this->formatDeliveryAddressPayload($this->address);
+        if ($this->relationLoaded('address')) {
+            return $this->address
+                ? $this->formatDeliveryAddressPayload($this->address)
+                : $fallbackValue;
         }
 
         $address = $this->address()->first();
