@@ -54,7 +54,7 @@ class SegmentManualMembershipTest extends TestCase
         $cases=[];
         foreach (['on_view','manual'] as $frequency) {
             foreach ([null,['min_total_amount'=>30000]] as $conditions) {
-                foreach ([0,10000,40000] as $total) {
+                foreach ([0,10000,30000,40000] as $total) {
                     $cases[] = [$frequency,$conditions,$total];
                 }
             }
