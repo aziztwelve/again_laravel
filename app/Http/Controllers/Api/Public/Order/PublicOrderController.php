@@ -56,6 +56,17 @@ class PublicOrderController extends Controller
         ]);
     }
 
+    public function recordActivity(\Illuminate\Http\Request $request, string $viewToken): JsonResponse
+    {
+        $data = $request->validate(['event' => 'required|in:opened,payment_started']);
+        $order = Order::where('view_token', $viewToken)->firstOrFail();
+        $column = $data['event'] === 'opened' ? 'order_page_opened_at' : 'payment_interface_started_at';
+        // Atomic first-write: refreshes and concurrent tabs never reset the timer.
+        Order::whereKey($order->id)->whereNull($column)->update([$column => now()]);
+
+        return response()->json(['success' => true]);
+    }
+
     private function formatOrder(Order $order): array
     {
         $address = $order->address;

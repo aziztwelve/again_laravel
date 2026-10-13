@@ -287,6 +287,11 @@ Route::prefix('/public')->group(function () {
         ->where('viewToken', '[a-f0-9]{32}')
         ->name('public.orders.show');
 
+    Route::middleware('throttle:30,1')
+        ->post('/orders/{viewToken}/activity', [PublicOrderController::class, 'recordActivity'])
+        ->where('viewToken', '[a-f0-9]{32}')
+        ->name('public.orders.activity');
+
     // Публичный чекаут — оформление заказа без обязательной авторизации.
     // Если в заголовке Authorization приходит валидный Bearer-токен sanctum,
     // заказ привяжется к клиенту; иначе оформится как гостевой (client_id = NULL).

@@ -30,6 +30,13 @@ class SendNotificationJob implements ShouldQueue
         NotificationService $notificationService,
         NotificationConversationMirrorService $mirrorService
     ): void {
+        if (($this->data['type'] ?? null) === 'abandoned_order'
+            && ! app(\App\Services\Notifications\AbandonedOrderService::class)
+                ->isEligible(\App\Models\Order::find($this->data['order_id'] ?? 0))) {
+            $this->updateNotificationDispatch('skipped');
+            return;
+        }
+
         try {
             $success = $notificationService->sendViaChannel(
                 $this->channel,

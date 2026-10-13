@@ -10,7 +10,8 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Автоотмена неоплаченных заказов: если заказ создан более 2 часов назад
+ * Автоотмена неоплаченных заказов: новые онлайн-заказы витрины ждут 24 часа,
+ * остальные — 2 часа после оформления. Если срок истёк
  * и до сих пор не оплачен, переводим его в статус «Отменен» —
  * OrderCreationService::cancelOrder() уже ставит в очередь и обновление
  * документа в МойСклад (state -> «Отменен»), и возврат товара на склад
@@ -18,7 +19,7 @@ use Illuminate\Support\Facades\Log;
  * создании заказа — см. SyncOrderToMoySkladJob).
  *
  * Проверяются заказы в статусах «Новый» и «В работе» — если менеджер
- * перевёл заказ в работу, но оплата так и не поступила за 2 часа,
+ * перевёл заказ в работу, но оплата не поступила до истечения срока,
  * он тоже подлежит автоотмене.
  *
  * См. docs/tasks/order-status-actualization.md.
@@ -27,7 +28,7 @@ class CancelUnpaidOrdersCommand extends Command
 {
     protected $signature = 'orders:cancel-unpaid';
 
-    protected $description = 'Отменить заказы, не оплаченные в течение 2 часов после создания';
+    protected $description = 'Отменить неоплаченные заказы с истёкшим сроком брони (24 часа для новых онлайн-заказов витрины, иначе 2 часа)';
 
     private const UNPAID_TIMEOUT_HOURS = 2;
 
@@ -36,11 +37,17 @@ class CancelUnpaidOrdersCommand extends Command
         $orders = Order::query()
             ->whereIn('status', [OrderStatus::NEW->value, OrderStatus::PROCESSING->value])
             ->where('payment_status', '!=', PaymentStatus::PAID->value)
-            ->where('created_at', '<=', now()->subHours(self::UNPAID_TIMEOUT_HOURS))
+            ->where(function ($query) {
+                $query->where('reservation_expires_at', '<=', now())
+                    ->orWhere(function ($legacy) {
+                        $legacy->whereNull('reservation_expires_at')
+                            ->where('created_at', '<=', now()->subHours(self::UNPAID_TIMEOUT_HOURS));
+                    });
+            })
             ->get();
 
         if ($orders->isEmpty()) {
-            $this->info('Нет неоплаченных заказов старше 2 часов.');
+            $this->info('Нет неоплаченных заказов с истёкшим сроком оплаты.');
 
             return self::SUCCESS;
         }
@@ -51,7 +58,9 @@ class CancelUnpaidOrdersCommand extends Command
             try {
                 $success = $orderCreationService->cancelOrder(
                     $order,
-                    'Автоотмена: заказ не оплачен в течение 2 часов'
+                    $order->reservation_expires_at
+                        ? 'Автоотмена: истёк срок брони 24 часа, заказ не оплачен'
+                        : 'Автоотмена: заказ не оплачен в течение 2 часов'
                 );
 
                 if ($success) {

@@ -113,6 +113,14 @@ class MaxAdapter extends AbstractMessageAdapter
     {
         try {
             $type = $attachment['type'] ?? 'file';
+            if ($type === 'link_button') {
+                return new \BushlanovDev\MaxMessengerBot\Models\Attachments\Requests\InlineKeyboardAttachmentRequest([[
+                    new \BushlanovDev\MaxMessengerBot\Models\Attachments\Buttons\Inline\LinkButton(
+                        $attachment['text'], $attachment['url']
+                    ),
+                ]]);
+            }
+
             $url = $attachment['url'] ?? null;
             $filePath = $attachment['file_path'] ?? null;
 

@@ -54,9 +54,11 @@ Schedule::command('cart:gc-guest-carts')
     ->withoutOverlapping()
     ->runInBackground();
 
-// Автоотмена неоплаченных заказов через 2 часа после создания — возвращает
+// Автоотмена новых онлайн-заказов витрины через 24 часа, остальных через 2 часа — возвращает
 // товар на склад МойСклад (если был списан через demand). Проверяет заказы
 // в статусах "Новый" и "В работе" (см. docs/tasks/order-status-actualization.md).
+Schedule::command('orders:remind-abandoned')->everyMinute()->withoutOverlapping();
+
 Schedule::command('orders:cancel-unpaid')
     ->everyFiveMinutes()
     ->withoutOverlapping()

@@ -28,6 +28,9 @@ class Order extends Model
     protected $fillable = [
         'order_number',
         'view_token',
+        'order_page_opened_at',
+        'payment_interface_started_at',
+        'reservation_expires_at',
         // Ключ повторной отправки публичного checkout-запроса.
         'checkout_idempotency_key',
         'client_id',
@@ -106,6 +109,9 @@ class Order extends Model
         'total_amount' => 'decimal:2',
         'discount_amount' => 'decimal:2',
         'paid_at' => 'datetime',
+        'order_page_opened_at' => 'datetime',
+        'payment_interface_started_at' => 'datetime',
+        'reservation_expires_at' => 'datetime',
         'delivery_date' => 'datetime',
         'delivery_data' => 'array',
         'delivery_cost_original' => 'decimal:2',

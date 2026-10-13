@@ -51,6 +51,12 @@ class TelegramNotificationChannel extends BaseNotificationChannel
                     'chat_id' => $recipientId,
                     'text' => $message,
                     'parse_mode' => 'HTML',
+                    ...(! empty($data['action_url']) ? ['reply_markup' => json_encode([
+                        'inline_keyboard' => [[[
+                            'text' => $data['action_label'] ?? 'Открыть заказ',
+                            'url' => $data['action_url'],
+                        ]]],
+                    ], JSON_UNESCAPED_UNICODE)] : []),
                 ]);
             }
 
