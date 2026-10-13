@@ -21,6 +21,7 @@ class SegmentDetailResource extends JsonResource
             'conditions' => $this->formatConditions(),
             'is_active' => $this->is_active,
             'promo_codes_count' => $this->promo_codes_count ?? 0,
+            'promotions_count' => $this->promotions_count ?? 0,
             'recalculate_frequency' => $this->recalculate_frequency,
             'last_recalculated_at' => $this->last_recalculated_at?->format('d.m.Y H:i:s'),
             'clients_count' => $this->clients()->count(),
@@ -29,6 +30,14 @@ class SegmentDetailResource extends JsonResource
 
             // Связи
             'promo_codes' => PromoCodeBriefResource::collection($this->whenLoaded('promoCodes')),
+
+            'promotions' => $this->whenLoaded('promotions', fn () => $this->promotions->map(fn ($promotion) => [
+                'id' => $promotion->id,
+                'name' => $promotion->name,
+                'is_active' => $promotion->is_active,
+                'starts_at' => $promotion->starts_at?->toIso8601String(),
+                'ends_at' => $promotion->ends_at?->toIso8601String(),
+            ])),
 
             // Статистика (если передана)
             'statistics' => $this->when(isset($this->statistics), $this->statistics),

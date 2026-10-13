@@ -27,6 +27,7 @@ class PromotionPublicController extends Controller
             'items.*.quantity' => 'required|integer|min:1',
             'items.*.price' => 'required|numeric|min:0',
             'total' => 'required|numeric|min:0',
+            'client_id' => 'nullable|integer|exists:clients,id',
         ]);
 
         if ($validator->fails()) {
@@ -41,7 +42,8 @@ class PromotionPublicController extends Controller
 
         $promotions = $this->promotionService->findResolvedPromotions(
             $validated['items'],
-            $validated['total']
+            $validated['total'],
+            $this->resolveClientId($request)
         );
 
         // Догружаем связи, нужные для выбора варианта подарка (размер/цвет и т.п.).
@@ -80,7 +82,8 @@ class PromotionPublicController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $promotions = \App\Models\Promotion::where('is_active', true)
+        $promotions = \App\Models\Promotion::availableForClient($this->resolveClientId($request))
+            ->where('is_active', true)
             ->where(function ($query) {
                 $query->whereNull('starts_at')
                     ->orWhere('starts_at', '<=', now());
@@ -127,6 +130,20 @@ class PromotionPublicController extends Controller
                 ];
             }),
         ]);
+    }
+
+    private function resolveClientId(Request $request): ?int
+    {
+        $actor = \Illuminate\Support\Facades\Auth::guard('sanctum')->user();
+        if ($actor instanceof \App\Models\Client) {
+            return $actor->id;
+        }
+        // Only authenticated staff may preview an order for another client.
+        if ($actor instanceof \App\Models\User) {
+            return $request->filled('client_id') ? (int) $request->input('client_id') : null;
+        }
+
+        return null;
     }
 
     /**

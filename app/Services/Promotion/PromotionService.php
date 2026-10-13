@@ -13,10 +13,10 @@ class PromotionService
     /**
      * Найти применимые акции для корзины
      */
-    public function findApplicablePromotions(array $cartItems, float $cartTotal): Collection
+    public function findApplicablePromotions(array $cartItems, float $cartTotal, ?int $clientId = null): Collection
     {
         // Получаем активные акции
-        $activePromotions = Promotion::where('is_active', true)
+        $activePromotions = Promotion::availableForClient($clientId)->where('is_active', true)
             ->where(function ($query) {
                 $query->whereNull('starts_at')
                     ->orWhere('starts_at', '<=', now());
@@ -76,10 +76,10 @@ class PromotionService
     /**
      * Найти и сразу свести применимые акции к итоговому набору.
      */
-    public function findResolvedPromotions(array $cartItems, float $cartTotal): Collection
+    public function findResolvedPromotions(array $cartItems, float $cartTotal, ?int $clientId = null): Collection
     {
         return $this->resolveApplicablePromotions(
-            $this->findApplicablePromotions($cartItems, $cartTotal)
+            $this->findApplicablePromotions($cartItems, $cartTotal, $clientId)
         );
     }
 
@@ -121,8 +121,15 @@ class PromotionService
         Promotion $promotion,
         int $giftProductId,
         bool $useDiscountInstead = false,
-        ?int $giftVariantId = null
+        ?int $giftVariantId = null,
+        ?int $clientId = null
     ): void {
+        if (! $promotion->isAvailableForClient($clientId)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'promotions' => 'Эта акция недоступна для выбранного клиента.',
+            ]);
+        }
+
         // ВНИМАНИЕ: этот метод вызывается из OrderController::store, который уже
         // обёрнут в DB::beginTransaction(). Открывать здесь ещё одну транзакцию
         // НЕЛЬЗЯ — это создаст вложенный SAVEPOINT, и если бросить
@@ -267,7 +274,7 @@ class PromotionService
      * Дубли подарков разрешены: один и тот же товар-подарок от двух акций даёт
      * две отдельные подарочные позиции (каждая со своим promotion_id).
      */
-    public function applyPromotionsToOrder(Order $order, array $selections): void
+    public function applyPromotionsToOrder(Order $order, array $selections, ?int $clientId = null): void
     {
         foreach ($selections as $selection) {
             $promotionId = (int) ($selection['promotion_id'] ?? 0);
@@ -304,7 +311,8 @@ class PromotionService
                 $useDiscountInstead,
                 isset($selection['gift_product_variant_id'])
                     ? (int) $selection['gift_product_variant_id']
-                    : null
+                    : null,
+                $clientId
             );
         }
     }

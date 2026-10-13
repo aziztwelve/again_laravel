@@ -235,7 +235,9 @@ class PublicCheckoutController extends Controller
 
             // 7. Акции (накопительные/стекируемые подарки)
             if (! empty($promotions)) {
-                $this->orderCreationService->applyPromotionsToOrder($order, $promotions);
+                $this->orderCreationService->applyPromotionsToOrder(
+                    $order, $promotions, $authUser instanceof Client ? $authUser->id : null
+                );
             }
 
             // 7.5 Бесплатная доставка. Считается ПОСЛЕ промокода и акций: сумма
@@ -336,6 +338,14 @@ class PublicCheckoutController extends Controller
                 500,
                 ['error_details' => config('app.debug') ? $e->getMessage() : null]
             );
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Проверьте данные заказа.',
+                'errors' => $e->errors(),
+            ], 422);
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Public order creation failed', [

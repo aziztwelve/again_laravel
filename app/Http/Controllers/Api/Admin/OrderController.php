@@ -263,7 +263,7 @@ class OrderController extends Controller
 
             // 7.5. Применяем акции (накопительные/стекируемые подарки)
             if (! empty($promotions)) {
-                $this->orderCreationService->applyPromotionsToOrder($order, $promotions);
+                $this->orderCreationService->applyPromotionsToOrder($order, $promotions, $order->client_id);
             }
 
             // 7.6. Бесплатная доставка по правилам — после промокода и акций,
@@ -343,6 +343,14 @@ class OrderController extends Controller
                 201
             );
 
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Проверьте данные заказа.',
+                'errors' => $e->errors(),
+            ], 422);
         } catch (\Exception $e) {
             DB::rollBack();
 

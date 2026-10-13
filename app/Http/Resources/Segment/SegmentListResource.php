@@ -22,6 +22,7 @@ class SegmentListResource extends JsonResource
             'is_active' => $this->is_active,
             'clients_count' => $this->clients_count ?? 0,
             'promo_codes_count' => $this->promo_codes_count ?? 0,
+            'promotions_count' => $this->promotions_count ?? 0,
             'created_at' => $this->created_at?->format('d.m.Y'),
             'last_recalculated_at' => $this->last_recalculated_at?->format('d.m.Y H:i:s'),
 

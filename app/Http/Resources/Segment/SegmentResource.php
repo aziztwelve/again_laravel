@@ -24,6 +24,7 @@ class SegmentResource extends JsonResource
             'last_recalculated_at' => $this->last_recalculated_at?->format('d.m.Y H:i:s'),
             'clients_count' => $this->whenCounted('clients'),
             'promo_codes_count' => $this->whenCounted('promoCodes'),
+            'promotions_count' => $this->whenCounted('promotions'),
             'created_at' => $this->created_at->format('d.m.Y H:i:s'),
             'updated_at' => $this->updated_at->format('d.m.Y H:i:s'),
 

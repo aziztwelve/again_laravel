@@ -597,6 +597,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Удалить клиентов из сегмента
         Route::delete('/{segment}/clients', [SegmentController::class, 'detachClients'])->name('detach-clients');
 
+        Route::put('/{segment}/promotions', [SegmentController::class, 'syncPromotions'])->name('sync-promotions');
+
         // Прикрепить промокоды к сегменту
         Route::post('/{segment}/promo-codes', [SegmentController::class, 'attachPromoCodes'])->name('attach-promo-codes');
 

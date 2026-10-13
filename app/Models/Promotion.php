@@ -37,9 +37,32 @@ class Promotion extends Model
         'times_used' => 'integer',
     ];
 
-    /**
-     * Товары-триггеры (на которые действует акция)
-     */
+    /** Сегменты, которым доступна акция. */
+    public function segments(): BelongsToMany
+    {
+        return $this->belongsToMany(\App\Models\Segments\Segment::class, 'promotion_segment')->withTimestamps();
+    }
+
+    /** No segment links means public; otherwise membership in any active segment is required. */
+    public function scopeAvailableForClient($query, ?int $clientId)
+    {
+        return $query->where(function ($query) use ($clientId) {
+            $query->whereDoesntHave('segments');
+            if ($clientId !== null) {
+                $query->orWhereHas('segments', function ($segments) use ($clientId) {
+                    $segments->where('segments.is_active', true)
+                        ->whereHas('clients', fn ($clients) => $clients->where('clients.id', $clientId));
+                });
+            }
+        });
+    }
+
+    public function isAvailableForClient(?int $clientId): bool
+    {
+        return static::whereKey($this->id)->availableForClient($clientId)->exists();
+    }
+
+    /** Товары-триггеры (на которые действует акция). */
     public function triggerProducts(): BelongsToMany
     {
         return $this->belongsToMany(Product::class, 'promotion_trigger_products');

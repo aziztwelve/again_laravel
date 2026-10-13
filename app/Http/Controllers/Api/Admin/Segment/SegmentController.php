@@ -55,11 +55,25 @@ class SegmentController extends Controller
     {
     }
 
-    /**
-     * Получить список всех сегментов
-     *
-     * GET /api/segments
-     */
+    /** Сохранить набор акций сегмента. */
+    public function syncPromotions(Request $request, Segment $segment): JsonResponse
+    {
+        abort_unless($request->user() instanceof \App\Models\User, 403);
+        $data = $request->validate([
+            'promotion_ids' => 'present|array|max:1000',
+            'promotion_ids.*' => [
+                'required', 'integer', 'distinct',
+                \Illuminate\Validation\Rule::exists('promotions', 'id')->whereNull('deleted_at'),
+            ],
+        ]);
+        \Illuminate\Support\Facades\DB::transaction(
+            fn () => $segment->promotions()->sync($data['promotion_ids'])
+        );
+
+        return response()->json(['success' => true, 'message' => 'Акции сегмента сохранены']);
+    }
+
+    /** Получить список всех сегментов: GET /api/segments. */
     public function index(Request $request): JsonResponse
     {
         $filters = [
@@ -143,7 +157,8 @@ class SegmentController extends Controller
             }
 
             //  Загружаем count
-            $segment->loadCount('promoCodes');
+            $segment->load('promotions');
+            $segment->loadCount(['promoCodes', 'promotions']);
 
             // Получаем статистику
             $statistics = $this->statisticsService->getBriefStatistics($segment);

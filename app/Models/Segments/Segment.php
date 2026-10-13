@@ -4,6 +4,7 @@ namespace App\Models\Segments;
 
 use App\Models\Client;
 use App\Models\PromoCode;
+use App\Models\Promotion;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -49,9 +50,13 @@ class Segment extends Model
             ->withTimestamps();
     }
 
-    /**
-     * Промокоды, привязанные к сегменту
-     */
+    /** Акции, привязанные к сегменту. */
+    public function promotions(): BelongsToMany
+    {
+        return $this->belongsToMany(Promotion::class, 'promotion_segment')->withTimestamps();
+    }
+
+    /** Промокоды, привязанные к сегменту. */
     public function promoCodes(): BelongsToMany
     {
         return $this->belongsToMany(PromoCode::class, 'promo_code_segment')

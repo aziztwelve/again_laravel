@@ -82,7 +82,7 @@ class SegmentRepository
     public function paginate(array $filters = [], int $perPage = 15): LengthAwarePaginator
     {
         $query = Segment::query()
-            ->withCount('clients', 'promoCodes');
+            ->withCount('clients', 'promoCodes', 'promotions');
 
         // Фильтр по активности
         if (isset($filters['is_active'])) {

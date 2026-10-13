@@ -526,7 +526,8 @@ class OrderCreationService
         int $promotionId,
         int $giftProductId,
         bool $useDiscountInstead = false,
-        ?int $giftVariantId = null
+        ?int $giftVariantId = null,
+        ?int $clientId = null
     ): void {
         $promotion = Promotion::find($promotionId);
 
@@ -548,7 +549,8 @@ class OrderCreationService
                 $promotion,
                 $giftProductId,
                 $useDiscountInstead,
-                $giftVariantId
+                $giftVariantId,
+                $clientId
             );
 
             Log::info('Promotion applied to order', [
@@ -578,14 +580,14 @@ class OrderCreationService
      *   [['promotion_id'=>int,'gift_product_id'=>?int,
      *     'gift_product_variant_id'=>?int,'use_discount_instead'=>bool], ...]
      */
-    public function applyPromotionsToOrder(Order $order, array $selections): void
+    public function applyPromotionsToOrder(Order $order, array $selections, ?int $clientId = null): void
     {
         if (empty($selections)) {
             return;
         }
 
         try {
-            $this->promotionService->applyPromotionsToOrder($order, $selections);
+            $this->promotionService->applyPromotionsToOrder($order, $selections, $clientId);
 
             Log::info('Promotions applied to order', [
                 'order_id' => $order->id,
