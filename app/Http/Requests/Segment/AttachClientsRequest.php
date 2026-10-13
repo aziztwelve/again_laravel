@@ -11,7 +11,7 @@ class AttachClientsRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return true;
+        return $this->user() instanceof \App\Models\User;
     }
 
     /**
@@ -20,8 +20,8 @@ class AttachClientsRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'client_ids' => 'required|array|min:1',
-            'client_ids.*' => 'required|integer|exists:clients,id',
+            'client_ids' => 'required|array|min:1|max:1000',
+            'client_ids.*' => ['required', 'integer', 'distinct', \Illuminate\Validation\Rule::exists('clients', 'id')->whereNull('deleted_at')],
         ];
     }
 

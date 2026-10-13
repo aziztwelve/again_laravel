@@ -310,13 +310,13 @@ class SegmentController extends Controller
     {
         try {
             $clientIds = $request->validated()['client_ids'];
-            $this->detachClientsAction->execute($segment, $clientIds);
+            $removed = $this->detachClientsAction->execute($segment, $clientIds);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Клиенты успешно удалены из сегмента',
+                'message' => 'Ручное закрепление снято. Подходящие по условиям клиенты остаются в сегменте.',
                 'data' => [
-                    'removed_count' => count($clientIds),
+                    'removed_count' => count($removed),
                     'total_clients' => $segment->clients()->count(),
                 ],
             ]);

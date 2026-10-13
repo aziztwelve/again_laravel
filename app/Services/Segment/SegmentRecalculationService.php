@@ -31,6 +31,7 @@ class SegmentRecalculationService
         }
 
         DB::transaction(function () use ($segment, $conditions) {
+            Segment::whereKey($segment->id)->lockForUpdate()->firstOrFail();
             // Получаем текущих клиентов сегмента
             $currentClientIds = $segment->clients()->pluck('clients.id')->toArray();
 
@@ -41,7 +42,8 @@ class SegmentRecalculationService
             $clientsToAdd = array_diff($newClientIds, $currentClientIds);
 
             // Клиенты для удаления
-            $clientsToRemove = array_diff($currentClientIds, $newClientIds);
+            $pinnedIds = $segment->clients()->wherePivot('is_manual', true)->pluck('clients.id')->all();
+            $clientsToRemove = array_diff($currentClientIds, $newClientIds, $pinnedIds);
 
             // Добавляем новых клиентов
             if (!empty($clientsToAdd)) {
@@ -72,12 +74,15 @@ class SegmentRecalculationService
     /**
      * Найти клиентов, соответствующих условиям
      */
-    protected function findClientsMatchingConditions(SegmentConditionsDTO $conditions): array
+    public function findClientsMatchingConditions(SegmentConditionsDTO $conditions, ?array $clientIds = null): array
     {
         // Верификация (clients.verified_at) не используется как фильтр: в боевой
         // базе верифицировано ~14 из 25 тыс. клиентов, из-за чего сегменты не
         // видели реальные заказы. Сегмент = все клиенты, подходящие под условия.
         $query = Client::query();
+        if ($clientIds !== null) {
+            $query->whereIn('clients.id', $clientIds);
+        }
 
         // Подзапрос для расчёта статистики по заказам
         $query->select('clients.id')

@@ -94,6 +94,7 @@ class SegmentService
     public function attachClients(Segment $segment, array $clientIds): void
     {
         DB::transaction(function () use ($segment, $clientIds) {
+            Segment::whereKey($segment->id)->lockForUpdate()->firstOrFail();
             $this->segmentRepository->attachClients($segment, $clientIds);
 
             // Синхронизируем промокоды с новыми клиентами
@@ -107,11 +108,9 @@ class SegmentService
     public function detachClients(Segment $segment, array $clientIds): void
     {
         DB::transaction(function () use ($segment, $clientIds) {
-            // Сначала удаляем промокоды у клиентов
-            $this->promoCodeSyncService->removePromoCodesFromClients($segment, $clientIds);
-
-            // Затем открепляем клиентов от сегмента
-            $this->segmentRepository->detachClients($segment, $clientIds);
+            Segment::whereKey($segment->id)->lockForUpdate()->firstOrFail();
+            $removed = $this->segmentRepository->detachClients($segment, $clientIds);
+            $this->promoCodeSyncService->removePromoCodesFromClients($segment, $removed);
         });
     }
 

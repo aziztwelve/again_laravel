@@ -62,7 +62,15 @@ class SegmentPromoCodeSyncService
             return;
         }
 
-        $this->removeSpecificPromoCodesFromClients($promoCodeIds, $clientIds);
+        DB::table('promo_code_client')->whereIn('promo_code_id', $promoCodeIds)
+            ->whereIn('client_id', $clientIds)
+            ->whereNotExists(function ($query) use ($segment) {
+                $query->selectRaw('1')->from('promo_code_segment as pcs')
+                    ->join('client_segment as cs', 'cs.segment_id', '=', 'pcs.segment_id')
+                    ->whereColumn('pcs.promo_code_id', 'promo_code_client.promo_code_id')
+                    ->whereColumn('cs.client_id', 'promo_code_client.client_id')
+                    ->where('pcs.segment_id', '!=', $segment->id);
+            })->delete();
     }
 
     /**
@@ -85,7 +93,7 @@ class SegmentPromoCodeSyncService
         $promoCodeIds = $segment->promoCodes()->pluck('promo_codes.id')->toArray();
 
         if (!empty($clientIds) && !empty($promoCodeIds)) {
-            $this->removeSpecificPromoCodesFromClients($promoCodeIds, $clientIds);
+            $this->removePromoCodesFromClients($segment, $clientIds);
         }
     }
 

@@ -16,6 +16,7 @@ class SegmentClientResource extends JsonResource
     {
         return [
             'id' => $this->id,
+            'is_manual' => (bool) ($this->pivot?->is_manual ?? false),
             'email' => $this->email,
             'profile' => [
                 'first_name' => $this->profile?->first_name,

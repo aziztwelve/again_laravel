@@ -140,26 +140,35 @@ class SegmentRepository
      */
     public function attachClients(Segment $segment, array $clientIds): void
     {
+        $existing = $segment->clients()->whereIn('clients.id', $clientIds)->pluck('clients.id')->all();
         $attachData = [];
-        $now = now();
-
         foreach ($clientIds as $clientId) {
-            $attachData[$clientId] = [
-                'added_at' => $now,
-                'created_at' => $now,
-                'updated_at' => $now,
-            ];
+            $attachData[$clientId] = ['is_manual' => true];
+            if (!in_array($clientId, $existing)) {
+                $attachData[$clientId]['added_at'] = now();
+            }
         }
-
         $segment->clients()->syncWithoutDetaching($attachData);
     }
 
     /**
      * Открепить клиентов от сегмента
      */
-    public function detachClients(Segment $segment, array $clientIds): void
+    public function detachClients(Segment $segment, array $clientIds): array
     {
-        $segment->clients()->detach($clientIds);
+        $present = $segment->clients()->whereIn('clients.id', $clientIds)->pluck('clients.id')->all();
+        $conditions = \App\DTOs\Segment\SegmentConditionsDTO::fromArray($segment->conditions);
+        $matching = $conditions && $conditions->hasConditions()
+            ? app(\App\Services\Segment\SegmentRecalculationService::class)
+                ->findClientsMatchingConditions($conditions, $present)
+            : [];
+        \Illuminate\Support\Facades\DB::table('client_segment')
+            ->where('segment_id', $segment->id)->whereIn('client_id', $present)
+            ->update(['is_manual' => false, 'updated_at' => now()]);
+        $removed = array_values(array_diff($present, $matching));
+        $segment->clients()->detach($removed);
+
+        return $removed;
     }
 
     /**

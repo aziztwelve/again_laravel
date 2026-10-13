@@ -17,18 +17,17 @@ class DetachClientsFromSegmentAction
     /**
      * Выполнить удаление клиентов из сегмента
      */
-    public function execute(Segment $segment, array $clientIds): void
+    public function execute(Segment $segment, array $clientIds): array
     {
         if (empty($clientIds)) {
             throw new \InvalidArgumentException('Не указаны ID клиентов');
         }
 
-        DB::transaction(function () use ($segment, $clientIds) {
-            // Удаляем промокоды у клиентов
-            $this->promoCodeSyncService->removePromoCodesFromClients($segment, $clientIds);
-
-            // Открепляем клиентов от сегмента
-            $this->repository->detachClients($segment, $clientIds);
+        return DB::transaction(function () use ($segment, $clientIds) {
+            Segment::whereKey($segment->id)->lockForUpdate()->firstOrFail();
+            $removed = $this->repository->detachClients($segment, $clientIds);
+            $this->promoCodeSyncService->removePromoCodesFromClients($segment, $removed);
+            return $removed;
         });
     }
 }

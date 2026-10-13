@@ -46,7 +46,7 @@ class Segment extends Model
     public function clients(): BelongsToMany
     {
         return $this->belongsToMany(Client::class, 'client_segment')
-            ->withPivot('added_at')
+            ->withPivot('added_at', 'is_manual')
             ->withTimestamps();
     }
 

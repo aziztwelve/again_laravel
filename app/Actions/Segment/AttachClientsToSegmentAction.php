@@ -36,6 +36,7 @@ class AttachClientsToSegmentAction
         }
 
         DB::transaction(function () use ($segment, $existingClientIds) {
+            Segment::whereKey($segment->id)->lockForUpdate()->firstOrFail();
             // Прикрепляем клиентов к сегменту
             $this->repository->attachClients($segment, $existingClientIds);
 
