@@ -461,7 +461,10 @@ class ClientController extends Controller
 
             return response()->json([
                 'message' => 'Информация о пользователе обновлена',
-                'user' => $client->load('profile'),
+                // update() changes the database, but an already loaded model can
+                // still contain the old consent values. Read it back so the
+                // profile page receives exactly what was persisted.
+                'user' => $client->refresh()->load('profile'),
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
