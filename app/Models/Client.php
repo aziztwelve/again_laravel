@@ -30,6 +30,7 @@ class Client extends Authenticatable
     protected $casts = [
         'bonus_balance' => 'decimal:2',
         'subscribed_to_newsletter' => 'boolean',
+        'subscribed_to_whatsapp' => 'boolean',
         'personal_data_consent' => 'boolean',
         'privacy_policy_accepted' => 'boolean',
         'oferta_accepted' => 'boolean',

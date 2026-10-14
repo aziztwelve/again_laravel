@@ -22,6 +22,7 @@ class ClientResource extends JsonResource
             'email' => $this->email,
             'bonus_balance' => $this->bonus_balance,
             'subscribed_to_newsletter' => (bool) $this->subscribed_to_newsletter,
+            'subscribed_to_whatsapp' => (bool) $this->subscribed_to_whatsapp,
             'personal_data_consent' => (bool) $this->personal_data_consent,
             'privacy_policy_accepted' => (bool) $this->privacy_policy_accepted,
             'oferta_accepted' => (bool) $this->oferta_accepted,

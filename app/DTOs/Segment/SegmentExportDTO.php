@@ -4,66 +4,45 @@ namespace App\DTOs\Segment;
 
 class SegmentExportDTO
 {
+    public const HEADERS = [
+        'id'=>'ID', 'full_name'=>'ФИО', 'email'=>'Email', 'phone'=>'Телефон',
+        'birthday'=>'Дата рождения', 'address'=>'Адрес', 'registered_at'=>'Дата регистрации',
+        'orders_count'=>'Количество покупок', 'total_amount'=>'Сумма покупок', 'average_check'=>'Средний чек',
+        'segment_name'=>'Сегмент', 'membership_source'=>'Добавление', 'added_to_segment_at'=>'Дата добавления',
+        'subscribed_to_newsletter'=>'Подписка Email', 'subscribed_to_whatsapp'=>'Подписка WhatsApp',
+        'personal_data_consent'=>'Согласие ПДн', 'tags'=>'Теги',
+    ];
+    public const DEFAULT_COLUMNS = ['id','full_name','phone','email','birthday','address','average_check','total_amount','orders_count'];
+
     public function __construct(
         public readonly int $segmentId,
-        public readonly array $columns = [
-            'id',
-            'full_name',
-            'phone',
-            'email',
-            'birthday',
-            'address',
-            'average_check',
-            'total_amount',
-            'orders_count'
-        ]
+        public readonly array $columns = self::DEFAULT_COLUMNS,
+        public readonly string $channel = 'all',
+        public readonly string $origin = 'all',
+        public readonly bool $consentOnly = false,
+        public readonly bool $deduplicate = true,
+        public readonly string $delimiter = ';',
     ) {}
 
-    /**
-     * Создать DTO из Request
-     */
     public static function fromRequest(int $segmentId, array $data): self
     {
-        return new self(
-            segmentId: $segmentId,
-            columns: $data['columns'] ?? [
-            'id',
-            'full_name',
-            'phone',
-            'email',
-            'birthday',
-            'address',
-            'average_check',
-            'total_amount',
-            'orders_count'
-        ]
-        );
+        $channel = $data['channel'] ?? 'all';
+        $defaults = match ($channel) {
+            'email' => ['id','full_name','email'],
+            'whatsapp' => ['id','full_name','phone'],
+            default => self::DEFAULT_COLUMNS,
+        };
+        return new self($segmentId, $data['columns'] ?? $defaults, $channel, $data['origin'] ?? 'all',
+            (bool)($data['consent_only'] ?? ($channel !== 'all')),
+            (bool)($data['deduplicate'] ?? true), $data['delimiter'] ?? ';');
     }
 
-    /**
-     * Получить заголовки для CSV
-     */
-    public function getHeaders(): array
-    {
-        return [
-            'id' => 'ID',
-            'full_name' => 'ФИО',
-            'phone' => 'Телефон',
-            'email' => 'Email',
-            'birthday' => 'Дата рождения',
-            'address' => 'Адрес',
-            'average_check' => 'Средний чек',
-            'total_amount' => 'Сумма покупок',
-            'orders_count' => 'Количество заказов',
-        ];
-    }
+    public function getHeaders(): array { return self::HEADERS; }
 
-    /**
-     * Получить только выбранные заголовки
-     */
     public function getSelectedHeaders(): array
     {
-        $allHeaders = $this->getHeaders();
-        return array_intersect_key($allHeaders, array_flip($this->columns));
+        $headers=[];
+        foreach ($this->columns as $column) $headers[$column]=self::HEADERS[$column];
+        return $headers;
     }
 }

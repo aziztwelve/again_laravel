@@ -72,6 +72,7 @@ trait ClientControllerTrait
             'privacy_policy_accepted' => 'sometimes|boolean',
             'oferta_accepted' => 'sometimes|boolean',
             'messenger_subscription' => 'nullable|boolean',
+            'subscribed_to_whatsapp' => 'sometimes|boolean',
             'delivery_region' => 'nullable|string|max:255',
             'delivery_street' => 'nullable|string|max:255',
             'delivery_house' => 'nullable|string|max:50',

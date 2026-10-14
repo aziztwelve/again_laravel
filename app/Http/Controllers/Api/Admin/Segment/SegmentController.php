@@ -468,18 +468,8 @@ class SegmentController extends Controller
     public function exportPreview(ExportSegmentRequest $request, Segment $segment): JsonResponse
     {
         try {
-            $columns = $request->validated()['columns'] ?? [];
-            $preview = $this->exportService->getExportPreview($segment, $columns);
-            $count = $this->exportService->getExportCount($segment);
-
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'preview' => $preview,
-                    'total_count' => $count,
-                    'headers' => SegmentExportDTO::fromRequest($segment->id, $request->validated())->getSelectedHeaders(),
-                ],
-            ]);
+            $dto = SegmentExportDTO::fromRequest($segment->id, $request->validated());
+            return response()->json(['success'=>true,'data'=>$this->exportService->preview($segment,$dto)]);
 
         } catch (\Exception $e) {
             return response()->json([

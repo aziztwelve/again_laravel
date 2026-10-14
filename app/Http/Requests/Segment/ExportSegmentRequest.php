@@ -2,60 +2,34 @@
 
 namespace App\Http\Requests\Segment;
 
+use App\DTOs\Segment\SegmentExportDTO;
+use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class ExportSegmentRequest extends FormRequest
 {
-    /**
-     * Determine if the user is authorized to make this request.
-     */
-    public function authorize(): bool
-    {
-        return true;
-    }
+    public function authorize(): bool { return $this->user() instanceof User; }
 
-    /**
-     * Get the validation rules that apply to the request.
-     */
     public function rules(): array
     {
         return [
-            'columns' => 'nullable|array',
-            'columns.*' => 'string|in:id,full_name,phone,email,birthday,address,average_check,total_amount,orders_count',
+            'channel'=>['sometimes', Rule::in(['all','email','whatsapp'])],
+            'origin'=>['sometimes', Rule::in(['all','manual','auto'])],
+            'consent_only'=>'sometimes|boolean', 'deduplicate'=>'sometimes|boolean',
+            'delimiter'=>['sometimes', Rule::in([';', ','])],
+            'columns'=>'sometimes|array|min:1|max:17',
+            'columns.*'=>['required','string','distinct',Rule::in(array_keys(SegmentExportDTO::HEADERS))],
         ];
     }
 
-    /**
-     * Get custom messages for validator errors.
-     */
-    public function messages(): array
+    public function withValidator($validator): void
     {
-        return [
-            'columns.array' => 'Колонки должны быть переданы в виде массива',
-            'columns.*.in' => 'Недопустимая колонка для экспорта',
-        ];
-    }
-
-    /**
-     * Prepare the data for validation.
-     */
-    protected function prepareForValidation(): void
-    {
-        // Если колонки не указаны, устанавливаем значения по умолчанию
-        if (!$this->has('columns')) {
-            $this->merge([
-                'columns' => [
-                    'id',
-                    'full_name',
-                    'phone',
-                    'email',
-                    'birthday',
-                    'address',
-                    'average_check',
-                    'total_amount',
-                    'orders_count'
-                ]
-            ]);
-        }
+        $validator->after(function ($validator) {
+            $contact = match ($this->input('channel')) { 'email'=>'email', 'whatsapp'=>'phone', default=>null };
+            if ($contact && $this->has('columns') && is_array($this->input('columns')) && !in_array($contact,$this->input('columns'))) {
+                $validator->errors()->add('columns', 'Для выбранного канала нужен столбец контакта.');
+            }
+        });
     }
 }
