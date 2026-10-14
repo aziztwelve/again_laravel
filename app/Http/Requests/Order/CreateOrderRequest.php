@@ -324,8 +324,6 @@ class CreateOrderRequest extends FormRequest
     public function rules(): array
     {
         $rules = [
-            // Только менеджер может оформить конкретную корзину из админки.
-            'cart_id' => [Rule::prohibitedIf(! ($this->user() instanceof User)), 'nullable', 'integer', 'exists:cart,id'],
             // Optional for cached storefronts; supplied mandatory consents must be accepted.
             'privacy_policy_accepted' => 'sometimes|boolean|accepted',
             'personal_data_consent' => 'sometimes|boolean|accepted',
