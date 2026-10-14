@@ -115,6 +115,7 @@ class AbandonedCartService
                         continue;
                     }
                     $message = $this->buildMessage($cart, $stepNum, $promoCode, $comm->id);
+                    $comm->update(['subject' => $message['subject'], 'body' => $message['body']]);
 
                     SendNotificationJob::dispatch(
                         $recipient['channel'],
@@ -179,7 +180,7 @@ class AbandonedCartService
      *
      * @return array{ok:bool, reason?:string, communication?:CartCommunication}
      */
-    public function sendManual(Cart $cart, ?string $channel = null): array
+    public function sendManual(Cart $cart, ?string $channel = null, ?array $customMessage = null): array
     {
         // Нельзя слать гостю, по оформленной или пустой корзине.
         if (! $cart->client_id || $cart->status === 'ordered' || ! $cart->items()->exists()) {
@@ -223,7 +224,8 @@ class AbandonedCartService
                 'status' => 'queued',
             ]);
             $communications[] = $comm;
-            $message = $this->buildMessage($cart, 1, null, $comm->id);
+            $message = $customMessage ?? $this->buildMessage($cart, 1, null, $comm->id);
+            $comm->update(['subject' => $message['subject'], 'body' => $message['body']]);
 
             SendNotificationJob::dispatch(
                 $recipient['channel'],

@@ -4,11 +4,14 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ImageResource;
+use App\Http\Resources\CartDetailsResource;
 use App\Models\Cart;
 use App\Models\Color;
 use App\Models\Discount;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Models\User;
+use App\Services\Order\OrderValidationService;
 use App\Services\Cart\CartResolver;
 use App\Services\Cart\AbandonedCartService;
 use App\Traits\ProductsTrait;
@@ -119,10 +122,22 @@ class CartController extends Controller
     public function remind(Request $request, Cart $cart)
     {
         $validated = $request->validate([
-            'channel' => 'nullable|in:email,telegram,whatsapp,vk',
+            'channel' => 'nullable|in:email,telegram,max,vk',
+            'message' => 'nullable|string|min:1|max:5000',
+            'subject' => 'nullable|string|max:255',
         ]);
 
-        $result = $this->abandonedCartService->sendManual($cart, $validated['channel'] ?? null);
+        $customMessage = null;
+        if (isset($validated['message']) && $validated['message'] !== '') {
+            $this->loadDetails($request, $cart);
+            $request->validate(['channel' => 'required|in:email,telegram,max,vk']);
+            $customMessage = [
+                'subject' => $validated['subject'] ?? 'Сообщение о вашей корзине',
+                'body' => $validated['message'],
+                'html' => nl2br(e($validated['message'])),
+            ];
+        }
+        $result = $this->abandonedCartService->sendManual($cart, $validated['channel'] ?? null, $customMessage);
 
         if (! ($result['ok'] ?? false)) {
             $messages = [
@@ -141,7 +156,7 @@ class CartController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Напоминание отправлено.',
+            'message' => $customMessage ? 'Сообщение поставлено в очередь отправки.' : 'Напоминание поставлено в очередь отправки.',
             'communication' => [
                 'channel' => $comm->channel,
                 'type' => $comm->type,
@@ -149,6 +164,67 @@ class CartController extends Controller
                 'sent_at' => $comm->sent_at,
             ],
         ]);
+    }
+
+    public function show(Request $request, Cart $cart)
+    {
+        $this->loadDetails($request, $cart);
+
+        return response()->json(['success' => true, 'data' => array_merge(
+            (new CartDetailsResource($cart))->toArray($request),
+            ['available_channels' => array_column($this->abandonedCartService->resolveChannels($cart), 'channel')],
+        )]);
+    }
+
+    /** Подготовить форму менеджера, не создавая заказ и не меняя корзину. */
+    public function orderDraft(Request $request, Cart $cart, OrderValidationService $pricing)
+    {
+        $this->loadDetails($request, $cart);
+        abort_unless($cart->client && in_array($cart->status, ['active', 'abandoned'], true)
+            && $cart->items->isNotEmpty(), 422, 'Эта корзина уже оформлена или пуста.');
+
+        $details = (new CartDetailsResource($cart))->toArray($request);
+        $items = [];
+        foreach ($details['items'] as $item) {
+            abort_unless($item['available'], 422, 'Товар «'.$item['name'].'» больше недоступен.');
+            abort_unless($item['quantity'] > 0 && $item['stock_quantity'] >= $item['quantity'],
+                422, 'Недостаточно товара «'.$item['name'].'» на складе.');
+            $price = $pricing->priceItemsForEstimate([$item], null, $cart->client)[0]['price'] ?? null;
+            abort_if($price === null, 422, 'Не удалось рассчитать цену товара «'.$item['name'].'».');
+            $items[] = [
+                'product_id' => $item['product_id'],
+                'variant_id' => $item['product_variant_id'],
+                'color_id' => $item['color_id'],
+                'product_name' => $item['name'],
+                'variant_name' => $item['variant_name'],
+                'product_sku' => $item['sku'],
+                'quantity' => $item['quantity'],
+                'price' => $price,
+                'stock_quantity' => $item['stock_quantity'],
+            ];
+        }
+
+        return response()->json(['success' => true, 'data' => [
+            'cart_id' => $cart->id,
+            'customer' => $details['customer'],
+            'items' => $items,
+        ]]);
+    }
+
+    private function loadDetails(Request $request, Cart $cart): void
+    {
+        // Маршруты находятся в общей sanctum-группе; данные других клиентов — только сотрудникам.
+        abort_unless($request->user() instanceof User, 403);
+        abort_unless($cart->client_id, 404);
+        $cart->load([
+            'client.profile',
+            'client.orders' => fn ($q) => $q->latest()->limit(20),
+            'items.product' => fn ($q) => $q->withTrashed()->with(['images' => fn ($images) => $images->orderBy('order')]),
+            'items.productVariant' => fn ($q) => $q->withTrashed()->with(['images' => fn ($images) => $images->orderBy('order')]),
+            'items.color',
+            'communications' => fn ($q) => $q->orderByDesc('id'),
+        ]);
+        $cart->client?->loadCount('orders');
     }
 
 
