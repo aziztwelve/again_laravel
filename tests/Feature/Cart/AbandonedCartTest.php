@@ -244,6 +244,66 @@ class AbandonedCartTest extends TestCase
         $this->assertSame(3, CartCommunication::where('cart_id', $cart->id)->count());
     }
 
+    public function test_identical_browser_sync_does_not_restart_a_running_chain(): void
+    {
+        Queue::fake();
+        $client = $this->client();
+        $cart = $this->cart($client, 'active', now()->subHours(3), [
+            'last_activity_at' => now()->subHours(3),
+            'abandoned_at' => now()->subHours(2), 'recovery_cycle' => 4,
+            'recovery_token' => 'unchanged-token',
+        ]);
+        $activity = $cart->last_activity_at->toDateTimeString();
+        $started = $cart->abandoned_at->toDateTimeString();
+        $item = $cart->items->first();
+        $this->actingAs($client, 'sanctum');
+        $payload = ['items' => [['product_id' => $item->product_id, 'qty' => 1, 'price' => 1990]]];
+        $this->postJson('/api/cart/items/bulk', $payload)->assertOk();
+        $this->postJson('/api/cart/items/bulk', $payload)->assertOk();
+        $cart->refresh();
+        $this->assertSame($activity, $cart->last_activity_at->toDateTimeString());
+        $this->assertSame($started, $cart->abandoned_at->toDateTimeString());
+        $this->assertSame('unchanged-token', $cart->recovery_token);
+        $this->assertSame(4, $cart->recovery_cycle);
+        Queue::assertNothingPushed();
+    }
+
+    public function test_completed_chain_stays_stopped_on_reload_and_new_channels_but_restarts_for_changed_items(): void
+    {
+        Queue::fake();
+        $client = $this->client();
+        $cart = $this->cart($client, 'active', now()->subHours(49), [
+            'last_activity_at' => now()->subHours(49),
+            'abandoned_at' => now()->subHours(48), 'recovery_cycle' => 1,
+        ]);
+        $this->assertSame(3, $this->service()->processChain()['sent']);
+        $item = $cart->items->first();
+        $this->actingAs($client, 'sanctum');
+        $payload = ['items' => [['product_id' => $item->product_id, 'qty' => 1, 'price' => 1990]]];
+        $this->postJson('/api/cart/items/bulk', $payload)->assertOk();
+        $this->postJson('/api/cart/items/bulk', $payload)->assertOk();
+        $this->assertSame(1, Cart::where('client_id', $client->id)->count());
+        $this->assertSame('abandoned', $cart->fresh()->status);
+        $this->assertSame(1, $cart->fresh()->recovery_cycle);
+        // A contact added after step three must not receive the old chain.
+        $client->profile->update(['telegram_chat_id' => '123456789']);
+        $this->travel(7)->days();
+        $this->assertSame(0, $this->service()->markAbandonedCarts());
+        $this->assertSame(0, $this->service()->processChain()['sent']);
+        $this->assertSame(0, $this->service()->processChain()['sent']);
+        Queue::assertPushed(SendNotificationJob::class, 3);
+        $this->assertSame(3, $cart->communications()->count());
+        // A real quantity change is a new shopping attempt on the same cart.
+        $payload['items'][0]['qty'] = 2;
+        $this->postJson('/api/cart/items/bulk', $payload)->assertOk();
+        $this->assertSame('active', $cart->fresh()->status);
+        $this->assertNull($cart->fresh()->abandoned_at);
+        $this->travel(31)->minutes();
+        $this->assertSame(1, $this->service()->markAbandonedCarts());
+        $this->assertSame(2, $cart->fresh()->recovery_cycle);
+        $this->assertSame(1, Cart::where('client_id', $client->id)->count());
+    }
+
     public function test_new_client_receives_first_order_copy(): void
     {
         $client = $this->client(['email' => 'new@example.com']);

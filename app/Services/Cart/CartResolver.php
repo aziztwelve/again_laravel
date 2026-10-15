@@ -27,6 +27,11 @@ class CartResolver
         $client = $this->currentClient();
 
         if ($client) {
+            // Завершение рассылки не очищает корзину покупателя. Повторная
+            // синхронизация должна сохранить её ID и завершённый цикл.
+            if ($cart = $this->resolveActive($request)) {
+                return $cart;
+            }
             $cart = Cart::firstOrCreate(
                 ['client_id' => $client->id, 'status' => 'active'],
                 ['created_at' => now()]
@@ -64,7 +69,8 @@ class CartResolver
         $client = $this->currentClient();
 
         if ($client) {
-            $cart = Cart::where('client_id', $client->id)->where('status', 'active')->first();
+            $cart = Cart::where('client_id', $client->id)->where('status', 'active')->first()
+                ?? Cart::where('client_id', $client->id)->where('status', 'abandoned')->latest('id')->first();
         } else {
             $token = $this->readGuestToken($request);
             $cart = $token

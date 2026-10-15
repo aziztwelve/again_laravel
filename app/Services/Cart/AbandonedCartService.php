@@ -84,6 +84,12 @@ class AbandonedCartService
             ->get();
 
         foreach ($carts as $cart) {
+            // Третий шаг завершает цикл целиком, включая каналы, добавленные
+            // клиентом позже. Уже поставленные в очередь задания обработает воркер.
+            if ($cart->communications->contains(fn ($comm) => $comm->type === 'trigger'
+                && (int) $comm->cycle === (int) $cart->recovery_cycle && (int) $comm->step === 3)) {
+                continue;
+            }
             foreach ($steps as $step) {
                 $stepNum = (int) $step['step'];
                 $offsetMinutes = array_key_exists('after_minutes', $step)

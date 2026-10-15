@@ -86,6 +86,17 @@ class CartDetailsTest extends TestCase
         $this->assertSame('abandoned', $cart->fresh()->status);
     }
 
+    public function test_cart_images_use_the_existing_product_thumbnail_endpoint(): void
+    {
+        $cart = $this->makeCart();
+        $cart->items->first()->product->images()->create(['path' => 'cart-photo.webp', 'is_main' => 1]);
+        $this->staff();
+        $url = url('/api/product/image/sm_cart-photo.webp');
+        $this->getJson("/api/carts/{$cart->id}")->assertOk()->assertJsonPath('data.items.0.image_url', $url);
+        $this->getJson('/api/carts/products?search=Товар для карточки')->assertOk()
+            ->assertJsonPath('data.data.0.image_url', $url);
+    }
+
     public function test_client_cannot_read_another_clients_cart_or_draft(): void
     {
         $cart = $this->makeCart();

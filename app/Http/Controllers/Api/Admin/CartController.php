@@ -282,7 +282,7 @@ class CartController extends Controller
                 'color_id' => $item->color_id, 'color' => $colors->get($item->color_id),
                 'name' => $product?->name ?? 'Удалённый товар', 'variant_name' => $variant?->name,
                 'sku' => $variant?->sku ?? $product?->sku,
-                'image_url' => $image?->path ? url(\Illuminate\Support\Facades\Storage::url($image->path)) : null,
+                'image_url' => $image?->path ? url('/api/product/image/sm_'.rawurlencode($image->path)) : null,
                 'quantity' => (int) $item->quantity, 'total' => (float) $item->total,
             ];
         });
@@ -612,6 +612,8 @@ class CartController extends Controller
             return;
         }
 
+        $compositionChanged = false;
+
         if ($delete_others) {
             $keysToKeep = collect($found_items)->map(function ($item) {
                 return [
@@ -620,7 +622,7 @@ class CartController extends Controller
                 ];
             });
 
-            $cart->items()->whereNot(function ($query) use ($keysToKeep) {
+            $deleted = $cart->items()->whereNot(function ($query) use ($keysToKeep) {
                 foreach ($keysToKeep as $index => $key) {
                     $method = $index === 0 ? 'where' : 'orWhere';
                     $query->{$method}(function ($subQuery) use ($key) {
@@ -635,6 +637,7 @@ class CartController extends Controller
                     });
                 }
             })->delete();
+            $compositionChanged = $deleted > 0;
         }
 
         foreach ($found_items as $item) {
@@ -665,7 +668,7 @@ class CartController extends Controller
 
             $finalPrice = $originalPrice - $discountValue;
 
-            $cart->items()->updateOrCreate(
+            $savedItem = $cart->items()->updateOrCreate(
                 [
                     'product_id' => $item['product_id'],
                     'product_variant_id' => $item['product_variant_id'] ?? null
@@ -680,14 +683,21 @@ class CartController extends Controller
                     'total_original' => $originalPrice * $item['qty'],
                 ]
             );
+            $compositionChanged = $compositionChanged || $savedItem->wasRecentlyCreated
+                || $savedItem->wasChanged(['quantity', 'color_id']);
         }
 
-        $cart->update([
+        $totals = [
             'total' => $cart->items()->sum('total'),
             'total_original' => $cart->items()->sum('total_original'),
             'total_discount' => $cart->items()->sum('total_discount'),
-            // Новый или изменённый товар начинает 30-минутный период заново.
-            'last_activity_at' => now(),
-        ]);
+        ];
+        // Гидрация/перезагрузка страницы зеркалит тот же состав. Это не новая
+        // покупательская активность и не повод запускать рассылку заново.
+        if ($compositionChanged) {
+            $totals['last_activity_at'] = now();
+            $totals['updated_at'] = now();
+        }
+        $cart->update($totals);
     }
 }

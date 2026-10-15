@@ -5,7 +5,6 @@ namespace App\Http\Resources;
 use App\Models\CartItem;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Facades\Storage;
 
 class CartDetailsResource extends JsonResource
 {
@@ -55,7 +54,7 @@ class CartDetailsResource extends JsonResource
                     'variant_name' => $variant?->name,
                     'sku' => $variant?->sku ?? $product?->sku,
                     'color' => $item->color?->name,
-                    'image_url' => $image?->path ? url(Storage::url($image->path)) : null,
+                    'image_url' => $image?->path ? url('/api/product/image/sm_'.rawurlencode($image->path)) : null,
                     'quantity' => (int) $item->quantity,
                     'price' => (float) $item->price,
                     'price_original' => (float) $item->price_original,
