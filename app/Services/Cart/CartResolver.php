@@ -69,8 +69,12 @@ class CartResolver
         $client = $this->currentClient();
 
         if ($client) {
-            $cart = Cart::where('client_id', $client->id)->where('status', 'active')->first()
-                ?? Cart::where('client_id', $client->id)->where('status', 'abandoned')->latest('id')->first();
+            $cart = Cart::where('client_id', $client->id)->where('status', 'active')->first();
+            if (! $cart) {
+                $latest = Cart::where('client_id', $client->id)->latest('id')->first();
+                // После нового оформленного заказа старые корзины не возвращаем.
+                $cart = $latest?->status === 'abandoned' ? $latest : null;
+            }
         } else {
             $token = $this->readGuestToken($request);
             $cart = $token

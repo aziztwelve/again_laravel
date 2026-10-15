@@ -268,6 +268,22 @@ class AbandonedCartTest extends TestCase
         Queue::assertNothingPushed();
     }
 
+    public function test_sync_after_an_order_does_not_resurrect_an_older_abandoned_cart(): void
+    {
+        Queue::fake();
+        $client = $this->client();
+        $old = $this->cart($client, 'abandoned', now()->subDays(5));
+        $this->cart($client, 'ordered', now()->subDay());
+        $this->actingAs($client, 'sanctum');
+        $this->postJson('/api/cart/items/bulk', ['items' => [[
+            'product_id' => $old->items->first()->product_id, 'qty' => 1, 'price' => 1990,
+        ]]])->assertOk();
+        $this->assertSame('abandoned', $old->fresh()->status);
+        $this->assertSame(3, Cart::where('client_id', $client->id)->count());
+        $this->assertNotSame($old->id, Cart::where('client_id', $client->id)->where('status', 'active')->firstOrFail()->id);
+        Queue::assertNothingPushed();
+    }
+
     public function test_completed_chain_stays_stopped_on_reload_and_new_channels_but_restarts_for_changed_items(): void
     {
         Queue::fake();
