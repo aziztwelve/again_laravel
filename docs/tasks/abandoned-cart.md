@@ -102,8 +102,11 @@ php artisan test --filter AbandonedCartTest
 
 ### Исправление после серверного просмотра — 15 октября 2026
 
-Подготовлено и запушено в `a17bc22`, отдельная выкладка и runtime-тесты
-исправления пока не выполнены.
+Исправления `a17bc22` и `eb450d3` выложены по отдельной команде пользователя.
+Обе frontend-сборки повторно выполнены на сервере; процессы перезапущены.
+`CartDetailsTest|AbandonedCartTest|UniversalCartTest`: **65 passed, 291 assertions**.
+В браузере у корзины #64 подтверждена загрузка миниатюры (naturalWidth=128),
+сохранён снимок `/tmp/again-cart-photo-fixed.jpg`; `/up`, админка и фото → HTTP 200.
 
 - Фото деталей и сводки теперь используют существующий endpoint
   `/api/product/image/sm_{path}`. Прямые `/storage/{path}` возвращали 404:
