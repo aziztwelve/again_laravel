@@ -125,7 +125,7 @@ class CartDetailsTest extends TestCase
         $cart->update(['status' => 'active']);
         $cart->items()->delete();
         $this->postJson("/api/carts/{$cart->id}/recovery-link")->assertStatus(422);
-        $guest = Cart::create(['status' => 'active', 'guest_token' => bin2hex(random_bytes(16))]);
+        $guest = Cart::create(['status' => 'active', 'created_at' => now(), 'guest_token' => bin2hex(random_bytes(16))]);
         $this->postJson("/api/carts/{$guest->id}/recovery-link")->assertNotFound();
         Queue::assertNothingPushed();
     }
