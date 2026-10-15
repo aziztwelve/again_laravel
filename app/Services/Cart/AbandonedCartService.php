@@ -491,7 +491,7 @@ class AbandonedCartService
         return implode("\n", $lines);
     }
 
-    protected function recoveryUrl(Cart $cart, ?int $communicationId = null): string
+    public function recoveryUrl(Cart $cart, ?int $communicationId = null): string
     {
         $base = rtrim((string) config('abandoned_cart.recovery_url'), '/');
 

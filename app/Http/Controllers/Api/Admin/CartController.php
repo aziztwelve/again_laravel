@@ -185,6 +185,22 @@ class CartController extends Controller
         )]);
     }
 
+    /** Открыть клиентское оформление без отправки уведомления. */
+    public function recoveryLink(Request $request, Cart $cart)
+    {
+        $this->loadDetails($request, $cart);
+        return DB::transaction(function () use ($cart) {
+            $locked = Cart::lockForUpdate()->findOrFail($cart->id);
+            abort_unless(in_array($locked->status, ['active', 'abandoned'], true)
+                && $locked->items()->exists(), 422, 'Эта корзина уже оформлена или пуста.');
+
+            return response()->json(['success' => true, 'data' => [
+                // Без communication: просмотр менеджером не атрибутируем письму.
+                'url' => $this->abandonedCartService->recoveryUrl($locked),
+            ]]);
+        });
+    }
+
     /** Подготовить форму менеджера, не создавая заказ и не меняя корзину. */
     public function orderDraft(Request $request, Cart $cart, OrderValidationService $pricing)
     {

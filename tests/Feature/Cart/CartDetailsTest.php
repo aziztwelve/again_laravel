@@ -97,6 +97,39 @@ class CartDetailsTest extends TestCase
             ->assertJsonPath('data.data.0.image_url', $url);
     }
 
+    public function test_staff_can_open_the_client_recovery_link_without_sending_or_creating_an_order(): void
+    {
+        $cart = $this->makeCart();
+        $cart->update(['recovery_token' => null]);
+        $before = $cart->fresh()->only(['status', 'abandoned_at', 'last_activity_at', 'recovery_cycle']);
+        $orders = Order::count();
+        $this->staff();
+        $url = $this->postJson("/api/carts/{$cart->id}/recovery-link")->assertOk()->json('data.url');
+        $token = $cart->fresh()->recovery_token;
+        $this->assertNotEmpty($token);
+        $this->assertSame(rtrim(config('abandoned_cart.recovery_url'), '/').'/'.$token, $url);
+        $this->assertStringNotContainsString('communication=', $url);
+        $this->postJson("/api/carts/{$cart->id}/recovery-link")->assertOk()->assertJsonPath('data.url', $url);
+        $this->assertEquals($before, $cart->fresh()->only(array_keys($before)));
+        $this->assertSame($orders, Order::count());
+        $this->assertSame(0, $cart->communications()->count());
+        Queue::assertNothingPushed();
+    }
+
+    public function test_recovery_link_rejects_ordered_empty_and_guest_carts(): void
+    {
+        $cart = $this->makeCart();
+        $this->staff();
+        $cart->update(['status' => 'ordered']);
+        $this->postJson("/api/carts/{$cart->id}/recovery-link")->assertStatus(422);
+        $cart->update(['status' => 'active']);
+        $cart->items()->delete();
+        $this->postJson("/api/carts/{$cart->id}/recovery-link")->assertStatus(422);
+        $guest = Cart::create(['status' => 'active', 'guest_token' => bin2hex(random_bytes(16))]);
+        $this->postJson("/api/carts/{$guest->id}/recovery-link")->assertNotFound();
+        Queue::assertNothingPushed();
+    }
+
     public function test_client_cannot_read_another_clients_cart_or_draft(): void
     {
         $cart = $this->makeCart();
@@ -104,6 +137,7 @@ class CartDetailsTest extends TestCase
         $this->actingAs($otherClient, 'sanctum');
         $this->getJson("/api/carts/{$cart->id}")->assertForbidden();
         $this->getJson("/api/carts/{$cart->id}/order-draft")->assertForbidden();
+        $this->postJson("/api/carts/{$cart->id}/recovery-link")->assertForbidden();
         $this->postJson("/api/carts/{$cart->id}/remind", ['channel' => 'email', 'message' => 'Привет'])->assertForbidden();
         $this->postJson("/api/carts/{$cart->id}/remind")->assertForbidden();
         $this->getJson('/api/carts/settings')->assertForbidden();
