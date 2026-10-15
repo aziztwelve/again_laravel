@@ -30,6 +30,24 @@ class SendNotificationJob implements ShouldQueue
         NotificationService $notificationService,
         NotificationConversationMirrorService $mirrorService
     ): void {
+        if (($this->data['type'] ?? null) === 'abandoned_cart') {
+            $communication = CartCommunication::find($this->data['cart_communication_id'] ?? 0);
+            if ($communication && in_array($communication->status, ['sent', 'skipped'], true)) {
+                return;
+            }
+            $cart = $communication?->cart;
+            $automatic = $communication?->type === 'trigger';
+            $settings = app(\App\Services\Cart\CartRecoverySettings::class)->read();
+            if (! $communication || ! $cart || ! $cart->client_id
+                || (! ($this->data['cart_personal_message'] ?? false) && ($cart->status === 'ordered' || ! $cart->items()->exists()))
+                || ($automatic && (! $cart->items()->exists() || ! $cart->abandoned_at
+                    || (int) $communication->cycle !== (int) $cart->recovery_cycle
+                    || ! config('abandoned_cart.enabled', true) || ! $settings['enabled']
+                    || ! ($settings['channels'][$this->channel] ?? false)))) {
+                $this->updateCartCommunication('skipped');
+                return;
+            }
+        }
         if (($this->data['type'] ?? null) === 'abandoned_order'
             && ! app(\App\Services\Notifications\AbandonedOrderService::class)
                 ->isEligible(\App\Models\Order::find($this->data['order_id'] ?? 0))) {

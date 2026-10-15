@@ -23,6 +23,8 @@ class AbandonedCartTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config(['abandoned_cart.enabled' => true]);
+        \App\Models\Setting::where('key', 'abandoned_cart_settings')->delete();
 
         // Заглушка mail_settings — без неё падает резолв ConversationService.
         \App\Models\MailSetting::create([

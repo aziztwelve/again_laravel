@@ -15,6 +15,7 @@ use App\Services\Promotion\PromotionService;
 use Exception;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 class OrderCreationService
 {
@@ -33,6 +34,18 @@ class OrderCreationService
      */
     public function createOrder(array $orderData, ?int $clientId = null, ?string $recoveryCartToken = null): Order
     {
+        $selectedCart = null;
+        if (! empty($orderData['cart_id'])) {
+            // Под общей транзакцией создания заказа блокируем выбранную корзину:
+            // повторное сохранение формы не оформляет её второй раз.
+            $selectedCart = Cart::query()->whereKey($orderData['cart_id'])->lockForUpdate()->first();
+            if (! $selectedCart || ! $selectedCart->client_id
+                || (int) $selectedCart->client_id !== (int) ($orderData['client_id'] ?? $clientId)
+                || ! in_array($selectedCart->status, ['active', 'abandoned'], true)
+                || ! $selectedCart->items()->exists()) {
+                throw ValidationException::withMessages(['cart_id' => 'Корзина уже оформлена, пуста или принадлежит другому клиенту.']);
+            }
+        }
         $deliveryAddress = $orderData['delivery_address'] ?? [];
         $userData = $orderData['user'] ?? [];
         $recipient = $orderData['recipient'] ?? [];
@@ -140,7 +153,12 @@ class OrderCreationService
         // docs/tasks/guest-client-auto-create.md). Поэтому сначала пробуем найти
         // корзину по client_id, а если её нет — по guest_token.
         $cartLinked = false;
-        if ($recoveryCartToken) {
+        if ($selectedCart) {
+            $selectedCart->update(['status' => 'ordered', 'ordered_at' => now(), 'updated_at' => now()]);
+            $order->forceFill(['cart_id' => $selectedCart->id])->save();
+            $cartLinked = true;
+        }
+        if (! $cartLinked && $recoveryCartToken) {
             $cartLinked = $this->linkRecoveryCartToOrder($order, $recoveryCartToken);
         }
         if ($resolvedClientId) {

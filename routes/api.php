@@ -801,6 +801,12 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::prefix('/carts')->group(function () {
         Route::get('/', [CartController::class, 'carts']);
         Route::get('/analytics', [CartAnalyticsController::class, 'cartAnalytics']);
+        Route::get('/settings', [\App\Http\Controllers\Api\Admin\CartRecoveryController::class, 'settings']);
+        Route::put('/settings', [\App\Http\Controllers\Api\Admin\CartRecoveryController::class, 'update']);
+        Route::post('/preview', [\App\Http\Controllers\Api\Admin\CartRecoveryController::class, 'preview']);
+        Route::get('/products', [CartController::class, 'products']);
+        Route::get('/{cart}/order-draft', [CartController::class, 'orderDraft'])->whereNumber('cart');
+        Route::get('/{cart}', [CartController::class, 'show'])->whereNumber('cart');
         // Ручная отправка напоминания (шаг F). См. docs/tasks/abandoned-cart.md.
         Route::post('/{cart}/remind', [CartController::class, 'remind']);
     });

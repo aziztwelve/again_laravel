@@ -4,11 +4,15 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ImageResource;
+use App\Http\Resources\CartDetailsResource;
 use App\Models\Cart;
+use App\Models\CartItem;
 use App\Models\Color;
 use App\Models\Discount;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Models\User;
+use App\Services\Order\OrderValidationService;
 use App\Services\Cart\CartResolver;
 use App\Services\Cart\AbandonedCartService;
 use App\Traits\ProductsTrait;
@@ -28,7 +32,7 @@ class CartController extends Controller
     public function carts(Request $request)
     {
         $request->validate([
-            'status' => 'nullable|in:abandoned,ordered',
+            'status' => 'nullable|in:active,abandoned,ordered',
             'date_from' => 'nullable|date',
             'date_to' => 'nullable|date|after_or_equal:date_from',
             'search' => 'nullable|string|max:255',
@@ -118,11 +122,31 @@ class CartController extends Controller
      */
     public function remind(Request $request, Cart $cart)
     {
+        $actor = $request->user();
+        abort_unless($actor instanceof User || ($actor instanceof \App\Models\Client && (int) $actor->id === (int) $cart->client_id), 403);
         $validated = $request->validate([
-            'channel' => 'nullable|in:email,telegram,whatsapp,vk',
+            'channel' => 'nullable|in:email,telegram,max,vk',
+            'message' => 'nullable|string|min:1|max:50000',
+            'subject' => 'nullable|string|max:255',
+            'format' => 'nullable|in:text,html',
+            'step' => 'nullable|integer|in:1,2,3',
+            'personal_message' => 'nullable|boolean',
         ]);
 
-        $result = $this->abandonedCartService->sendManual($cart, $validated['channel'] ?? null);
+        $customMessage = null;
+        if (isset($validated['message']) && $validated['message'] !== '') {
+            $this->loadDetails($request, $cart);
+            $request->validate(['channel' => 'required|in:email,telegram,max,vk']);
+            if (($validated['channel'] ?? null) === 'email') {
+                $request->validate(['subject' => 'required|string|max:255']);
+            }
+            $customMessage = [
+                'subject' => $validated['subject'] ?? 'Сообщение о вашей корзине',
+                'body' => $validated['message'],
+                'format' => ($validated['channel'] ?? null) === 'email' ? ($validated['format'] ?? 'text') : 'text',
+            ];
+        }
+        $result = $this->abandonedCartService->sendManual($cart, $validated['channel'] ?? null, $customMessage, (int) ($validated['step'] ?? 1), $request->boolean('personal_message', $customMessage !== null));
 
         if (! ($result['ok'] ?? false)) {
             $messages = [
@@ -141,7 +165,7 @@ class CartController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Напоминание отправлено.',
+            'message' => $customMessage ? 'Сообщение поставлено в очередь отправки.' : 'Напоминание поставлено в очередь отправки.',
             'communication' => [
                 'channel' => $comm->channel,
                 'type' => $comm->type,
@@ -149,6 +173,120 @@ class CartController extends Controller
                 'sent_at' => $comm->sent_at,
             ],
         ]);
+    }
+
+    public function show(Request $request, Cart $cart)
+    {
+        $this->loadDetails($request, $cart);
+
+        return response()->json(['success' => true, 'data' => array_merge(
+            (new CartDetailsResource($cart))->toArray($request),
+            ['available_channels' => array_column($this->abandonedCartService->resolveChannels($cart), 'channel')],
+        )]);
+    }
+
+    /** Подготовить форму менеджера, не создавая заказ и не меняя корзину. */
+    public function orderDraft(Request $request, Cart $cart, OrderValidationService $pricing)
+    {
+        $this->loadDetails($request, $cart);
+        abort_unless($cart->client && in_array($cart->status, ['active', 'abandoned'], true)
+            && $cart->items->isNotEmpty(), 422, 'Эта корзина уже оформлена или пуста.');
+
+        $details = (new CartDetailsResource($cart))->toArray($request);
+        $items = [];
+        foreach ($details['items'] as $item) {
+            abort_unless($item['available'], 422, 'Товар «'.$item['name'].'» больше недоступен.');
+            abort_unless($item['quantity'] > 0 && $item['stock_quantity'] >= $item['quantity'],
+                422, 'Недостаточно товара «'.$item['name'].'» на складе.');
+            $price = $pricing->priceItemsForEstimate([$item], null, $cart->client)[0]['price'] ?? null;
+            abort_if($price === null, 422, 'Не удалось рассчитать цену товара «'.$item['name'].'».');
+            $items[] = [
+                'product_id' => $item['product_id'],
+                'variant_id' => $item['product_variant_id'],
+                'color_id' => $item['color_id'],
+                'product_name' => $item['name'],
+                'variant_name' => $item['variant_name'],
+                'product_sku' => $item['sku'],
+                'quantity' => $item['quantity'],
+                'price' => $price,
+                'stock_quantity' => $item['stock_quantity'],
+            ];
+        }
+
+        return response()->json(['success' => true, 'data' => [
+            'cart_id' => $cart->id,
+            'customer' => $details['customer'],
+            'items' => $items,
+        ]]);
+    }
+
+    private function loadDetails(Request $request, Cart $cart): void
+    {
+        // Маршруты находятся в общей sanctum-группе; данные других клиентов — только сотрудникам.
+        abort_unless($request->user() instanceof User, 403);
+        abort_unless($cart->client_id, 404);
+        $cart->load([
+            'client.profile',
+            'order',
+            'client.orders' => fn ($q) => $q->latest()->limit(20),
+            'items.product' => fn ($q) => $q->withTrashed()->with(['images' => fn ($images) => $images->orderBy('order')]),
+            'items.productVariant' => fn ($q) => $q->withTrashed()->with(['images' => fn ($images) => $images->orderBy('order')]),
+            'items.color',
+            'communications' => fn ($q) => $q->orderByDesc('id'),
+        ]);
+        $cart->client?->loadCount('orders');
+    }
+
+    public function products(Request $request)
+    {
+        abort_unless($request->user() instanceof User, 403);
+        $request->validate([
+            'date_from' => 'nullable|date', 'date_to' => 'nullable|date|after_or_equal:date_from',
+            'status' => 'nullable|in:active,abandoned,ordered',
+            'search' => 'nullable|string|max:255', 'cart_search' => 'nullable|string|max:255',
+            'per_page' => 'nullable|integer|min:1|max:100',
+        ]);
+        $carts = Cart::query()->select('id')->whereNotNull('client_id')
+            ->when($request->filled('status'), fn ($q) => $q->where('status', $request->status))
+            ->when($request->filled('date_from'), fn ($q) => $q->whereDate('updated_at', '>=', $request->date_from))
+            ->when($request->filled('date_to'), fn ($q) => $q->whereDate('updated_at', '<=', $request->date_to))
+            ->when($request->filled('cart_search'), function ($q) use ($request) {
+                $search = $request->string('cart_search')->trim()->toString();
+                $q->where(function ($sub) use ($search) {
+                    if (ctype_digit($search)) $sub->orWhere('id', (int) $search);
+                    $sub->orWhereHas('client', fn ($c) => $c->where('email', 'like', "%{$search}%"))
+                        ->orWhereHas('client.profile', fn ($p) => $p->where('phone', 'like', "%{$search}%")
+                            ->orWhere('first_name', 'like', "%{$search}%")->orWhere('last_name', 'like', "%{$search}%"));
+                });
+            });
+        $items = CartItem::query()->whereIn('cart_id', $carts)
+            ->when($request->filled('search'), function ($q) use ($request) {
+                $search = trim($request->query('search'));
+                $q->where(fn ($sub) => $sub->whereHas('product', fn ($p) => $p->withTrashed()->where(fn ($p) => $p->where('name', 'like', "%{$search}%")->orWhere('sku', 'like', "%{$search}%")))
+                    ->orWhereHas('productVariant', fn ($v) => $v->withTrashed()->where(fn ($v) => $v->where('name', 'like', "%{$search}%")->orWhere('sku', 'like', "%{$search}%"))));
+            })
+            ->select(['product_id', 'product_variant_id', 'color_id'])
+            ->selectRaw('SUM(quantity) AS quantity, SUM(total) AS total')
+            ->groupBy('product_id', 'product_variant_id', 'color_id')
+            ->orderBy('product_id')->orderBy('product_variant_id')->orderBy('color_id')
+            ->paginate($request->integer('per_page', 20));
+        $products = Product::withTrashed()->with('images')->whereIn('id', $items->getCollection()->pluck('product_id'))->get()->keyBy('id');
+        $variants = ProductVariant::withTrashed()->with('images')->whereIn('id', $items->getCollection()->pluck('product_variant_id')->filter())->get()->keyBy('id');
+        $colors = Color::whereIn('id', $items->getCollection()->pluck('color_id')->filter())->pluck('name', 'id');
+        $items->through(function ($item) use ($products, $variants, $colors) {
+            $product = $products->get($item->product_id);
+            $variant = $variants->get($item->product_variant_id);
+            $image = $variant?->images->first() ?? $product?->images->first();
+            return [
+                'product_id' => $item->product_id, 'product_variant_id' => $item->product_variant_id,
+                'color_id' => $item->color_id, 'color' => $colors->get($item->color_id),
+                'name' => $product?->name ?? 'Удалённый товар', 'variant_name' => $variant?->name,
+                'sku' => $variant?->sku ?? $product?->sku,
+                'image_url' => $image?->path ? url(\Illuminate\Support\Facades\Storage::url($image->path)) : null,
+                'quantity' => (int) $item->quantity, 'total' => (float) $item->total,
+            ];
+        });
+        return response()->json(['data' => $items]);
     }
 
 

@@ -15,7 +15,11 @@ use App\Services\Notifications\Jobs\SendNotificationJob;
  */
 class AbandonedCartService
 {
-    public function __construct(protected CustomerChannelResolver $customerChannelResolver) {}
+    public function __construct(
+        protected CustomerChannelResolver $customerChannelResolver,
+        protected CartRecoverySettings $settings,
+        protected CartMessageRenderer $renderer,
+    ) {}
 
     /**
      * Начать цепочку для активных корзин, если последняя активность была раньше
@@ -27,6 +31,9 @@ class AbandonedCartService
      */
     public function markAbandonedCarts(): int
     {
+        if (! config('abandoned_cart.enabled', true) || ! $this->settings->read()['enabled']) {
+            return 0;
+        }
         $minutes = (int) config('abandoned_cart.abandon_after_minutes', 30);
         $threshold = now()->subMinutes($minutes);
 
@@ -60,6 +67,9 @@ class AbandonedCartService
      */
     public function processChain(): array
     {
+        if (! config('abandoned_cart.enabled', true) || ! $this->settings->read()['enabled']) {
+            return ['sent' => 0, 'skipped' => 0];
+        }
         $steps = config('abandoned_cart.steps', []);
         $now = now();
         $sent = 0;
@@ -86,7 +96,8 @@ class AbandonedCartService
                     continue;
                 }
 
-                $recipients = $this->resolveChannels($cart);
+                $channelSettings = $this->settings->read()['channels'];
+                $recipients = array_values(array_filter($this->resolveChannels($cart), fn ($recipient) => $channelSettings[$recipient['channel']] ?? false));
                 if ($recipients === []) {
                     $skipped++;
 
@@ -114,7 +125,8 @@ class AbandonedCartService
                         $thirdStepQueued = $thirdStepQueued || $stepNum === 3;
                         continue;
                     }
-                    $message = $this->buildMessage($cart, $stepNum, $promoCode, $comm->id);
+                    $message = $this->buildMessage($cart, $stepNum, $promoCode, $comm->id, $recipient['channel']);
+                    $comm->update(['subject' => $message['subject'], 'body' => $message['body'], 'html' => $message['html'] ?? null]);
 
                     SendNotificationJob::dispatch(
                         $recipient['channel'],
@@ -179,10 +191,11 @@ class AbandonedCartService
      *
      * @return array{ok:bool, reason?:string, communication?:CartCommunication}
      */
-    public function sendManual(Cart $cart, ?string $channel = null): array
+    public function sendManual(Cart $cart, ?string $channel = null, ?array $customMessage = null, int $step = 1, bool $personal = false): array
     {
-        // Нельзя слать гостю, по оформленной или пустой корзине.
-        if (! $cart->client_id || $cart->status === 'ordered' || ! $cart->items()->exists()) {
+        $personal = $personal && $customMessage !== null;
+        // Напоминания — только непустой неоформленной корзине; личное письмо — клиенту также после заказа.
+        if (! $cart->client_id || (! $personal && ($cart->status === 'ordered' || ! $cart->items()->exists()))) {
             return ['ok' => false, 'reason' => 'not_eligible'];
         }
 
@@ -223,13 +236,18 @@ class AbandonedCartService
                 'status' => 'queued',
             ]);
             $communications[] = $comm;
-            $message = $this->buildMessage($cart, 1, null, $comm->id);
+            $message = $customMessage
+                ? $this->renderer->render($cart, $customMessage, $this->recoveryUrl($cart, $comm->id))
+                : $this->buildMessage($cart, $step, null, $comm->id, $recipient['channel']);
+            $comm->update(['subject' => $message['subject'], 'body' => $message['body'], 'html' => $message['html'] ?? null]);
+            $data = $this->notificationData($cart, $step, $recipient, $message, $comm);
+            $data['cart_personal_message'] = $personal;
 
             SendNotificationJob::dispatch(
                 $recipient['channel'],
                 $recipient['recipient_id'],
                 $message['body'],
-                $this->notificationData($cart, 1, $recipient, $message, $comm)
+                $data
             );
         }
 
@@ -260,15 +278,31 @@ class AbandonedCartService
      * @param  string|null  $promoCode  Промокод-стимул (шаг 2, фаза 2), если выдан.
      * @return array{subject:string, body:string}
      */
-    public function buildMessage(Cart $cart, int $step, ?string $promoCode = null, ?int $communicationId = null): array
+    public function buildMessage(Cart $cart, int $step, ?string $promoCode = null, ?int $communicationId = null, string $channel = 'email', bool $preview = false, ?array $override = null, ?string $audience = null, bool $useDefault = false): array
     {
-        $link = $this->recoveryUrl($cart, $communicationId);
+        $link = $preview ? rtrim((string) config('abandoned_cart.recovery_url'), '/').'/preview' : $this->recoveryUrl($cart, $communicationId);
+        $audience ??= $cart->client?->orders()->exists() ? 'returning' : 'new';
+        $template = $useDefault ? null : ($override ?? $this->settings->template($audience, $step, $channel));
+        if ($template) {
+            return $this->renderer->render($cart, $template, $link) + ['editable_template' => [
+                'subject' => $template['subject'] ?? '', 'body' => $template['body'], 'format' => $template['format'] ?? 'text',
+            ]];
+        }
         $itemsBlock = $this->itemsBlock($cart);
-        $copy = $this->funnelCopy($cart, $step);
+        $copy = $this->funnelCopy($cart, $step, $audience);
+        $namePrefix = $this->firstName($cart);
+        $editableText = $namePrefix !== '' ? substr($copy['text'], strlen($namePrefix)) : $copy['text'];
+        $editableSubject = $namePrefix !== '' && str_starts_with($copy['subject'], $namePrefix)
+            ? '{{client.name}}, '.substr($copy['subject'], strlen($namePrefix)) : $copy['subject'];
         $body = $copy['text']."\n\n👉 {$copy['cta']}: {$link}\n\n"
             ."Состав корзины:\n{$itemsBlock}\n\nСумма: ".NumberHelper::formatRussian($cart->total, 0).' ₽';
 
         return [
+            'editable_template' => [
+                'subject' => $editableSubject,
+                'body' => '{{client.name}}, '.$editableText."\n\n".$copy['cta'].": {{cart.url}}\n\nСостав корзины:\n{{cart.items}}\n\nСумма: {{cart.total}}",
+                'format' => 'text',
+            ],
             'subject' => $copy['subject'],
             'body' => $body,
             'html' => view('emails.abandoned-cart', [
@@ -285,10 +319,10 @@ class AbandonedCartService
     }
 
     /** @return array{subject:string,headline:string,text:string,cta:string} */
-    private function funnelCopy(Cart $cart, int $step): array
+    private function funnelCopy(Cart $cart, int $step, ?string $audience = null): array
     {
         $name = $this->firstName($cart);
-        $returning = $cart->client?->orders()->exists() ?? false;
+        $returning = $audience ? $audience === 'returning' : ($cart->client?->orders()->exists() ?? false);
 
         if ($returning) {
             return match ($step) {
