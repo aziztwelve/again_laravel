@@ -110,7 +110,6 @@ class ClientController extends Controller
                     'address' => $client?->profile?->address,
                     'bonus_balance' => $client->bonus_balance,
                     'subscribed_to_newsletter' => (bool) $client->subscribed_to_newsletter,
-                    'subscribed_to_whatsapp' => (bool) $client->subscribed_to_whatsapp,
                     'personal_data_consent' => (bool) $client->personal_data_consent,
                     'privacy_policy_accepted' => (bool) $client->privacy_policy_accepted,
                     'oferta_accepted' => (bool) $client->oferta_accepted,
@@ -227,7 +226,6 @@ class ClientController extends Controller
 
                 $client->update([
                     'messenger_subscription' => (bool) ($validated['messenger_subscription'] ?? false),
-                    'subscribed_to_whatsapp' => (bool) ($validated['subscribed_to_whatsapp'] ?? false),
                     'rfm_segment' => $validated['rfm_segment'] ?? null,
                     'group_name' => $validated['group_name'] ?? null,
                 ]);
@@ -294,7 +292,6 @@ class ClientController extends Controller
                 $clientData = [
                     'email' => $validated['email'],
                     'messenger_subscription' => (bool) ($validated['messenger_subscription'] ?? $client->messenger_subscription),
-                    'subscribed_to_whatsapp' => (bool) ($validated['subscribed_to_whatsapp'] ?? $client->subscribed_to_whatsapp),
                 ];
 
                 foreach (['rfm_segment', 'group_name'] as $field) {

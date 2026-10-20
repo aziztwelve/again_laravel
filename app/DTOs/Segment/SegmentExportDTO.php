@@ -9,7 +9,7 @@ class SegmentExportDTO
         'birthday'=>'Дата рождения', 'address'=>'Адрес', 'registered_at'=>'Дата регистрации',
         'orders_count'=>'Количество покупок', 'total_amount'=>'Сумма покупок', 'average_check'=>'Средний чек',
         'segment_name'=>'Сегмент', 'membership_source'=>'Добавление', 'added_to_segment_at'=>'Дата добавления',
-        'subscribed_to_newsletter'=>'Подписка Email', 'subscribed_to_whatsapp'=>'Подписка WhatsApp',
+        'subscribed_to_newsletter'=>'Подписка Email',
         'personal_data_consent'=>'Согласие ПДн', 'tags'=>'Теги',
     ];
     public const DEFAULT_COLUMNS = ['id','full_name','phone','email','birthday','address','average_check','total_amount','orders_count'];
@@ -29,7 +29,6 @@ class SegmentExportDTO
         $channel = $data['channel'] ?? 'all';
         $defaults = match ($channel) {
             'email' => ['id','full_name','email'],
-            'whatsapp' => ['id','full_name','phone'],
             default => self::DEFAULT_COLUMNS,
         };
         return new self($segmentId, $data['columns'] ?? $defaults, $channel, $data['origin'] ?? 'all',

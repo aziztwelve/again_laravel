@@ -14,11 +14,11 @@ class ExportSegmentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'channel'=>['sometimes', Rule::in(['all','email','whatsapp'])],
+            'channel'=>['sometimes', Rule::in(['all','email'])],
             'origin'=>['sometimes', Rule::in(['all','manual','auto'])],
             'consent_only'=>'sometimes|boolean', 'deduplicate'=>'sometimes|boolean',
             'delimiter'=>['sometimes', Rule::in([';', ','])],
-            'columns'=>'sometimes|array|min:1|max:17',
+            'columns'=>'sometimes|array|min:1|max:16',
             'columns.*'=>['required','string','distinct',Rule::in(array_keys(SegmentExportDTO::HEADERS))],
         ];
     }
@@ -26,7 +26,7 @@ class ExportSegmentRequest extends FormRequest
     public function withValidator($validator): void
     {
         $validator->after(function ($validator) {
-            $contact = match ($this->input('channel')) { 'email'=>'email', 'whatsapp'=>'phone', default=>null };
+            $contact = match ($this->input('channel')) { 'email'=>'email', default=>null };
             if ($contact && $this->has('columns') && is_array($this->input('columns')) && !in_array($contact,$this->input('columns'))) {
                 $validator->errors()->add('columns', 'Для выбранного канала нужен столбец контакта.');
             }

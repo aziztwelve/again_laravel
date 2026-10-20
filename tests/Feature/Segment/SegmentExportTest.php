@@ -11,7 +11,6 @@ use App\Models\User;
 use App\Services\Segment\SegmentExportService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Laravel\Sanctum\Sanctum;
-use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class SegmentExportTest extends TestCase
@@ -20,7 +19,7 @@ class SegmentExportTest extends TestCase
     private function segment(): Segment { return Segment::create(['name'=>'Экспорт тест '.uniqid(),'is_active'=>true,'recalculate_frequency'=>'manual']); }
     private function client(Segment $s, array $attrs=[], string $phone='+79000000001', bool $manual=false): Client
     {
-        $c=Client::factory()->create(array_merge(['email'=>'test'.uniqid().'@example.com','subscribed_to_newsletter'=>true,'subscribed_to_whatsapp'=>true],$attrs));
+        $c=Client::factory()->create(array_merge(['email'=>'test'.uniqid().'@example.com','subscribed_to_newsletter'=>true],$attrs));
         $c->profile()->create(['first_name'=>'Иван','last_name'=>'Тест','phone'=>$phone,'address'=>'Адрес; с запятой, и "кавычкой"']);
         $s->clients()->attach($c->id,['added_at'=>now(),'is_manual'=>$manual]);return $c;
     }
@@ -64,17 +63,6 @@ class SegmentExportTest extends TestCase
         $this->assertSame('anna@example.com',$p['preview'][0][2]);
         $this->assertSame(3,$this->preview($s,['channel'=>'email','consent_only'=>false,'deduplicate'=>false])['total_count']);
     }
-    public function test_whatsapp_uses_separate_subscription_and_normalized_phone_duplicates(): void
-    {
-        $s=$this->segment();$this->client($s,[], '8 (900) 000-00-01');$this->client($s,[],'+7 900 000 00 01');
-        $this->client($s,['subscribed_to_whatsapp'=>false,'messenger_subscription'=>true],'+79000000002');
-        $this->client($s,[],'123');$p=$this->preview($s,['channel'=>'whatsapp']);
-        $this->assertSame(1,$p['total_count']);$this->assertSame('+79000000001',$p['preview'][0][2]);
-        $this->assertSame(1,$p['skipped']['no_subscription']);$this->assertSame(1,$p['skipped']['duplicate']);$this->assertSame(1,$p['skipped']['invalid_contact']);
-    }
-    public static function phoneCases(): array { return [['+7 (900) 000-00-01','+79000000001'],['89000000001','+79000000001'],['00351912345678','+351912345678'],['+351912345678','+351912345678'],['123',null],['',null],['+7+9000000001',null],['phone79000000001',null],['00000000000',null],['+1234567890123456',null]]; }
-    #[DataProvider('phoneCases')]
-    public function test_phone_normalization(string $phone,?string $expected): void { $this->assertSame($expected,app(SegmentExportService::class)->normalizePhone($phone)); }
     public function test_full_export_keeps_duplicates_missing_contacts_and_both_origins(): void
     {
         $s=$this->segment();$this->client($s,['email'=>null,'subscribed_to_newsletter'=>false], '',true);$this->client($s,[], '+79000000001');$this->client($s,[], '+79000000001');
@@ -105,7 +93,7 @@ class SegmentExportTest extends TestCase
             $url='/api/segments/'.$s->id.'/'.$endpoint;
             $this->getJson($url)->assertUnauthorized();Sanctum::actingAs($c);$this->getJson($url)->assertForbidden();
             Sanctum::actingAs(User::factory()->create());
-            foreach([['columns'=>[]],['columns'=>['email','email']],['columns'=>['password']],['channel'=>'invalid'],['delimiter'=>'|'],['channel'=>'email','columns'=>['id']]] as $data)$this->json('GET',$url,$data)->assertUnprocessable();
+            foreach([['columns'=>[]],['columns'=>['email','email']],['columns'=>['password']],['channel'=>'invalid'],['channel'=>'whatsapp'],['columns'=>['subscribed_to_whatsapp']],['delimiter'=>'|'],['channel'=>'email','columns'=>['id']]] as $data)$this->json('GET',$url,$data)->assertUnprocessable();
             $this->getJson($url.'?'.http_build_query(['channel'=>'email']))->assertOk();
             auth()->forgetGuards();
         }
@@ -121,9 +109,14 @@ class SegmentExportTest extends TestCase
         } finally { \Illuminate\Support\Facades\DB::disableQueryLog(); }
     }
 
-    public function test_email_subscription_does_not_imply_whatsapp_subscription(): void
+    public function test_full_export_has_no_whatsapp_subscription_column(): void
     {
-        $s=$this->segment();$this->client($s,['subscribed_to_newsletter'=>true,'subscribed_to_whatsapp'=>false]);
-        $this->assertSame(1,$this->preview($s,['channel'=>'email'])['total_count']);$this->assertSame(0,$this->preview($s,['channel'=>'whatsapp'])['total_count']);
+        $s=$this->segment();$client=$this->client($s);
+        $this->assertArrayNotHasKey('subscribed_to_whatsapp', $client->toArray());
+        $this->assertArrayNotHasKey('subscribed_to_whatsapp', SegmentExportDTO::HEADERS);
+        $csv=$this->csv($s,['columns'=>array_keys(SegmentExportDTO::HEADERS)]);
+        $this->assertNotContains('Подписка WhatsApp', $csv[0]);
+        $this->assertContains('Подписка Email', $csv[0]);
+        $this->assertContains('Телефон', $csv[0]);
     }
 }

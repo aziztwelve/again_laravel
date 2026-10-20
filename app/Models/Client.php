@@ -22,6 +22,9 @@ class Client extends Authenticatable
 
     protected $guarded = ['id'];
 
+    // Retired subscription field: keep stored history out of client API responses.
+    protected $hidden = ['subscribed_to_whatsapp'];
+
     /**
      * The attributes that should be cast.
      *
@@ -30,7 +33,6 @@ class Client extends Authenticatable
     protected $casts = [
         'bonus_balance' => 'decimal:2',
         'subscribed_to_newsletter' => 'boolean',
-        'subscribed_to_whatsapp' => 'boolean',
         'personal_data_consent' => 'boolean',
         'privacy_policy_accepted' => 'boolean',
         'oferta_accepted' => 'boolean',

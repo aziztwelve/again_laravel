@@ -22,18 +22,6 @@ class SegmentExportService
             ->lazyById(500, 'clients.id', 'id');
     }
 
-    /** International format only: no guessed country for a local number. */
-    public function normalizePhone(?string $raw): ?string
-    {
-        $raw=trim($raw ?? '');
-        if ($raw==='' || !preg_match('/^(?:\+|00)?[0-9(][0-9()\s.\-]*$/u', $raw)) return null;
-        $digits=preg_replace('/\D/', '', $raw);
-        if (str_starts_with($raw,'00')) $digits=substr($digits,2);
-        // Legacy Russian domestic prefix is unambiguous for eleven digits.
-        if (strlen($digits)===11 && str_starts_with($digits,'8')) $digits='7'.substr($digits,1);
-        return preg_match('/^[1-9][0-9]{9,14}$/', $digits) ? '+'.$digits : null;
-    }
-
     private function rows(Segment $segment, SegmentExportDTO $dto, array &$skipped): \Generator
     {
         $seen=[];
@@ -46,11 +34,6 @@ class SegmentExportService
                 if (!filter_var($contact,FILTER_VALIDATE_EMAIL)) $reason='invalid_contact';
                 elseif ($dto->consentOnly && !$client->subscribed_to_newsletter) $reason='no_subscription';
             }
-            if (!$reason && $dto->channel==='whatsapp') {
-                $contact=$this->normalizePhone($client->profile?->phone);
-                if (!$contact) $reason='invalid_contact';
-                elseif ($dto->consentOnly && !$client->subscribed_to_whatsapp) $reason='no_subscription';
-            }
             if (!$reason && $dto->channel!=='all' && $dto->deduplicate) {
                 if (isset($seen[$contact])) $reason='duplicate';
                 else $seen[$contact]=true;
@@ -59,7 +42,7 @@ class SegmentExportService
             $data=[
                 'id'=>$client->id,'full_name'=>$client->profile?->full_name ?? '',
                 'email'=>$dto->channel==='email'?$contact:($client->email ?? ''),
-                'phone'=>$dto->channel==='whatsapp'?$contact:($client->profile?->phone ?? ''),
+                'phone'=>$client->profile?->phone ?? '',
                 'birthday'=>$client->profile?->birthday ? \Carbon\Carbon::parse($client->profile->birthday)->toDateString() : '',
                 'address'=>$client->profile?->address ?? '', 'registered_at'=>$client->created_at?->toDateString(),
                 'orders_count'=>$client->export_orders_count,
@@ -68,7 +51,6 @@ class SegmentExportService
                 'segment_name'=>$segment->name, 'membership_source'=>$manual?'Вручную':'По условиям',
                 'added_to_segment_at'=>$client->pivot->added_at,
                 'subscribed_to_newsletter'=>$client->subscribed_to_newsletter?'Да':'Нет',
-                'subscribed_to_whatsapp'=>$client->subscribed_to_whatsapp?'Да':'Нет',
                 'personal_data_consent'=>$client->personal_data_consent?'Да':'Нет',
                 'tags'=>$client->tags->pluck('name')->implode(', '),
             ];
