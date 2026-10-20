@@ -10,7 +10,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Автоотмена неоплаченных заказов: новые онлайн-заказы витрины ждут 24 часа,
+ * Автоотмена неоплаченных заказов: новые онлайн-заказы витрины ждут установленный срок брони,
  * остальные — 2 часа после оформления. Если срок истёк
  * и до сих пор не оплачен, переводим его в статус «Отменен» —
  * OrderCreationService::cancelOrder() уже ставит в очередь и обновление
@@ -28,7 +28,7 @@ class CancelUnpaidOrdersCommand extends Command
 {
     protected $signature = 'orders:cancel-unpaid';
 
-    protected $description = 'Отменить неоплаченные заказы с истёкшим сроком брони (24 часа для новых онлайн-заказов витрины, иначе 2 часа)';
+    protected $description = 'Отменить неоплаченные заказы с истёкшим сроком брони (20 часов для новых онлайн-заказов витрины, иначе 2 часа)';
 
     private const UNPAID_TIMEOUT_HOURS = 2;
 
@@ -59,7 +59,7 @@ class CancelUnpaidOrdersCommand extends Command
                 $success = $orderCreationService->cancelOrder(
                     $order,
                     $order->reservation_expires_at
-                        ? 'Автоотмена: истёк срок брони 24 часа, заказ не оплачен'
+                        ? 'Автоотмена: истёк срок брони, заказ не оплачен'
                         : 'Автоотмена: заказ не оплачен в течение 2 часов'
                 );
 

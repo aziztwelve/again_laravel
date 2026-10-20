@@ -44,10 +44,11 @@ class AbandonedOrderService
         $subject = $name ? "$name, вы кое-что забыли!" : 'Вы кое-что забыли!';
         $greeting = $name ? "Привет, $name!" : 'Привет!';
         $url = PublicUrl::to('/orders/'.$order->view_token);
+        $reservationHours = (int) config('abandoned_order.reservation_hours', 20);
         $paragraphs = [
             $greeting,
             'Похоже, вы собрали отличную корзину в магазине Again, но так и не забрали её.',
-            'Мы забронировали ваши товары, чтобы их случайно не купил кто-то другой, но бронь действует только 24 часа.',
+            "Мы забронировали ваши товары, чтобы их случайно не купил кто-то другой, но бронь действует только {$reservationHours} часов.",
             'Не дайте вашим находкам ускользнуть!',
         ];
         $message = implode("\n\n", $paragraphs)."\n\n👉 Завершить покупку в 1 клик: ".$url;

@@ -22,7 +22,7 @@ class AbandonedOrderTest extends TestCase
     {
         parent::setUp();
         $this->freezeTime();
-        config(['abandoned_order.enabled' => true, 'abandoned_order.after_minutes' => 60]);
+        config(['abandoned_order.enabled' => true, 'abandoned_order.after_minutes' => 30, 'abandoned_order.reservation_hours' => 20]);
         \App\Models\MailSetting::create([
             'mailer' => 'smtp', 'host' => 'localhost', 'port' => 25,
             'username' => 'test', 'password' => 'secret', 'from_address' => 'test@example.com',
@@ -37,7 +37,7 @@ class AbandonedOrderTest extends TestCase
             'created_at' => now()->subHour(), 'total_amount' => 3000,
             'view_token' => bin2hex(random_bytes(16)), 'email' => 'guest@example.com',
             'order_page_opened_at' => now()->subHour(),
-            'reservation_expires_at' => now()->addHours(23),
+            'reservation_expires_at' => now()->addHours(19),
         ], $overrides));
     }
 
@@ -61,9 +61,18 @@ class AbandonedOrderTest extends TestCase
         $this->assertSame('Анна, вы кое-что забыли!', $data['subject']);
         $this->assertSame('Завершить покупку в 1 клик', $data['action_label']);
         $this->assertStringContainsString('Привет, Анна!', $message);
-        $this->assertStringContainsString('24 часа', $message);
+        $this->assertStringContainsString('20 часов', $message);
+        $this->assertStringContainsString('<strong>20 часов</strong>', $data['html']);
+        $this->assertStringNotContainsString('24 часа', $data['html']);
         $this->assertStringContainsString('/orders/'.$order->view_token, $data['html']);
         $this->assertStringContainsString('Завершить покупку в 1 клик', $data['html']);
+    }
+
+    public function test_reminder_is_due_at_thirty_minutes_but_not_one_second_earlier(): void
+    {
+        $service = app(AbandonedOrderService::class);
+        $this->assertFalse($service->isEligible($this->order(['order_page_opened_at' => now()->subSeconds(1799)])));
+        $this->assertTrue($service->isEligible($this->order(['order_page_opened_at' => now()->subSeconds(1800)])));
     }
 
     public function test_guest_receives_email_with_neutral_greeting(): void
@@ -75,7 +84,7 @@ class AbandonedOrderTest extends TestCase
     public function test_ineligible_orders_do_not_receive_reminders(): void
     {
         foreach ([
-            ['order_page_opened_at' => now()->subMinutes(59)],
+            ['order_page_opened_at' => now()->subMinutes(29)],
             ['order_page_opened_at' => null],
             ['payment_interface_started_at' => now()],
             ['payment_status' => 'paid', 'paid_at' => now()],
@@ -127,13 +136,13 @@ class AbandonedOrderTest extends TestCase
         Bus::assertNothingDispatched();
     }
 
-    public function test_reservation_prevents_two_hour_cancellation_but_expires_at_24_hours(): void
+    public function test_reservation_prevents_two_hour_cancellation_but_expires_at_20_hours(): void
     {
         $protected = $this->order(['created_at' => now()->subHours(3)]);
-        $expired = $this->order(['created_at' => now()->subHours(24), 'reservation_expires_at' => now()]);
+        $expired = $this->order(['created_at' => now()->subHours(20), 'reservation_expires_at' => now()]);
         $legacy = $this->order(['created_at' => now()->subHours(3), 'reservation_expires_at' => null]);
         $service = $this->mock(OrderCreationService::class);
-        $service->shouldReceive('cancelOrder')->withArgs(fn ($order, $reason) => $order->id === $expired->id && str_contains($reason, '24 часа'))->once()->andReturn(true);
+        $service->shouldReceive('cancelOrder')->withArgs(fn ($order, $reason) => $order->id === $expired->id && str_contains($reason, 'истёк срок брони'))->once()->andReturn(true);
         $service->shouldReceive('cancelOrder')->withArgs(fn ($order, $reason) => $order->id === $legacy->id && str_contains($reason, '2 часов'))->once()->andReturn(true);
         $this->artisan('orders:cancel-unpaid')->assertSuccessful();
         $this->assertSame('new', $protected->fresh()->status->value);

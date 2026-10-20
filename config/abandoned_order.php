@@ -2,5 +2,6 @@
 
 return [
     'enabled' => (bool) env('ABANDONED_ORDER_ENABLED', true),
-    'after_minutes' => 60,
+    'after_minutes' => 30,
+    'reservation_hours' => 20,
 ];

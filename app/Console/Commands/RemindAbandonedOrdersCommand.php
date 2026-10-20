@@ -8,7 +8,7 @@ use Illuminate\Console\Command;
 class RemindAbandonedOrdersCommand extends Command
 {
     protected $signature = 'orders:remind-abandoned';
-    protected $description = 'Напомнить о заказах через час после открытия страницы без перехода к оплате';
+    protected $description = 'Напомнить о заказах через 30 минут после открытия страницы без перехода к оплате';
 
     public function handle(AbandonedOrderService $service): int
     {
