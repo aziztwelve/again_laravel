@@ -54,7 +54,7 @@ Schedule::command('cart:gc-guest-carts')
     ->withoutOverlapping()
     ->runInBackground();
 
-// Автоотмена новых онлайн-заказов витрины через 20 часов, остальных через 2 часа — возвращает
+// Автоотмена новых онлайн-заказов витрины через 2 часа, остальных через 2 часа — возвращает
 // товар на склад МойСклад (если был списан через demand). Проверяет заказы
 // в статусах "Новый" и "В работе" (см. docs/tasks/order-status-actualization.md).
 Schedule::command('orders:remind-abandoned')->everyMinute()->withoutOverlapping();

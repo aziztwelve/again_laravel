@@ -22,7 +22,7 @@ class AbandonedOrderTest extends TestCase
     {
         parent::setUp();
         $this->freezeTime();
-        config(['abandoned_order.enabled' => true, 'abandoned_order.after_minutes' => 30, 'abandoned_order.reservation_hours' => 20]);
+        config(['abandoned_order.enabled' => true, 'abandoned_order.after_minutes' => 30, 'abandoned_order.reservation_hours' => 2]);
         \App\Models\MailSetting::create([
             'mailer' => 'smtp', 'host' => 'localhost', 'port' => 25,
             'username' => 'test', 'password' => 'secret', 'from_address' => 'test@example.com',
@@ -37,7 +37,7 @@ class AbandonedOrderTest extends TestCase
             'created_at' => now()->subHour(), 'total_amount' => 3000,
             'view_token' => bin2hex(random_bytes(16)), 'email' => 'guest@example.com',
             'order_page_opened_at' => now()->subHour(),
-            'reservation_expires_at' => now()->addHours(19),
+            'reservation_expires_at' => now()->addHour(),
         ], $overrides));
     }
 
@@ -61,8 +61,8 @@ class AbandonedOrderTest extends TestCase
         $this->assertSame('Анна, вы кое-что забыли!', $data['subject']);
         $this->assertSame('Завершить покупку в 1 клик', $data['action_label']);
         $this->assertStringContainsString('Привет, Анна!', $message);
-        $this->assertStringContainsString('20 часов', $message);
-        $this->assertStringContainsString('<strong>20 часов</strong>', $data['html']);
+        $this->assertStringContainsString('2 часа', $message);
+        $this->assertStringContainsString('<strong>2 часа</strong>', $data['html']);
         $this->assertStringNotContainsString('24 часа', $data['html']);
         $this->assertStringContainsString('/orders/'.$order->view_token, $data['html']);
         $this->assertStringContainsString('Завершить покупку в 1 клик', $data['html']);
@@ -136,10 +136,10 @@ class AbandonedOrderTest extends TestCase
         Bus::assertNothingDispatched();
     }
 
-    public function test_reservation_prevents_two_hour_cancellation_but_expires_at_20_hours(): void
+    public function test_cancellation_respects_saved_reservation_deadline_and_legacy_timeout(): void
     {
         $protected = $this->order(['created_at' => now()->subHours(3)]);
-        $expired = $this->order(['created_at' => now()->subHours(20), 'reservation_expires_at' => now()]);
+        $expired = $this->order(['created_at' => now()->subHours(2), 'reservation_expires_at' => now()]);
         $legacy = $this->order(['created_at' => now()->subHours(3), 'reservation_expires_at' => null]);
         $service = $this->mock(OrderCreationService::class);
         $service->shouldReceive('cancelOrder')->withArgs(fn ($order, $reason) => $order->id === $expired->id && str_contains($reason, 'истёк срок брони'))->once()->andReturn(true);

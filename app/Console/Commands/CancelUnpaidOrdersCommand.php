@@ -28,7 +28,7 @@ class CancelUnpaidOrdersCommand extends Command
 {
     protected $signature = 'orders:cancel-unpaid';
 
-    protected $description = 'Отменить неоплаченные заказы с истёкшим сроком брони (20 часов для новых онлайн-заказов витрины, иначе 2 часа)';
+    protected $description = 'Отменить неоплаченные заказы с истёкшим сроком брони (2 часа для новых онлайн-заказов витрины и старых заказов без срока брони)';
 
     private const UNPAID_TIMEOUT_HOURS = 2;
 

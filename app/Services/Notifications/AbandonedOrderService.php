@@ -6,6 +6,7 @@ use App\Enums\OrderStatus;
 use App\Enums\PaymentStatus;
 use App\Models\Order;
 use App\Support\PublicUrl;
+use Carbon\CarbonInterval;
 use Illuminate\Database\Eloquent\Builder;
 
 class AbandonedOrderService
@@ -44,15 +45,15 @@ class AbandonedOrderService
         $subject = $name ? "$name, вы кое-что забыли!" : 'Вы кое-что забыли!';
         $greeting = $name ? "Привет, $name!" : 'Привет!';
         $url = PublicUrl::to('/orders/'.$order->view_token);
-        $reservationHours = (int) config('abandoned_order.reservation_hours', 20);
+        $reservationPeriod = CarbonInterval::hours((int) config('abandoned_order.reservation_hours', 2))->locale('ru')->forHumans();
         $paragraphs = [
             $greeting,
             'Похоже, вы собрали отличную корзину в магазине Again, но так и не забрали её.',
-            "Мы забронировали ваши товары, чтобы их случайно не купил кто-то другой, но бронь действует только {$reservationHours} часов.",
+            "Мы забронировали ваши товары, чтобы их случайно не купил кто-то другой, но бронь действует только {$reservationPeriod}.",
             'Не дайте вашим находкам ускользнуть!',
         ];
         $message = implode("\n\n", $paragraphs)."\n\n👉 Завершить покупку в 1 клик: ".$url;
-        $html = view('emails.abandoned-order', compact('subject', 'paragraphs', 'url'))->render();
+        $html = view('emails.abandoned-order', compact('subject', 'paragraphs', 'url', 'reservationPeriod'))->render();
 
         foreach ($this->resolver->resolve($order->client, $order->email) as $recipient) {
             if (! in_array($recipient['channel'], ['email', 'telegram', 'max'], true)) {
