@@ -25,8 +25,13 @@ class OrderImportTrackPlacementTest extends TestCase
     /**
      * Строит одну строку заказа InSales (табуляция, UTF-8) с заданными трек-полями.
      */
-    private function source(string $number, string $track = '', string $post = '', string $cdek = ''): string
-    {
+    private function source(
+        string $number,
+        string $track = '',
+        string $post = '',
+        string $cdek = '',
+        string $delivery = 'СДЭК: Курьерская доставка (Официальный модуль доставки от компании СДЭК)',
+    ): string {
         $this->csvPath = sys_get_temp_dir().'/track-placement-'.Str::uuid().'.csv';
         $handle = fopen($this->csvPath, 'w');
         fputcsv($handle, [
@@ -35,7 +40,7 @@ class OrderImportTrackPlacementTest extends TestCase
             'Трек-номер', 'Трек-номер Почта России', 'Номер для отслеживания заказа СДЭК',
         ], "\t");
         fputcsv($handle, [
-            $number, '02.09.2026 10:00', 'Новый', 'Не оплачен', 'СДЭК: Курьерская доставка (Официальный модуль доставки от компании СДЭК)',
+            $number, '02.09.2026 10:00', 'Новый', 'Не оплачен', $delivery,
             '1000', 'Товар', '1', $track, $post, $cdek,
         ], "\t");
         fclose($handle);
@@ -73,6 +78,17 @@ class OrderImportTrackPlacementTest extends TestCase
         $order = Order::where('order_number', '990003')->firstOrFail();
         $this->assertSame('10315500003', $order->tracking_number);
         $this->assertSame('10315500003', $order->legacy_meta['cdek_track_number']);
+    }
+
+    public function test_cdek_number_does_not_become_tracking_for_non_cdek_service(): void
+    {
+        $path = $this->source('990005', cdek: '10315500005', delivery: 'Пункт самовывоза Boxberry (Доставка на пункт самовывоза Boxberry)');
+
+        app(OrderImportService::class)->import($path);
+
+        $order = Order::where('order_number', '990005')->firstOrFail();
+        $this->assertNull($order->tracking_number);
+        $this->assertSame('10315500005', $order->legacy_meta['cdek_track_number']);
     }
 
     public function test_no_overwrite_keeps_existing_order_tracking_untouched(): void

@@ -443,6 +443,8 @@ class OrderImportService
         $deliveryMethodId = $deliveryMethodText
             ? $this->resolveDeliveryMethodId($deliveryMethodText)
             : null;
+        $isCdekDelivery = $deliveryMethodText !== null
+            && str_contains(mb_strtolower($deliveryMethodText), 'сдэк');
 
         $assignedUserId = $this->resolveUserId(
             $this->nullableString($header['assigned_user_name'] ?? null)
@@ -470,11 +472,12 @@ class OrderImportService
             'landing_first' => $this->nullableString($header['landing_first'] ?? null, 1024),
             'landing_last' => $this->nullableString($header['landing_last'] ?? null, 1024),
             'notes' => $this->nullableString($header['seller_comment'] ?? null, 65000),
-            // Общее поле трека: Яндекс/Boxberry («Трек-номер»), иначе Почта России,
-            // иначе номер СДЭК. Номер СДЭК всегда дополнительно лежит в legacy_meta.
+            // Общее поле трека: Яндекс/Boxberry («Трек-номер»), иначе Почта России.
+            // Номер СДЭК — запасной вариант только для служб СДЭК: у Boxberry и
+            // Почты он в заказе не трек. Номер СДЭК всегда лежит в legacy_meta.
             'tracking_number' => $this->nullableString($header['tracking_number'] ?? null)
                 ?? $this->nullableString($header['russian_post_track'] ?? null)
-                ?? $this->nullableString($header['cdek_track_number'] ?? null),
+                ?? ($isCdekDelivery ? $this->nullableString($header['cdek_track_number'] ?? null) : null),
             'no_receipt' => $this->parseBool($header['no_receipt'] ?? null),
             'export_country' => $this->nullableString($header['export_country'] ?? null, 64),
             'bonuses_credited' => $this->parseDecimal($header['bonuses_credited'] ?? null),
