@@ -470,7 +470,11 @@ class OrderImportService
             'landing_first' => $this->nullableString($header['landing_first'] ?? null, 1024),
             'landing_last' => $this->nullableString($header['landing_last'] ?? null, 1024),
             'notes' => $this->nullableString($header['seller_comment'] ?? null, 65000),
-            'tracking_number' => $this->nullableString($header['tracking_number'] ?? null),
+            // Общее поле трека: Яндекс/Boxberry («Трек-номер»), иначе Почта России,
+            // иначе номер СДЭК. Номер СДЭК всегда дополнительно лежит в legacy_meta.
+            'tracking_number' => $this->nullableString($header['tracking_number'] ?? null)
+                ?? $this->nullableString($header['russian_post_track'] ?? null)
+                ?? $this->nullableString($header['cdek_track_number'] ?? null),
             'no_receipt' => $this->parseBool($header['no_receipt'] ?? null),
             'export_country' => $this->nullableString($header['export_country'] ?? null, 64),
             'bonuses_credited' => $this->parseDecimal($header['bonuses_credited'] ?? null),
