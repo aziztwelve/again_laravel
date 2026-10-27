@@ -115,6 +115,12 @@ class OrderUpdateService
                 }
             }
 
+            // Пункт выдачи, выбранный на карте: пишем в delivery_data.pvz в том же виде,
+            // что и при оформлении заказа (CDEK — код/тип/адрес, Яндекс — id/адрес).
+            if (! empty($data['pvz_code'])) {
+                $filteredData['delivery_data'] = $this->applyPickupPoint($order, $data);
+            }
+
             // Определяем delivery_method_id по имени если пришёл объект delivery_method
             if (! isset($filteredData['delivery_method_id']) && isset($data['delivery_method']['name'])) {
                 $method = DeliveryMethod::where('name', $data['delivery_method']['name'])->first();
@@ -285,6 +291,41 @@ class OrderUpdateService
     /**
      * Обновить адрес доставки заказа
      */
+    /**
+     * Собирает delivery_data с выбранным пунктом выдачи, сохраняя прочие данные доставки.
+     */
+    private function applyPickupPoint(Order $order, array $data): array
+    {
+        $current = is_array($order->delivery_data) ? $order->delivery_data : [];
+        $coordinates = $data['pvz_coordinates'] ?? null;
+        $address = $data['pvz_address'] ?? null;
+
+        if (($data['pvz_provider'] ?? ($current['provider'] ?? null)) === 'cdek') {
+            $type = strtoupper((string) ($data['pvz_type'] ?? 'PVZ')) === 'POSTAMAT' ? 'POSTAMAT' : 'PVZ';
+
+            return array_merge($current, [
+                'provider' => 'cdek',
+                'delivery_type' => $type === 'POSTAMAT' ? 'postamat' : 'pickup',
+                'pvz' => [
+                    'code' => $data['pvz_code'],
+                    'type' => $type,
+                    'address' => $address,
+                    'coordinates' => $coordinates,
+                ],
+            ]);
+        }
+
+        return array_merge($current, [
+            'provider' => 'yandex',
+            'delivery_type' => 'pickup',
+            'pvz' => array_filter([
+                'id' => $data['pvz_code'],
+                'address' => $address,
+                'coordinates' => $coordinates,
+            ], fn ($value) => $value !== null),
+        ]);
+    }
+
     private function updateDeliveryAddress(Order $order, array $addressData, array $recipientData = []): void
     {
         $payload = [];

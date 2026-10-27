@@ -26,6 +26,13 @@ class UpdateOrderRequest extends FormRequest
             'client_id' => 'nullable|integer|exists:clients,id',
             'payment_method' => 'nullable|string|max:255',
             'delivery_method_id' => 'nullable|integer|exists:delivery_methods,id',
+            // Пункт выдачи, выбранный на карте (см. OrderUpdateService::applyPickupPoint).
+            'pvz_provider' => 'nullable|in:cdek,yandex',
+            'pvz_code' => 'nullable|string|max:255',
+            'pvz_address' => 'nullable|string|max:1000',
+            'pvz_coordinates' => 'nullable|array|size:2',
+            'pvz_coordinates.*' => 'numeric',
+            'pvz_type' => 'nullable|string|max:20',
             'delivery_date' => 'nullable|date',
             'delivery_comment' => 'nullable|string|max:1000',
             'source' => 'nullable|string|max:255',
