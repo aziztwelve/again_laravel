@@ -24,6 +24,10 @@ class OrderFilterService
             $query = $this->filterByPaymentStatus($query, $request->payment_status);
         }
 
+        if ($request->filled('delivery_method_id')) {
+            $query = $this->filterByDeliveryMethod($query, $request->delivery_method_id);
+        }
+
         if ($request->filled('date_from')) {
             $query = $this->filterByDateFrom($query, $request->date_from);
         }
@@ -89,10 +93,6 @@ class OrderFilterService
             $query = $this->searchByRecipient($query, $request->recipient_search);
         }
 
-        if ($request->filled('delivery_method_id')) {
-            $query = $query->where('delivery_method_id', $request->delivery_method_id);
-        }
-
         // Фильтр по менеджеру (assigned_user_id).
         // Спец-значение 'null' (строкой) — заказы без назначенного менеджера.
         // Передаётся, например, кнопкой «Без менеджера» в фильтре столбца.
@@ -133,18 +133,39 @@ class OrderFilterService
     /**
      * Фильтр по статусу оплаты
      */
-    private function filterByPaymentStatus(Builder $query, string $paymentStatus): Builder
+    private function filterByPaymentStatus(Builder $query, string|array $paymentStatus): Builder
     {
-        try {
+        // Одиночное значение (строка из верхней панели) и мультивыбор (массив
+        // из заголовка столбца «Оплата») обрабатываются одинаково.
+        $statuses = collect((array) $paymentStatus)
+            ->filter(fn ($value) => is_string($value) && $value !== '')
+            ->map(function (string $value) {
+                try {
+                    return PaymentStatus::from($value)->value;
+                } catch (\ValueError) {
+                    return null;
+                }
+            })
+            ->filter()
+            ->values()
+            ->all();
 
-            $paymentStatusEnum = PaymentStatus::from($paymentStatus);
+        // Невалидные значения не должны превращать список заказов в пустой.
+        return $statuses === [] ? $query : $query->whereIn('payment_status', $statuses);
+    }
 
-            return $query->where('payment_status', $paymentStatusEnum);
-        } catch (\ValueError $e) {
-            // Невалидный статус - возвращаем query без фильтра
-            return $query;
-        }
+    /**
+     * Фильтр по способу доставки (одиночный id или массив id).
+     */
+    private function filterByDeliveryMethod(Builder $query, int|string|array $deliveryMethodId): Builder
+    {
+        $ids = collect((array) $deliveryMethodId)
+            ->filter(fn ($value) => is_numeric($value))
+            ->map(fn ($value) => (int) $value)
+            ->values()
+            ->all();
 
+        return $ids === [] ? $query : $query->whereIn('delivery_method_id', $ids);
     }
 
     /**
@@ -564,7 +585,9 @@ class OrderFilterService
             // массивом (`status[]`). Допустимы оба формата.
             'status' => 'nullable',
             'status.*' => 'string',
-            'payment_status' => 'nullable|string',
+            // Оплата и доставка: одиночное значение или массив (мультивыбор в столбце).
+            'payment_status' => 'nullable',
+            'payment_status.*' => 'string',
             'date_from' => 'nullable|date',
             'date_to' => 'nullable|date|after_or_equal:date_from',
             'client_id' => 'nullable|integer|exists:clients,id',
@@ -579,7 +602,8 @@ class OrderFilterService
             'email' => 'nullable|string|max:255',
             'order_number' => 'nullable|string|max:100',
             'recipient_search' => 'nullable|string|max:255',
-            'delivery_method_id' => 'nullable|integer|exists:delivery_methods,id',
+            'delivery_method_id' => 'nullable',
+            'delivery_method_id.*' => 'integer|exists:delivery_methods,id',
             // Спец-значение 'null' допускаем как маркер «без менеджера», поэтому
             // не используем integer-валидатор. Дальнейшая проверка — в applyFilters.
             'assigned_user_id' => 'nullable|string',
