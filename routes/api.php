@@ -1065,6 +1065,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Методы доставки
         Route::get('/methods', [DeliveryMethodController::class, 'index'])->name('methods.index');
         Route::get('/methods/admin', [DeliveryMethodController::class, 'get_all_delivery_methods'])->name('methods.index');
+        Route::get('/services/filter', [DeliveryMethodController::class, 'filter_services'])->name('services.filter');
         Route::get('/methods/{method}', [DeliveryMethodController::class, 'show'])->name('methods.show');
         Route::post('/methods', [DeliveryMethodController::class, 'store'])->name('methods.store');
         Route::put('/methods/{method}', [DeliveryMethodController::class, 'update'])->name('methods.update');

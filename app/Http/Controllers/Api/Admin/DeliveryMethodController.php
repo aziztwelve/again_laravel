@@ -108,6 +108,16 @@ class DeliveryMethodController extends Controller
     }
 
 
+    /**
+     * Актуальные службы доставки для фильтров списка заказов (см. config/delivery_services.php).
+     */
+    public function filter_services()
+    {
+        return response()->json(collect(config('delivery_services'))
+            ->map(fn (array $service, string $key) => ['value' => $key, 'label' => $service['label']])
+            ->values());
+    }
+
     public function get_all_delivery_methods(Request $request)
     {
         $query = DeliveryMethod::query()

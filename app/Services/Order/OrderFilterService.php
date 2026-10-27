@@ -4,6 +4,7 @@ namespace App\Services\Order;
 
 use App\Enums\OrderStatus;
 use App\Enums\PaymentStatus;
+use App\Models\DeliveryMethod;
 use App\Models\Order;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -26,6 +27,10 @@ class OrderFilterService
 
         if ($request->filled('delivery_method_id')) {
             $query = $this->filterByDeliveryMethod($query, $request->delivery_method_id);
+        }
+
+        if ($request->filled('delivery_service')) {
+            $query = $this->filterByDeliveryService($query, $request->delivery_service);
         }
 
         if ($request->filled('date_from')) {
@@ -166,6 +171,34 @@ class OrderFilterService
             ->all();
 
         return $ids === [] ? $query : $query->whereIn('delivery_method_id', $ids);
+    }
+
+    /**
+     * Фильтр по службе доставки (ключи из config/delivery_services.php).
+     * Служба раскрывается в коды способов доставки, а затем в их id.
+     */
+    private function filterByDeliveryService(Builder $query, string|array $services): Builder
+    {
+        $known = config('delivery_services', []);
+
+        $keys = collect((array) $services)
+            ->filter(fn ($value) => is_string($value) && array_key_exists($value, $known))
+            ->values()
+            ->all();
+
+        if ($keys === []) {
+            return $query;
+        }
+
+        $codes = collect($keys)
+            ->flatMap(fn (string $key) => $known[$key]['codes'])
+            ->unique()
+            ->values()
+            ->all();
+
+        $ids = DeliveryMethod::query()->whereIn('code', $codes)->pluck('id')->all();
+
+        return $query->whereIn('delivery_method_id', $ids);
     }
 
     /**
@@ -604,6 +637,8 @@ class OrderFilterService
             'recipient_search' => 'nullable|string|max:255',
             'delivery_method_id' => 'nullable',
             'delivery_method_id.*' => 'integer|exists:delivery_methods,id',
+            'delivery_service' => 'nullable',
+            'delivery_service.*' => 'string',
             // Спец-значение 'null' допускаем как маркер «без менеджера», поэтому
             // не используем integer-валидатор. Дальнейшая проверка — в applyFilters.
             'assigned_user_id' => 'nullable|string',

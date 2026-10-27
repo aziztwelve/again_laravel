@@ -82,6 +82,35 @@ class OrderFilterMultiSelectTest extends TestCase
         );
     }
 
+    public function test_delivery_service_expands_to_its_codes(): void
+    {
+        $pickup = DeliveryMethod::firstOrCreate(['code' => 'cdek_pickup'], ['name' => 'СДЭК ПВЗ', 'is_active' => true]);
+        $postamat = DeliveryMethod::firstOrCreate(['code' => 'cdek_postamat'], ['name' => 'СДЭК постамат', 'is_active' => true]);
+        $other = $this->method();
+        $inPickup = Order::factory()->create(['delivery_method_id' => $pickup->id]);
+        $inPostamat = Order::factory()->create(['delivery_method_id' => $postamat->id]);
+        $outside = Order::factory()->create(['delivery_method_id' => $other->id]);
+        $scope = [$inPickup->id, $inPostamat->id, $outside->id];
+
+        $this->assertSame(
+            collect([$inPickup->id, $inPostamat->id])->sort()->values()->all(),
+            $this->matchedIds(['delivery_service' => ['cdek_pickup']], $scope),
+        );
+    }
+
+    public function test_unknown_delivery_service_does_not_empty_the_list(): void
+    {
+        $a = $this->method();
+        $b = $this->method();
+        $oa = Order::factory()->create(['delivery_method_id' => $a->id]);
+        $ob = Order::factory()->create(['delivery_method_id' => $b->id]);
+
+        $this->assertSame(
+            collect([$oa->id, $ob->id])->sort()->values()->all(),
+            $this->matchedIds(['delivery_service' => ['bogus']], [$oa->id, $ob->id]),
+        );
+    }
+
     public function test_delivery_method_still_accepts_single_id(): void
     {
         $a = $this->method();
