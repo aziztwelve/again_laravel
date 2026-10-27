@@ -92,10 +92,9 @@ class OrderFilterMultiSelectTest extends TestCase
         $outside = Order::factory()->create(['delivery_method_id' => $other->id]);
         $scope = [$inPickup->id, $inPostamat->id, $outside->id];
 
-        $this->assertSame(
-            collect([$inPickup->id, $inPostamat->id])->sort()->values()->all(),
-            $this->matchedIds(['delivery_service' => ['cdek_pickup']], $scope),
-        );
+        // Пункт выдачи и постамат — отдельные службы в фильтре.
+        $this->assertSame([$inPickup->id], $this->matchedIds(['delivery_service' => ['cdek_pickup']], $scope));
+        $this->assertSame([$inPostamat->id], $this->matchedIds(['delivery_service' => ['cdek_postamat']], $scope));
     }
 
     public function test_unknown_delivery_service_does_not_empty_the_list(): void

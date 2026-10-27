@@ -13,7 +13,11 @@
 return [
     'cdek_pickup' => [
         'label' => 'Пункт выдачи СДЭК',
-        'codes' => ['cdek_pickup', 'cdek_postamat'],
+        'codes' => ['cdek_pickup'],
+    ],
+    'cdek_postamat' => [
+        'label' => 'Постамат СДЭК',
+        'codes' => ['cdek_postamat'],
     ],
     'cdek_courier' => [
         'label' => 'СДЭК: Курьерская доставка',
