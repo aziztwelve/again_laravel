@@ -30,7 +30,7 @@ class ReturnOrderStockToMoySkladJob implements ShouldQueue
 
     public function middleware(): array
     {
-        return [(new WithoutOverlapping('moysklad-return-stock:'.$this->orderId))->expireAfter(900)];
+        return [(new WithoutOverlapping('moysklad-stock:'.$this->orderId))->shared()->expireAfter(900)];
     }
 
     /**
@@ -41,6 +41,10 @@ class ReturnOrderStockToMoySkladJob implements ShouldQueue
     public function handle(): void
     {
         $order = Order::query()->findOrFail($this->orderId);
+
+        if (! in_array($order->status, [\App\Enums\OrderStatus::CANCELLED, \App\Enums\OrderStatus::PRODUCT_RETURN], true)) {
+            return;
+        }
 
         if (! MoySkladSettings::isConfigured()) {
             Log::warning('ReturnOrderStockToMoySkladJob: МойСклад не настроен, возврат пропущен', [

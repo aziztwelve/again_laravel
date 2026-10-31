@@ -533,7 +533,8 @@ class OrderController extends Controller
             return $this->errorResponse('Доступ запрещён', 403);
         }
 
-        if (! $this->orderUpdateService->canUpdate($order)) {
+        $data = $request->validated();
+        if (! $this->orderUpdateService->canUpdate($order, $data)) {
             return $this->errorResponse(
                 'Невозможно редактировать заказ в текущем статусе',
                 422
@@ -543,7 +544,13 @@ class OrderController extends Controller
         DB::beginTransaction();
 
         try {
-            $success = $this->orderUpdateService->update($order, $request->validated());
+            $order = Order::query()->lockForUpdate()->findOrFail($order->id);
+            if (! $this->orderUpdateService->canUpdate($order, $data)) {
+                DB::rollBack();
+
+                return $this->errorResponse('Невозможно редактировать заказ в текущем статусе', 422);
+            }
+            $success = $this->orderUpdateService->update($order, $data);
 
             if (! $success) {
                 DB::rollBack();

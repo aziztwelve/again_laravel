@@ -118,6 +118,25 @@ class DemandService
      *
      * @throws Exception
      */
+    public function restoreOrderStock(Order $order): void
+    {
+        if (! $order->moysklad_demand_uuid) {
+            return;
+        }
+
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $this->token,
+            'Accept-Encoding' => 'gzip',
+            'Content-Type' => 'application/json',
+        ])->put("{$this->baseURL}/entity/demand/{$order->moysklad_demand_uuid}", [
+            'applicable' => true,
+        ]);
+
+        if (! $response->successful()) {
+            throw new Exception('МойСклад: не удалось повторно провести отгрузку. ' . ($response->json('errors.0.error') ?? $response->body()));
+        }
+    }
+
     public function returnOrderStock(Order $order): void
     {
         if (! $order->moysklad_demand_uuid) {

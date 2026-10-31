@@ -176,7 +176,20 @@ class OrderUpdateService
                 $this->applyPromoCodeChange($order, $data['promo_code'] ?: null);
             }
 
+            $reopening = $order->status === OrderStatus::CANCELLED
+                && ($filteredData['status'] ?? null) === OrderStatus::NEW->value;
+            if ($reopening) {
+                // A fresh deadline prevents an old unpaid order being cancelled immediately.
+                if ($order->payment_status !== \App\Enums\PaymentStatus::PAID) {
+                    $filteredData['reservation_expires_at'] = now()->addHours((int) config('abandoned_order.reservation_hours', 2));
+                }
+            }
+
             $order->update($filteredData);
+
+            if ($reopening && $order->moysklad_demand_uuid) {
+                \App\Jobs\RestoreOrderStockInMoySkladJob::dispatch($order->id)->afterCommit();
+            }
 
             // Карточка заказа меняет статус через общий inline-update endpoint,
             // минуя OrderController::updateStatus(). При ручном переходе в
@@ -736,9 +749,13 @@ class OrderUpdateService
     /**
      * Проверить можно ли редактировать заказ
      */
-    public function canUpdate(Order $order): bool
+    public function canUpdate(Order $order, array $data = []): bool
     {
-        // Можно редактировать заказы в любом статусе, кроме отмененных и доставленных
+        // Отменённый заказ можно только вернуть в статус «Новый».
+        if ($order->status === OrderStatus::CANCELLED) {
+            return count($data) === 1 && ($data['status'] ?? null) === OrderStatus::NEW->value;
+        }
+
         return ! in_array($order->status, [
             OrderStatus::CANCELLED,
             OrderStatus::DELIVERED,
