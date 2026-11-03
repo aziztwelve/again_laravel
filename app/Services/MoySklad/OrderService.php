@@ -224,7 +224,10 @@ class OrderService
             }
         );
 
-        return $states[$status->label()] ?? null;
+        // В аккаунте МойСклад статус «Согласован» называется «Подтвержден».
+        $aliases = [\App\Enums\OrderStatus::APPROVED->value => 'Подтвержден'];
+
+        return $states[$status->label()] ?? $states[$aliases[$status->value] ?? ''] ?? null;
     }
 
     /**
