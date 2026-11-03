@@ -12,7 +12,7 @@
 | cdek.md | СДЭК (ПВЗ, расчёт, заявки, треки) | планируется |
 | yandex-delivery.md | Яндекс.Доставка | планируется |
 | yandex-pay.md | Яндекс Пэй | планируется |
-| cloudpayments.md | CloudPayments | планируется |
+| [cloudpayments.md](cloudpayments.md) | CloudPayments | готово |
 | robokassa.md | Robokassa | планируется |
 | messengers.md | Telegram, MAX, VK, WhatsApp | планируется |
 | yandex-maps.md | Яндекс.Карты (ключ JS API, геокодер) | планируется |
