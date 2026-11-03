@@ -39,6 +39,15 @@ class CdekOrderObserver
 
     public function updated(CdekOrder $cdekOrder): void
     {
+        // Номер СДЭК появляется после создания заявки: передаём его в МойСклад,
+        // если заказ туда уже выгружен.
+        if ($cdekOrder->wasChanged('cdek_number') && filled($cdekOrder->cdek_number)) {
+            $order = $cdekOrder->order;
+            if ($order && filled($order->moysklad_order_uuid)) {
+                \App\Jobs\SyncOrderToMoySkladJob::dispatch($order->id);
+            }
+        }
+
         if (! $cdekOrder->isDirty('internal_status')) {
             return;
         }

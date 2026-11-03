@@ -252,7 +252,82 @@ class OrderService
             ];
         }
 
+        // Служба доставки и треки — строковые поля. Пустые значения не отправляем:
+        // МойСклад сохранит то, что уже записано в документе.
+        $stringValues = [
+            'Служба доставки' => $this->deliveryServiceLabel($order),
+            'Трек номер' => $this->trackingNumber($order),
+            'Трек номер ПР' => $this->postTrackingNumber($order),
+        ];
+
+        foreach ($stringValues as $name => $value) {
+            if ($value !== null && $value !== '' && isset($metas[$name])) {
+                $attributes[] = [
+                    'meta' => $metas[$name],
+                    'value' => $value,
+                ];
+            }
+        }
+
         return $attributes;
+    }
+
+    /**
+     * Текст поля «Служба доставки» в том же виде, как его заполняли раньше:
+     * первая строка — способ оплаты, вторая — способ доставки.
+     */
+    private function deliveryServiceLabel(Order $order): ?string
+    {
+        $payment = config('free_shipping.payment_methods')[(string) $order->payment_method] ?? null;
+        $delivery = $order->deliveryMethod?->name ?: $order->legacy_delivery_method;
+
+        $lines = array_values(array_filter([$payment, $delivery], fn ($line) => filled($line)));
+
+        return $lines === [] ? null : implode("\n", $lines);
+    }
+
+    /**
+     * Общий трек-номер заказа. Номер СДЭК заявки, созданной с сайта, лежит в
+     * cdek_orders, а не в orders.tracking_number, поэтому ищем по цепочке.
+     */
+    private function trackingNumber(Order $order): ?string
+    {
+        $legacy = is_array($order->legacy_meta) ? $order->legacy_meta : [];
+
+        $candidates = [
+            $order->tracking_number,
+            $order->yandexOrder?->tracking_number,
+            $order->cdekOrder?->cdek_number,
+            $legacy['cdek_track_number'] ?? null,
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (filled($candidate)) {
+                return trim((string) $candidate);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Трек Почты России: отдельное поле заказа, а для способов доставки Почты России
+     * и международных отправлений — общий трек (как заполнено в МойСклад раньше).
+     */
+    private function postTrackingNumber(Order $order): ?string
+    {
+        $legacy = is_array($order->legacy_meta) ? $order->legacy_meta : [];
+        $own = $legacy['russian_post_tracking_number'] ?? $legacy['russian_post_track'] ?? null;
+        if (filled($own)) {
+            return trim((string) $own);
+        }
+
+        $code = (string) ($order->deliveryMethod?->code ?? '');
+        if (str_starts_with($code, 'russian_post') || str_starts_with($code, 'international')) {
+            return $this->trackingNumber($order);
+        }
+
+        return null;
     }
 
     private function exportCountryLabel(string $country): string
