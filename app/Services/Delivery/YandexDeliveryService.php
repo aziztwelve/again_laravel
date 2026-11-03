@@ -15,6 +15,7 @@ use App\Services\Delivery\Yandex\YandexDeliveryClient;
 use App\Services\Notifications\YandexDeliveryNotificationService;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
@@ -149,10 +150,28 @@ class YandexDeliveryService extends DeliveryService
     public function geocode(string $address): ?array
     {
         $key = $this->settings['geocoder_key'] ?? null;
-        if (! $key) return null;
-        $response = Http::timeout(10)->get('https://geocode-maps.yandex.ru/1.x/', ['apikey' => $key, 'geocode' => $address, 'format' => 'json', 'results' => 1]);
-        $point = $response->json('response.GeoObjectCollection.featureMember.0.GeoObject.Point.pos');
-        return $point ? array_map('floatval', explode(' ', $point)) : null;
+        $address = trim($address);
+        if (! $key || $address === '') return null;
+
+        // Дневной лимит геокодера мал (1000/сутки): успех кэшируем на сутки, неудачу — на 10 минут.
+        $hash = md5(mb_strtolower($address));
+        if (($cached = Cache::get("yandex:geocode:$hash")) !== null) return $cached;
+        if (Cache::has("yandex:geocode:fail:$hash")) return null;
+
+        try {
+            $response = Http::timeout(10)->get('https://geocode-maps.yandex.ru/1.x/', ['apikey' => $key, 'geocode' => $address, 'format' => 'json', 'results' => 1]);
+            $point = $response->successful() ? $response->json('response.GeoObjectCollection.featureMember.0.GeoObject.Point.pos') : null;
+        } catch (\Throwable) {
+            $point = null;
+        }
+
+        if (! $point) {
+            Cache::put("yandex:geocode:fail:$hash", 1, now()->addMinutes(10));
+            return null;
+        }
+        $coordinates = array_map('floatval', explode(' ', $point));
+        Cache::put("yandex:geocode:$hash", $coordinates, now()->addDay());
+        return $coordinates;
     }
 
     public function sync(YandexOrder $yandexOrder): void

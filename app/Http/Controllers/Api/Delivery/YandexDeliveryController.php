@@ -53,6 +53,14 @@ class YandexDeliveryController extends Controller
         ]);
 
         $filter = array_filter($validated, fn ($v) => $v !== null);
+        // Без города или области Яндекс отдаёт весь список пунктов страны — это десятки МБ.
+        $hasBbox = isset($filter['latitude_from'], $filter['latitude_to'], $filter['longitude_from'], $filter['longitude_to']);
+        if (! isset($filter['geo_id']) && ! $hasBbox) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Укажите geo_id или границы области (latitude_from/to, longitude_from/to).',
+            ], 422);
+        }
         if (isset($filter['geo_id'])) $filter['geo_id'] = (int) $filter['geo_id'];
         $points = $this->service->getPickupPoints($filter);
 

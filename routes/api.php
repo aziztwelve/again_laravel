@@ -258,7 +258,7 @@ Route::prefix('/public')->group(function () {
         Route::prefix('yandex')->name('yandex.')->group(function () {
             Route::get('/tariffs', [YandexDeliveryController::class, 'tariffs'])->name('tariffs');
             Route::get('/location', [YandexDeliveryController::class, 'detectLocation'])->name('location');
-            Route::get('/geocode', [YandexDeliveryController::class, 'geocode'])->name('geocode');
+            Route::get('/geocode', [YandexDeliveryController::class, 'geocode'])->middleware('throttle:60,1')->name('geocode');
             Route::get('/pvz', [YandexDeliveryController::class, 'pvz'])->name('pvz');
             Route::post('/calculate', [YandexDeliveryController::class, 'calculate'])->name('calculate');
             Route::post('/offers/confirm', [YandexDeliveryController::class, 'confirmOffer'])->name('offers.confirm');

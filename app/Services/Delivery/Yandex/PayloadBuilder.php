@@ -88,18 +88,20 @@ class PayloadBuilder
             return ['type' => 'platform_station', 'platform_station' => ['platform_id' => $pvzId]];
         }
 
+        $address = trim((string) ($destination['address'] ?? ''));
         $coordinates = $destination['coordinates'] ?? null;
-        if (! is_array($coordinates) || count($coordinates) !== 2) {
-            throw new InvalidArgumentException('Для курьерской доставки требуются координаты адреса.');
+        $hasCoordinates = is_array($coordinates) && count($coordinates) === 2;
+        if (! $hasCoordinates && $address === '') {
+            throw new InvalidArgumentException('Для курьерской доставки укажите адрес.');
         }
-        return [
-            'type' => 'custom_location',
-            'custom_location' => [
-                'longitude' => (float) $coordinates[0],
-                'latitude' => (float) $coordinates[1],
-                'details' => array_filter(['full_address' => $destination['address'] ?? null]),
-            ],
-        ];
+
+        // Яндекс принимает адрес и без координат — геокодер не обязателен.
+        $location = ['details' => array_filter(['full_address' => $address ?: null])];
+        if ($hasCoordinates) {
+            $location['longitude'] = (float) $coordinates[0];
+            $location['latitude'] = (float) $coordinates[1];
+        }
+        return ['type' => 'custom_location', 'custom_location' => $location];
     }
 
     private function item(array $item, string $placeBarcode): array
