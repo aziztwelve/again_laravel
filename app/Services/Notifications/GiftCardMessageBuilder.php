@@ -7,6 +7,31 @@ use Illuminate\Support\Number;
 
 class GiftCardMessageBuilder
 {
+    public const EMAIL_SUBJECT = 'Подарочный сертификат на белье Again';
+
+    /**
+     * HTML письма получателю сертификата (канал email).
+     */
+    public function buildEmailHtml(GiftCard $giftCard): string
+    {
+        $nominal = (float) $giftCard->nominal;
+
+        return view('emails.gift-card', [
+            'subject' => self::EMAIL_SUBJECT,
+            'name' => trim((string) $giftCard->recipient_name),
+            'sender' => trim((string) $giftCard->sender_name),
+            'message' => trim((string) $giftCard->message),
+            'nominal' => number_format($nominal, floor($nominal) === $nominal ? 0 : 2, ',', ' ') . ' ₽',
+            'code' => $giftCard->code,
+            'shopUrl' => rtrim((string) config('app.frontend_url'), '/'),
+            'supportLinks' => [
+                ['label' => 'Написать в поддержку в WhatsApp', 'url' => 'https://wa.me/79213828888'],
+                ['label' => 'Написать в поддержку в Telegram', 'url' => 'https://t.me/again8help_bot'],
+                ['label' => 'Написать в поддержку в MAX', 'url' => 'https://max.ru/' . config('services.messenger_deeplinks.max_bot')],
+            ],
+        ])->render();
+    }
+
     public function buildIssued(GiftCard $giftCard): string
     {
         return implode("\n", [

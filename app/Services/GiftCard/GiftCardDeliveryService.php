@@ -4,6 +4,7 @@ namespace App\Services\GiftCard;
 
 use App\Enums\CommunicationChannel;
 use App\Models\GiftCard\GiftCard;
+use App\Services\Notifications\GiftCardMessageBuilder;
 use App\Services\Notifications\Jobs\SendNotificationJob;
 use App\Services\Notifications\OrderNotificationService;
 use Illuminate\Support\Facades\Log;
@@ -25,6 +26,12 @@ class GiftCardDeliveryService
             $recipient = $this->resolveRecipient($giftCard);
             $message = $this->buildMessage($giftCard);
             $data = $this->buildData($giftCard);
+
+            if ($channel === CommunicationChannel::EMAIL->value) {
+                $builder = app(GiftCardMessageBuilder::class);
+                $data['subject'] = GiftCardMessageBuilder::EMAIL_SUBJECT;
+                $data['html'] = $builder->buildEmailHtml($giftCard);
+            }
 
             SendNotificationJob::dispatch($channel, $recipient, $message, $data);
 
