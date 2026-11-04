@@ -495,6 +495,7 @@ class OrderFilterService
         // Разрешенные поля для сортировки
         $allowedSortFields = [
             'id',
+            'order_number',
             'created_at',
             'total_amount',
             'status',
@@ -509,6 +510,17 @@ class OrderFilterService
 
         if (!in_array(strtolower($sortOrder), ['asc', 'desc'])) {
             $sortOrder = 'desc';
+        }
+
+        if ($sortBy === 'order_number') {
+            // Номер — строка (бывают TEST-*/MS-TEST-*), поэтому для числовых
+            // номеров сортируем как число, иначе №9 окажется после №10000.
+            $dir = strtolower($sortOrder) === 'asc' ? 'asc' : 'desc';
+
+            return $query
+                ->orderByRaw("CAST(order_number AS UNSIGNED) {$dir}")
+                ->orderBy('order_number', $dir)
+                ->orderBy('id', $dir);
         }
 
         return $query->orderBy($sortBy, $sortOrder);
@@ -642,7 +654,7 @@ class OrderFilterService
             // Спец-значение 'null' допускаем как маркер «без менеджера», поэтому
             // не используем integer-валидатор. Дальнейшая проверка — в applyFilters.
             'assigned_user_id' => 'nullable|string',
-            'sort_by' => 'nullable|string|in:id,created_at,total_amount,status,payment_status,city_name,country_code',
+            'sort_by' => 'nullable|string|in:id,order_number,created_at,total_amount,status,payment_status,city_name,country_code',
             'sort_order' => 'nullable|string|in:asc,desc',
             'per_page' => 'nullable|integer|min:1|max:200',
         ]);
