@@ -22,7 +22,7 @@ class DiscountController extends Controller
         $perPage = $request->get('per_page', $request->get('per_page') ?? 15);
 
         $discounts = Discount
-            ::with(['categories', 'products'])
+            ::with(['categories', 'products', 'productVariants'])
             ->orderBy('priority');
 
         if ($request->get('name')) {
@@ -177,7 +177,7 @@ class DiscountController extends Controller
 
         return response()->json([
             'message' => 'Скидка успешно обновлена',
-            'discount' => new DiscountResource($discount),
+            'discount' => new DiscountResource($discount->load(['categories', 'products', 'productVariants'])),
         ]);
     }
 

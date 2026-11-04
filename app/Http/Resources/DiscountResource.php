@@ -25,6 +25,12 @@ class DiscountResource extends JsonResource
             'conditions' => $this->conditions,
             'discount_type' => $this->discount_type,
             'products' => ProductResource::collection($this->whenLoaded('products')),
+            'product_variants' => $this->whenLoaded('productVariants', fn () => $this->productVariants->map(fn ($v) => [
+                'id' => $v->id,
+                'product_id' => $v->product_id,
+                'name' => $v->name,
+                'sku' => $v->sku,
+            ])->values()),
             'categories' => CategoryResource::collection($this->whenLoaded('categories')),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at
