@@ -329,6 +329,20 @@ class ProductsAndVariantsSyncWithMoySkladService
 
             // Обновляем поле stock_quantity у продукта
             $product->update(['stock_quantity' => (int)$totalStock]);
+
+            // Если у самого товара в МС цены нет (например, подарочный
+            // сертификат с номиналами), показываем минимальную цену вариантов
+            // («от 2000»), а не 0.
+            if ((float) $product->price <= 0) {
+                $minVariantPrice = ProductVariant::where('product_id', $product->id)
+                    ->whereNull('deleted_at')
+                    ->where('price', '>', 0)
+                    ->min('price');
+
+                if ($minVariantPrice !== null) {
+                    $product->update(['price' => $minVariantPrice]);
+                }
+            }
         }
 
 
