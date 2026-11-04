@@ -44,6 +44,7 @@ class CdekDeliveryService extends DeliveryService
     public function pickupPoints(array $filter = []): array
     {
         $query = array_filter([
+            'code' => $filter['code'] ?? null,
             'city_code' => $filter['city_code'] ?? null,
             'region_code' => $filter['region_code'] ?? null,
             'country_code' => isset($filter['country_code']) ? strtoupper($filter['country_code']) : 'RU',
@@ -261,6 +262,76 @@ class CdekDeliveryService extends DeliveryService
             ->filter(fn (array $tariff) => $allowedCodes === [] || in_array((int) ($tariff['tariff_code'] ?? 0), $allowedCodes, true))
             ->map(fn (array $tariff) => $this->presentTariff($tariff, $deliveryType, $daysOffset))
             ->values()->all();
+    }
+
+    /**
+     * Дополняет данные доставки СДЭК, пришедшие без тарифа (например, из ручного
+     * заказа в админке): считает тариф на сервере. Без этого цена доставки
+     * оказывалась нулевой и заказ получал бесплатную доставку, хотя правило
+     * бесплатной доставки не срабатывало.
+     *
+     * Заказ не блокируем: если рассчитать не удалось, данные возвращаются как
+     * есть, а причина пишется в лог.
+     *
+     * @param  array<int, array>  $items  проверенные позиции заказа (validated_items)
+     */
+    public function completeDelivery(array $delivery, array $items): array
+    {
+        if (filled($delivery['tariff_code'] ?? null) && isset($delivery['price'])) {
+            return $delivery;
+        }
+
+        try {
+            $type = (string) ($delivery['delivery_type'] ?? '');
+            if (! in_array($type, ['courier', 'pickup', 'postamat'], true)) {
+                return $delivery;
+            }
+
+            $destination = is_array($delivery['destination'] ?? null) ? $delivery['destination'] : [];
+            $pickupCode = $delivery['pvz']['code'] ?? null;
+
+            // Город пункта выдачи берём у СДЭК по коду пункта: из админки он не приходит.
+            if ($type !== 'courier' && ! filled($destination['city_code'] ?? null) && $pickupCode) {
+                $cityCode = data_get($this->pickupPoints(['code' => $pickupCode, 'type' => 'ALL']), '0.location.city_code');
+                if ($cityCode) {
+                    $destination['city_code'] = (int) $cityCode;
+                }
+            }
+
+            $tariffs = collect($this->calculateTariffs(
+                $type,
+                $destination,
+                array_map(fn (array $item) => $this->checkoutItem($item), $items),
+                $pickupCode,
+            ));
+
+            // Выбранный менеджером тариф сохраняем, иначе берём самый дешёвый из разрешённых.
+            $wanted = (int) ($delivery['tariff_code'] ?? 0);
+            $tariff = ($wanted ? $tariffs->firstWhere('tariff_code', $wanted) : null)
+                ?? $tariffs->sortBy('price')->first();
+
+            if (! $tariff) {
+                Log::warning('CDEK: tariff was not calculated for an order without tariff', [
+                    'delivery_type' => $type,
+                    'pickup_code' => $pickupCode,
+                    'city_code' => $destination['city_code'] ?? null,
+                ]);
+
+                return $delivery;
+            }
+
+            return array_filter([
+                ...$delivery,
+                ...$tariff,
+                'provider' => 'cdek',
+                'delivery_type' => $type,
+                'destination' => $destination ?: null,
+            ], fn ($value) => $value !== null);
+        } catch (\Throwable $exception) {
+            Log::warning('CDEK: failed to complete delivery data', ['error' => $exception->getMessage()]);
+
+            return $delivery;
+        }
     }
 
     /**

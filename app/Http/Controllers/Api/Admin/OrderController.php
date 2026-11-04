@@ -239,6 +239,13 @@ class OrderController extends Controller
                 return $this->validationErrorResponse($itemsValidation['errors']);
             }
 
+            // 4.5. Ручной заказ СДЭК приходит без тарифа: считаем его на сервере,
+            // иначе доставка получилась бы бесплатной из-за отсутствия цены.
+            if (($validated['delivery_data']['provider'] ?? null) === 'cdek') {
+                $validated['delivery_data'] = app(\App\Services\Delivery\CdekDeliveryService::class)
+                    ->completeDelivery($validated['delivery_data'], $itemsValidation['validated_items']);
+            }
+
             // 5. Создаем заказ
             $order = $this->orderCreationService->createOrder($validated, $orderClient->id);
 
