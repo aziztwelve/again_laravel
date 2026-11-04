@@ -74,6 +74,21 @@ class CustomerTypeAudienceTest extends TestCase
         }
     }
 
+    public function test_hidden_discount_is_not_applied_automatically(): void
+    {
+        $product = $this->product();
+        $discount = $this->discount(Discount::CUSTOMER_TYPE_HIDDEN);
+        $product->discounts()->attach($discount->id);
+
+        foreach ([Discount::CUSTOMER_TYPE_GUEST, Discount::CUSTOMER_TYPE_AUTHORIZED] as $customerType) {
+            $model = Product::find($product->id);
+            $this->discountApplier()->applyDiscountToProduct($model, $customerType);
+
+            $this->assertSame(100.0, (float) $model->price);
+            $this->assertNull($model->discount_id);
+        }
+    }
+
     public function test_guest_promo_code_is_rejected_for_authorized_client(): void
     {
         $promoCode = $this->promoCode(PromoCode::CUSTOMER_TYPE_GUEST);

@@ -12,6 +12,8 @@ class Discount extends Model
     public const CUSTOMER_TYPE_AUTHORIZED = 'authorized';
     public const CUSTOMER_TYPE_GUEST = 'guest';
     public const CUSTOMER_TYPE_ALL = 'all';
+    /** Скрытая: не применяется автоматически и не видна на витрине, менеджер добавляет её в заказ вручную. */
+    public const CUSTOMER_TYPE_HIDDEN = 'hidden';
 
     protected $guarded = ['id'];
 
@@ -27,6 +29,10 @@ class Discount extends Model
     public function isAvailableForCustomerType(?string $customerType): bool
     {
         $target = $this->customer_type ?: self::CUSTOMER_TYPE_ALL;
+
+        if ($target === self::CUSTOMER_TYPE_HIDDEN) {
+            return false;
+        }
 
         return $target === self::CUSTOMER_TYPE_ALL || $target === $customerType;
     }
