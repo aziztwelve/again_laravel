@@ -877,7 +877,8 @@ class OrderController extends Controller
 
     private function validatePromoCode(string $code, $client): array
     {
-        return $this->promoValidationService->validate($code, $client);
+        // Менеджер может применять и скрытые промокоды.
+        return $this->promoValidationService->validate($code, $client, true);
     }
 
     /**

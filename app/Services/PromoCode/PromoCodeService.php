@@ -40,7 +40,11 @@ class PromoCodeService
         }
 
         $customerType = $client ? PromoCode::CUSTOMER_TYPE_AUTHORIZED : PromoCode::CUSTOMER_TYPE_GUEST;
-        if (! $promoCode->isAvailableForCustomerType($customerType)) {
+        // Скрытые промокоды может применять только менеджер (пользователь админки),
+        // покупатель сайта — нет.
+        $isManager = $request->user('sanctum') instanceof \App\Models\User;
+        $hiddenForManager = $isManager && $promoCode->customer_type === PromoCode::CUSTOMER_TYPE_HIDDEN;
+        if (! $hiddenForManager && ! $promoCode->isAvailableForCustomerType($customerType)) {
             return ['error' => response()->json([
                 'message' => $client
                     ? 'Этот промокод доступен только гостевым покупателям'

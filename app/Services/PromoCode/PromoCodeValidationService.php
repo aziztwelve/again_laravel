@@ -17,7 +17,7 @@ class PromoCodeValidationService
      *                            (applies_to_all_clients=true без привязок).
      * @return array ['success' => bool, 'message' => string, 'promo_code' => PromoCode|null, 'code' => string|null]
      */
-    public function validate(string $code, ?Client $client = null): array
+    public function validate(string $code, ?Client $client = null, bool $allowHidden = false): array
     {
         // 1. Поиск промокода
         $promoCodeResult = $this->findPromoCode($code);
@@ -34,7 +34,7 @@ class PromoCodeValidationService
         }
 
         // 3. Проверка доступности для клиента
-        $clientCheck = $this->checkClientEligibility($promoCode, $client);
+        $clientCheck = $this->checkClientEligibility($promoCode, $client, $allowHidden);
         if (!$clientCheck['success']) {
             return $clientCheck;
         }
@@ -141,10 +141,13 @@ class PromoCodeValidationService
      * @param Client|null $client Клиент или NULL для гостя
      * @return array
      */
-    private function checkClientEligibility(PromoCode $promoCode, ?Client $client): array
+    private function checkClientEligibility(PromoCode $promoCode, ?Client $client, bool $allowHidden = false): array
     {
         $customerType = $client ? PromoCode::CUSTOMER_TYPE_AUTHORIZED : PromoCode::CUSTOMER_TYPE_GUEST;
-        if (! $promoCode->isAvailableForCustomerType($customerType)) {
+        // Скрытый промокод не виден аудитории сайта, но менеджер может применить
+        // его в заказе ($allowHidden — только для админских вызовов).
+        $hiddenForManager = $allowHidden && $promoCode->customer_type === PromoCode::CUSTOMER_TYPE_HIDDEN;
+        if (! $hiddenForManager && ! $promoCode->isAvailableForCustomerType($customerType)) {
             return [
                 'success' => false,
                 'message' => $client

@@ -619,7 +619,8 @@ class OrderUpdateService
             return;
         }
 
-        $validation = $this->promoValidationService->validate($newCode, $client);
+        // Менеджер может применять и скрытые промокоды.
+        $validation = $this->promoValidationService->validate($newCode, $client, true);
         if (! $validation['success']) {
             // Не падаем — просто не применяем новый. Старый уже отвязан.
             // Контроллер для валидации нового кода должен использовать /api/promo-codes/validate.
