@@ -177,11 +177,12 @@ class CatalogService
             });
         }
 
-        // Для ручных подборок («Новинки», «Новинки 8», «Товары на главной 4/8»)
+        // Для ручных подборок («Новинки», «Новинки 8», «Товары на главной 4/8»,
+        // «Косметика»)
         // порядок задаётся
         // позицией товара в категории (админка), а не полем display_order.
         $isManualNewCategory = $category
-            && in_array($category->slug, ['novinki', 'novinki-8', 'tovary-na-glavnoi-4', 'tovary-na-glavnoi-8'], true)
+            && in_array($category->slug, ['novinki', 'novinki-8', 'tovary-na-glavnoi-4', 'tovary-na-glavnoi-8', 'kosmetika'], true)
             && !$category->is_new_product;
         if ($isManualNewCategory) {
             $query->join('category_product as category_sort', function ($join) use ($category) {
