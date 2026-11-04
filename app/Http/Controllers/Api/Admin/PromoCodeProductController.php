@@ -28,6 +28,10 @@ class PromoCodeProductController extends Controller
             ->where('promo_code_id', $promoCodeId)
             ->get();
 
+        // Товар мог быть удалён (soft delete, например при синхронизации с МойСклад) —
+        // такие привязки пропускаем, иначе product === null.
+        $promoProducts = $promoProducts->filter(fn ($item) => $item->product !== null);
+
         if ($withVariants) {
             $products = $promoProducts
                 ->groupBy('product_id')
