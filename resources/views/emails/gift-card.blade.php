@@ -24,6 +24,10 @@
 
                         <p style="margin:0 0 16px">В этом письме твой подарочный сертификат на сумму <strong>{{ $nominal }}</strong></p>
 
+                        @if($imageUrl)
+                            <img src="{{ $imageUrl }}" alt="Подарочный сертификат Again на {{ $nominal }}" width="560" style="display:block;width:100%;max-width:560px;height:auto;border:0;margin:0 0 16px">
+                        @endif
+
                         @if($message)
                             <p style="margin:0 0 16px">
                                 💌 Сообщение{{ $sender ? ' от '.$sender : '' }}:<br>

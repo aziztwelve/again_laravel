@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\GiftCard\GiftCard;
 use App\Services\Notifications\GiftCardMessageBuilder;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class GiftCardEmailTest extends TestCase
@@ -69,5 +70,18 @@ class GiftCardEmailTest extends TestCase
         $html = app(GiftCardMessageBuilder::class)->buildEmailHtml($this->card(['nominal' => 1500.5]));
 
         $this->assertStringContainsString('1 500,50 ₽', $html);
+    }
+
+    public function test_certificate_image_is_shown_for_nominals_that_have_one(): void
+    {
+        Storage::fake('public');
+        Storage::disk('public')->put('gift-certificates/2000.jpg', 'x');
+        $builder = app(GiftCardMessageBuilder::class);
+
+        $with = $builder->buildEmailHtml($this->card(['nominal' => 2000]));
+        $without = $builder->buildEmailHtml($this->card(['nominal' => 2500]));
+
+        $this->assertStringContainsString('src="'.url('/storage/gift-certificates/2000.jpg').'"', $with);
+        $this->assertStringNotContainsString('<img', $without);
     }
 }
