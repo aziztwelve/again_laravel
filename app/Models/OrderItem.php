@@ -57,4 +57,23 @@ class OrderItem extends Model
     {
         return $this->belongsTo(Promotion::class);
     }
+
+    /**
+     * Что отправлять в МойСклад как номенклатуру позиции: модификация (variant),
+     * а если у позиции нет варианта (простой товар без модификаций) — сам товар.
+     *
+     * @return array{type: string, uuid: string}|null
+     */
+    public function moyskladAssortment(): ?array
+    {
+        if ($uuid = $this->variant?->uuid) {
+            return ['type' => 'variant', 'uuid' => $uuid];
+        }
+
+        if ($this->product_variant_id === null && ($uuid = $this->product?->uuid)) {
+            return ['type' => 'product', 'uuid' => $uuid];
+        }
+
+        return null;
+    }
 }

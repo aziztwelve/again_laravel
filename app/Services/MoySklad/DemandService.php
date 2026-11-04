@@ -200,9 +200,9 @@ class DemandService
         $positions = [];
 
         foreach ($order->items as $item) {
-            $variantUuid = $item->variant?->uuid ?? null;
+            $assortment = $item->moyskladAssortment();
 
-            if (! $variantUuid) {
+            if (! $assortment) {
                 Log::warning('MoySklad: позиция пропущена при создании отгрузки — нет uuid варианта', [
                     'order_id' => $order->id,
                     'order_item_id' => $item->id,
@@ -214,8 +214,8 @@ class DemandService
             $positions[] = [
                 'assortment' => [
                     'meta' => [
-                        'href' => "{$this->baseURL}/entity/variant/{$variantUuid}",
-                        'type' => 'variant',
+                        'href' => "{$this->baseURL}/entity/{$assortment['type']}/{$assortment['uuid']}",
+                        'type' => $assortment['type'],
                         'mediaType' => 'application/json',
                     ],
                 ],

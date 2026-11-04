@@ -152,7 +152,7 @@ class OrderService
         $totalItems = $order->items->count();
 
         if ($totalItems > 0 && count($positions) < $totalItems) {
-            $skippedItems = $order->items->filter(fn ($item) => ! ($item->variant?->uuid));
+            $skippedItems = $order->items->filter(fn ($item) => ! $item->moyskladAssortment());
 
             Log::warning('MoySklad: заказ выгружается с неполным составом — часть позиций не синхронизирована', [
                 'order_id'      => $order->id,
@@ -414,10 +414,10 @@ class OrderService
         ], true);
 
         foreach ($order->items as $item) {
-            $variantUuid = $item->variant?->uuid ?? null;
+            $assortment = $item->moyskladAssortment();
 
-            // Если нет UUID варианта в МС — пропускаем с предупреждением
-            if (! $variantUuid) {
+            // Если нет UUID варианта/товара в МС — пропускаем с предупреждением
+            if (! $assortment) {
                 Log::warning('MoySklad: позиция пропущена — нет uuid варианта', [
                     'order_id'          => $order->id,
                     'order_item_id'     => $item->id,
@@ -428,24 +428,16 @@ class OrderService
 
             $priceKopecks = (int) round((float) $item->price * 100);
 
-            // discount в order_items хранится как рублёвая сумма скидки на позицию.
-            // МойСклад принимает скидку только в процентах (0–100).
-            // Конвертируем: discountPct = (discountRub / price) * 100.
-            // Если цена 0 или скидки нет — передаём 0.
+            // price в order_items — уже итоговая цена за единицу (после скидок и
+            // промокода), а discount — лишь справочная сумма скидки. Отправляем
+            // итоговую цену без скидки, чтобы сумма заказа в МойСклад совпадала с сайтом.
             $discountPct = 0;
-            if ($item->discount && $item->price > 0) {
-                $discountPct = round((float) $item->discount / (float) $item->price * 100, 2);
-                // МС не принимает дробные проценты — округляем до целого
-                $discountPct = (int) round($discountPct);
-                // Защита от некорректных значений
-                $discountPct = max(0, min(100, $discountPct));
-            }
 
             $positions[] = [
                 'assortment' => [
                     'meta' => [
-                        'href'      => "{$this->baseURL}/entity/variant/{$variantUuid}",
-                        'type'      => 'variant',
+                        'href'      => "{$this->baseURL}/entity/{$assortment['type']}/{$assortment['uuid']}",
+                        'type'      => $assortment['type'],
                         'mediaType' => 'application/json',
                     ],
                 ],
