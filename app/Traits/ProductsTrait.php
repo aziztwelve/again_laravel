@@ -144,7 +144,12 @@ trait ProductsTrait
         foreach ($products as &$product) {
             $variants = $product['variants'] ?? [];
 
-            if (!empty($variants)) {
+            // empty() у коллекции Eloquent всегда false (даже пустой), поэтому
+            // простые товары без вариантов считались «с вариантами» и получали
+            // остаток 0 вместо остатка товара.
+            $hasVariants = is_countable($variants) ? count($variants) > 0 : !empty($variants);
+
+            if ($hasVariants) {
                 // Остаток товара с вариантами = сумма остатков вариантов, без
                 // остатка родительской строки: отчёт МойСклад (groupBy=variant
                 // по умолчанию) отдаёт и товар, и его модификации отдельными
