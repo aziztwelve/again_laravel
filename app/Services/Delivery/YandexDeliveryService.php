@@ -2,6 +2,7 @@
 
 namespace App\Services\Delivery;
 
+use App\Models\DeliveryMethod;
 use App\Models\DeliveryServiceSetting;
 use App\Models\Order;
 use App\Models\Shipment;
@@ -83,6 +84,113 @@ class YandexDeliveryService extends DeliveryService
             }, $offers);
         }
         return $offers;
+    }
+
+    /**
+     * Данные доставки Яндекса для заказа, пришедшего без цены (ручной заказ из
+     * админки отправляет только пункт выдачи). Без цены доставка получалась
+     * бесплатной, хотя правило бесплатной доставки не срабатывало: цену считаем
+     * на сервере по предложениям Яндекса.
+     *
+     * Идентификатор предложения в заказ не пишем: оно живёт недолго, а после
+     * оплаты заказ без offer_id создаётся прямой заявкой. Заказ не блокируем:
+     * если цену получить не удалось, данные возвращаются как есть.
+     *
+     * @param  array  $payload  валидированные данные заказа
+     * @param  array<int, array>  $items  проверенные позиции заказа (validated_items)
+     * @return array  delivery_data для заказа
+     */
+    public function completeDelivery(array $payload, array $items): array
+    {
+        $data = is_array($payload['delivery_data'] ?? null) ? $payload['delivery_data'] : [];
+
+        // Цена уже есть (в том числе нулевая от правила витрины) или это не Яндекс.
+        if (array_key_exists('price', $data) || ($data['provider'] ?? 'yandex') !== 'yandex') {
+            return $data;
+        }
+
+        try {
+            $methodCode = $this->resolveMethodCode($payload);
+            if (! in_array($methodCode, ['yandex_pickup', 'yandex_courier'], true) && ($data['provider'] ?? null) !== 'yandex') {
+                return $data;
+            }
+
+            $type = match ($methodCode) {
+                'yandex_courier' => 'courier',
+                'yandex_pickup' => 'pickup',
+                default => in_array($payload['delivery_type'] ?? $data['delivery_type'] ?? null, ['pickup', 'courier'], true)
+                    ? ($payload['delivery_type'] ?? $data['delivery_type'])
+                    : 'pickup',
+            };
+
+            $pvzId = $payload['pvz_code'] ?? $data['pvz']['id'] ?? null;
+            $destination = null;
+            if ($type === 'courier') {
+                $address = is_array($payload['delivery_address'] ?? null) ? $payload['delivery_address'] : [];
+                $coordinates = $payload['destination_coordinates'] ?? $data['destination']['coordinates'] ?? null;
+                $destination = array_filter([
+                    'address' => implode(', ', array_filter([$address['city'] ?? null, $address['address'] ?? null])),
+                    'coordinates' => is_array($coordinates) && count($coordinates) === 2 ? $coordinates : null,
+                ], fn ($value) => $value !== null);
+            }
+
+            $offers = $this->calculateOffers(
+                $type,
+                array_map(fn (array $item) => $this->offerItem($item), $items),
+                $pvzId,
+                null,
+                $destination,
+                ['name' => 'Покупатель', 'phone' => '+70000000000'],
+            );
+
+            // Берём тарифную цену Яндекса: provider_price сохраняется, когда
+            // calculateOffers уже обнулил цену по собственному порогу.
+            $prices = array_map(fn (array $offer) => (float) ($offer['provider_price'] ?? $offer['price'] ?? 0), $offers);
+            $prices = array_filter($prices, fn (float $price) => $price > 0);
+
+            if ($prices === []) {
+                Log::warning('Yandex Delivery: price was not calculated for an order without price', [
+                    'delivery_type' => $type,
+                    'pvz_id' => $pvzId,
+                ]);
+
+                return $data;
+            }
+
+            return [...$data, 'delivery_type' => $type, 'price' => min($prices)];
+        } catch (\Throwable $exception) {
+            Log::warning('Yandex Delivery: failed to complete delivery data', ['error' => $exception->getMessage()]);
+
+            return $data;
+        }
+    }
+
+    /** Код способа доставки по имени из заказа (yandex_pickup / yandex_courier). */
+    protected function resolveMethodCode(array $payload): ?string
+    {
+        $name = $payload['delivery_method']['name'] ?? null;
+
+        return $name ? DeliveryMethod::query()->where('name', $name)->value('code') : null;
+    }
+
+    /** Позиция заказа в формате расчёта предложений (как её отправляет витрина). */
+    private function offerItem(array $item): array
+    {
+        $model = $item['model'] ?? null;
+        $product = $model?->product;
+
+        return [
+            'name' => $item['name'] ?? $model?->name ?? $product?->name ?? 'Товар',
+            'article' => (string) ($model?->sku ?? $product?->sku ?? $model?->id ?? ''),
+            'weight' => ($model?->weight ?: $product?->weight) ?: 500,
+            'size' => [
+                'length' => $model?->length ?: $product?->length,
+                'width' => $model?->width ?: $product?->width,
+                'height' => $model?->height ?: $product?->height,
+            ],
+            'quantity' => (int) ($item['quantity'] ?? 1),
+            'price' => (float) ($item['final_price'] ?? 0),
+        ];
     }
 
     public function confirmOffer(string $offerId, ?int $orderId = null): array

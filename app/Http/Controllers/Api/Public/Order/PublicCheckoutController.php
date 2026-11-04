@@ -201,6 +201,14 @@ class PublicCheckoutController extends Controller
                 }
             }
 
+            // Яндекс.Доставка без цены в запросе: цену считаем на сервере, иначе
+            // доставка получилась бы бесплатной из-за отсутствия цены.
+            $yandexDelivery = app(\App\Services\Delivery\YandexDeliveryService::class)
+                ->completeDelivery($validated, $itemsValidation['validated_items']);
+            if ($yandexDelivery !== ($validated['delivery_data'] ?? [])) {
+                $validated['delivery_data'] = $yandexDelivery;
+            }
+
             // 4. Создаём заказ (client_id берётся из $validated['client_id'] или NULL)
             $order = $this->orderCreationService->createOrder(
                 $validated,

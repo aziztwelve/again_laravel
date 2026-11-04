@@ -246,6 +246,13 @@ class OrderController extends Controller
                     ->completeDelivery($validated['delivery_data'], $itemsValidation['validated_items']);
             }
 
+            // Для Яндекс.Доставки без цены (пункт выбран на карте) цену тоже считаем на сервере.
+            $yandexDelivery = app(\App\Services\Delivery\YandexDeliveryService::class)
+                ->completeDelivery($validated, $itemsValidation['validated_items']);
+            if ($yandexDelivery !== ($validated['delivery_data'] ?? [])) {
+                $validated['delivery_data'] = $yandexDelivery;
+            }
+
             // 5. Создаем заказ
             $order = $this->orderCreationService->createOrder($validated, $orderClient->id);
 
