@@ -404,6 +404,15 @@ class OrderService
     {
         $positions = [];
 
+        // Резерв (на время проверки оплаты): полное количество, пока заказ
+        // активен. Для отменённых/доставленных — 0. Когда оплата подтверждена,
+        // создаётся отгрузка (DemandService::shipOrder()), и резерв превращается
+        // в списание. Отмена (в т.ч. автоотмена через 2 часа) снимает резерв.
+        $isActive = ! in_array($order->status, [
+            \App\Enums\OrderStatus::CANCELLED,
+            \App\Enums\OrderStatus::DELIVERED,
+        ], true);
+
         foreach ($order->items as $item) {
             $variantUuid = $item->variant?->uuid ?? null;
 
@@ -445,6 +454,7 @@ class OrderService
                 'quantity' => (float) $item->quantity,
                 // Скидка в процентах (0 если нет скидки)
                 'discount' => $discountPct,
+                'reserve'  => $isActive ? (float) $item->quantity : 0,
             ];
         }
 

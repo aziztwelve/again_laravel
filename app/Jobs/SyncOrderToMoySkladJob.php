@@ -17,10 +17,10 @@ use Illuminate\Support\Facades\Log;
 /**
  * Выгружает заказ в МойСклад (создаёт или обновляет документ «Заказ
  * покупателя») и списывает товар со склада через документ «Отгрузка»
- * (demand) сразу при первой синхронизации — товар считается зарезервированным
- * под заказ с момента оформления, независимо от оплаты. Если оплата не
- * поступит за 2 часа, автоотмена (см. App\Console\Commands\CancelUnpaidOrders)
- * вернёт товар на склад через DemandService::returnOrderStock().
+ * (demand) после подтверждения оплаты. До оплаты товар только зарезервирован
+ * в заказе покупателя (reserve). Если оплата не поступит за 2 часа, автоотмена
+ * (см. App\Console\Commands\CancelUnpaidOrdersCommand) отменяет заказ, и МойСклад
+ * снимает резерв.
  *
  * Вызывается сразу при создании заказа и повторно при оплате/смене
  * статуса/отмене (тогда обновляет уже существующий документ customerorder).
@@ -65,11 +65,12 @@ class SyncOrderToMoySkladJob implements ShouldQueue
         try {
             app(OrderService::class)->pushOrder($order);
 
-            // Списываем товар сразу при первой синхронизации (idempotent —
-            // shipOrder() не создаст повторную отгрузку, если она уже есть).
+            // Пока заказ не оплачен, товар только зарезервирован (reserve в
+            // позициях заказа). Отгрузка (списание) создаётся после подтверждения
+            // оплаты (idempotent — shipOrder() не создаст повторную отгрузку).
             // Отменённые заказы не списываем — для них возврат/отмена
             // обрабатывается отдельно (см. cancelOrder()).
-            if ($order->status !== \App\Enums\OrderStatus::CANCELLED) {
+            if ($order->status !== \App\Enums\OrderStatus::CANCELLED && $order->isPaid()) {
                 app(DemandService::class)->shipOrder($order->fresh());
             }
         } catch (\Throwable $e) {
