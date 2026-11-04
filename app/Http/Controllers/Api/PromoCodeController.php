@@ -37,6 +37,24 @@ class PromoCodeController extends Controller
             }
         }
 
+        // Только действующие сейчас (для выпадающих списков: просроченные
+        // и ещё не начавшиеся промокоды там не нужны).
+        if ($request->boolean('valid')) {
+            $query->where(function ($q) {
+                $q->whereNull('starts_at')->orWhere('starts_at', '<=', now());
+            })->where(function ($q) {
+                $q->whereNull('expires_at')->orWhere('expires_at', '>=', now());
+            });
+        }
+
+        // Необязательная сортировка (по умолчанию порядок не меняется).
+        if (in_array($request->get('sort_by'), ['id', 'created_at'], true)) {
+            $query->orderBy(
+                $request->get('sort_by'),
+                $request->get('sort_order') === 'desc' ? 'desc' : 'asc'
+            );
+        }
+
         // Пагинация (по умолчанию 15 на страницу)
         $perPage = $request->get('per_page', 15);
         $promos = $query->paginate($perPage);
