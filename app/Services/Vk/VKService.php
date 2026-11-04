@@ -85,7 +85,10 @@ class VKService
     protected function handleMessageNew(array $messageObject): array
     {
         return DB::transaction(function () use ($messageObject) {
-            $message = $messageObject['message'] ?? null;
+            // API ВК >= 5.103 присылает {message: {...}}, старые версии
+            // (например, callback-сервер на 5.92) — само сообщение в object.
+            $message = $messageObject['message']
+                ?? (isset($messageObject['from_id']) ? $messageObject : null);
 
             if (!$message) {
                 Log::warning("VKService: Message object not found", ['object' => $messageObject]);
