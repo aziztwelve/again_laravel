@@ -154,9 +154,20 @@ class ProductVariant extends Model
         return $this->morphOne(Discountable::class, 'discountable');
     }
 
+    public function discounts(): MorphToMany
+    {
+        return $this->morphToMany(Discount::class, 'discountable');
+    }
+
     public function discount()
     {
-        return $this->discountable?->discount;
+        // Берём первую привязку к действующей (не удалённой и активной) скидке:
+        // привязки к удалённым скидкам остаются в discountables и раньше
+        // «закрывали» собой рабочие скидки товара.
+        return $this->discounts()
+            ->where('discounts.is_active', true)
+            ->orderBy('discountables.id')
+            ->first();
     }
 
     public function table_color()
