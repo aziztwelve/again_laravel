@@ -31,7 +31,7 @@ class VKWebhookController extends Controller
             // Проверяем дубликат ПЕРЕД обработкой
             if ($eventId && VKWebhookEvent::where('event_id', $eventId)->exists()) {
                 Log::warning("VKWebhookController: Duplicate event skipped", ['event_id' => $eventId]);
-                return response()->json(['ok' => true]);
+                return response('ok', 200);
             }
 
             // Confirmation
@@ -60,11 +60,17 @@ class VKWebhookController extends Controller
                 }
             }
 
-            return response()->json($result ?? ['ok' => true]);
+            if (!($result['ok'] ?? true)) {
+                Log::warning("VKWebhookController: event not processed", ['type' => $data['type'] ?? null]);
+            }
+
+            // Callback API ВК ждёт ровно строку «ok»: иначе повторяет событие
+            // и временно притормаживает доставку.
+            return response('ok', 200);
 
         } catch (\Exception $e) {
             Log::error("VKWebhookController: Exception", ['error' => $e->getMessage()]);
-            return response()->json(['ok' => true], 200);
+            return response('ok', 200);
         }
     }
 
