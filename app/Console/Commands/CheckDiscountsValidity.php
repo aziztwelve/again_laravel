@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\Discount;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 
 class CheckDiscountsValidity extends Command
 {
@@ -29,10 +30,14 @@ class CheckDiscountsValidity extends Command
     {
         $now = Carbon::now();
 
-        $expired = Discount::where('is_active', true)
+        $expiredQuery = Discount::where('is_active', true)
             ->whereNotNull('ends_at')
-            ->where('ends_at', '<', $now)
-            ->update(['is_active' => false]);
+            ->where('ends_at', '<', $now);
+        $expiredIds = (clone $expiredQuery)->pluck('id')->all();
+        $expired = $expiredQuery->update(['is_active' => false]);
+        if ($expiredIds) {
+            Log::info('Discounts deactivated by schedule (ends_at passed)', ['ids' => $expiredIds]);
+        }
 
         $activated = Discount::where('is_active', false)
             ->where('is_manually_disabled', false)

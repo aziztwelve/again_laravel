@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Admin;
 
+use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\DiscountRequest;
 use App\Http\Resources\DiscountResource;
@@ -95,7 +96,6 @@ class DiscountController extends Controller
             $this->reassignProductsToDiscount($allProductIds, $discount);
             $this->reassignVariantsToDiscount($allVariantIds, $discount);
 
-            Discount::deactivateOthersForActiveGlobalDiscount($discount);
         }
 
         return response()->json([
@@ -114,7 +114,17 @@ class DiscountController extends Controller
             $validated['is_manually_disabled'] = ! (bool) $validated['is_active'];
         }
 
+        $wasActive = (bool) $discount->is_active;
         $discount->update($validated);
+
+        if ($wasActive !== (bool) $discount->is_active) {
+            Log::info('Discount toggled from admin', [
+                'discount_id' => $discount->id,
+                'name' => $discount->name,
+                'is_active' => $discount->is_active,
+                'user_id' => auth()->id(),
+            ]);
+        }
 
         $discount->categories()->sync([]);
         $discount->products()->sync([]);
@@ -163,7 +173,6 @@ class DiscountController extends Controller
             $this->reassignProductsToDiscount($allProductIds, $discount);
             $this->reassignVariantsToDiscount($allVariantIds, $discount);
 
-            Discount::deactivateOthersForActiveGlobalDiscount($discount);
         }
 
         return response()->json([
