@@ -170,11 +170,9 @@ class ProductsAndVariantsSyncWithMoySkladService
             return 0.0;
         }
 
-        // Цена на сайте — «Цена продажи» из МойСклад (salePrices[0]), как в самом МС.
-        // Если она не заполнена (наборы), берём «Цену до скидки» (salePrices[1]).
-        $sellingPrice = ($priceData[0]->value ?? 0) / 100;
         $priceBeforeDiscount = ($priceData[1]->value ?? 0) / 100;
-        $price = $sellingPrice > 0 ? $sellingPrice : $priceBeforeDiscount;
+        $priceAfterDiscount = ($priceData[0]->value ?? 0) / 100;
+        $price = $priceBeforeDiscount > 0 ? $priceBeforeDiscount : $priceAfterDiscount;
 
         return $this->normalizeNumericValue($price, self::MAX_PRICE);
     }
