@@ -140,7 +140,11 @@ class YandexDeliveryService extends DeliveryService
                 $pvzId,
                 null,
                 $destination,
-                ['name' => 'Покупатель', 'phone' => '+70000000000'],
+                // Яндекс проверяет формат телефона, поэтому берём настоящего получателя заказа.
+                [
+                    'name' => trim(($payload['recipient']['first_name'] ?? '').' '.($payload['recipient']['last_name'] ?? '')) ?: 'Покупатель',
+                    'phone' => (string) ($payload['recipient']['phone'] ?? ''),
+                ],
             );
 
             // Берём тарифную цену Яндекса: provider_price сохраняется, когда

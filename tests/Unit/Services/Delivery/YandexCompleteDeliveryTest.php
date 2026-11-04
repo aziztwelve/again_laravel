@@ -29,6 +29,7 @@ class YandexCompleteDeliveryTest extends TestCase
             'delivery_method' => ['name' => 'Пункт самовывоза Яндекс.Доставки'],
             'pvz_code' => 'PVZ-1',
             'delivery_data' => ['delivery_type' => 'pickup'],
+            'recipient' => ['first_name' => 'Анна', 'last_name' => 'Иванова', 'phone' => '+79990001122'],
         ];
     }
 
@@ -36,7 +37,7 @@ class YandexCompleteDeliveryTest extends TestCase
     {
         $service = $this->service('yandex_pickup');
         $service->shouldReceive('calculateOffers')->once()
-            ->with('pickup', Mockery::on(fn ($items) => $items[0]['quantity'] === 2 && $items[0]['price'] === 1.0 && $items[0]['weight'] === 500), 'PVZ-1', null, null, Mockery::type('array'))
+            ->with('pickup', Mockery::on(fn ($items) => $items[0]['quantity'] === 2 && $items[0]['price'] === 1.0 && $items[0]['weight'] === 500), 'PVZ-1', null, null, ['name' => 'Анна Иванова', 'phone' => '+79990001122'])
             ->andReturn([
                 // порог витрины уже обнулил цену, тарифная цена в provider_price
                 ['offer_id' => 'a', 'price' => 0.0, 'provider_price' => 420.0],
