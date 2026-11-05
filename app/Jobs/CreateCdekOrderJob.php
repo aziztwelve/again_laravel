@@ -32,7 +32,7 @@ class CreateCdekOrderJob implements ShouldQueue, ShouldBeUnique
         if (! $order->isPaid() || ! str_starts_with((string) $order->deliveryMethod?->code, 'cdek_')) return;
         $delivery = $order->delivery_data ?? [];
         $cdekOrder = CdekOrder::firstOrCreate(['order_id' => $order->id], [
-            'external_order_number' => 'order-'.$order->id,
+            'external_order_number' => CdekOrder::externalNumberFor($order),
             'delivery_type' => $delivery['delivery_type'] ?? (str_ends_with((string) $order->deliveryMethod?->code, 'pickup') ? 'pickup' : 'courier'),
             'delivery_mode' => $delivery['delivery_mode'] ?? null,
             'tariff_code' => $delivery['tariff_code'] ?? 0,

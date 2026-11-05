@@ -213,7 +213,7 @@ class OrderViewController extends Controller
         }
 
         $cdekOrder = CdekOrder::firstOrCreate(['order_id' => $order->id], [
-            'external_order_number' => 'order-'.$order->id,
+            'external_order_number' => CdekOrder::externalNumberFor($order),
             'delivery_type' => $order->delivery_data['delivery_type'] ?? 'courier',
             'delivery_mode' => $order->delivery_data['delivery_mode'] ?? null,
             'tariff_code' => $order->delivery_data['tariff_code'] ?? 0,

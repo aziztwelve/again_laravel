@@ -20,6 +20,16 @@ class CdekOrder extends Model
 
     protected $casts = ['price' => 'decimal:2', 'last_synced_at' => 'datetime'];
 
+    /**
+     * Номер заказа интернет-магазина («Номер ИМ» в кабинете СДЭК). Передаём тот же
+     * номер, что видит покупатель, без префикса: с «order-40254» заказ не находился
+     * поиском по номеру в кабинете СДЭК.
+     */
+    public static function externalNumberFor(Order $order): string
+    {
+        return (string) ($order->order_number ?: $order->id);
+    }
+
     public function order(): BelongsTo { return $this->belongsTo(Order::class); }
     public function shipment(): BelongsTo { return $this->belongsTo(Shipment::class); }
     public function statusEvents(): HasMany { return $this->hasMany(CdekStatusEvent::class)->orderByDesc('status_at'); }
