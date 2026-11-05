@@ -1116,6 +1116,9 @@ class OrderController extends Controller
             'payment_id', 'paid_at',
             'tracking_number',
             'created_at', 'updated_at',
+            // Данные выгрузки в МойСклад принадлежат исходному заказу: копия получит свои.
+            'moysklad_order_uuid', 'moysklad_synced_at', 'moysklad_demand_uuid', 'moysklad_paymentin_uuid',
+            'reservation_expires_at',
         ];
 
         // Используем getRawOriginal() чтобы получить сырые значения из БД
@@ -1129,6 +1132,8 @@ class OrderController extends Controller
         $raw['payment_status'] = 'pending';
         $raw['view_token']     = $viewToken;
         $raw['source']         = 'admin_copy';
+        // Новый срок брони, иначе копия сразу попадёт под автоотмену неоплаченных заказов.
+        $raw['reservation_expires_at'] = now()->addHours((int) config('abandoned_order.reservation_hours', 2));
         // Временный уникальный плейсхолдер (NOT NULL constraint),
         // сразу после INSERT перезаписываем на реальный id.
         $raw['order_number']   = 'TMP-' . bin2hex(random_bytes(8));
@@ -1168,6 +1173,9 @@ class OrderController extends Controller
         $historyService = app(OrderHistoryService::class);
         $historyService->logCopiedFrom($newOrder, $order);
         $historyService->logCopiedTo($order, $newOrder);
+
+        // Копия должна попасть в МойСклад (резерв товара), как и обычный заказ.
+        \App\Jobs\SyncOrderToMoySkladJob::dispatch($newOrder->id);
 
         return response()->json([
             'success' => true,
