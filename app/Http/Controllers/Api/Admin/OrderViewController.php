@@ -139,6 +139,29 @@ class OrderViewController extends Controller
         ]);
     }
 
+    /**
+     * Ручная выгрузка заказа в МойСклад (кнопка в карточке заказа): для заказов, которые
+     * не ушли автоматически — копии, импортированные, упавшие по ошибке. Работает синхронно,
+     * чтобы менеджер сразу увидел результат или текст ошибки.
+     */
+    public function syncMoySklad(Request $request, Order $order): JsonResponse
+    {
+        if (! $this->orderAuthorizationService->canUpdate($request->user())) {
+            return $this->errorResponse('Доступ запрещён', 403);
+        }
+        if (! \App\Services\MoySklad\MoySkladSettings::isConfigured()) {
+            return $this->errorResponse('Интеграция МойСклад не настроена.', 422);
+        }
+
+        try {
+            (new \App\Jobs\SyncOrderToMoySkladJob($order->id))->handle();
+        } catch (\Throwable $e) {
+            return $this->errorResponse('Не удалось выгрузить заказ в МойСклад: '.$e->getMessage(), 422);
+        }
+
+        return $this->successResponse('Заказ выгружен в МойСклад.', ['order' => $order->fresh()]);
+    }
+
     /** Ручное создание/повторное получение статуса заявки Яндекс.Доставки. */
     public function createYandexDelivery(Request $request, Order $order, YandexDeliveryService $service): JsonResponse
     {

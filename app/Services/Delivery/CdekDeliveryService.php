@@ -418,6 +418,10 @@ class CdekDeliveryService extends DeliveryService
         }
 
         $delivery = $order->delivery_data ?? [];
+        $methodCode = (string) $order->loadMissing('deliveryMethod')->deliveryMethod?->code;
+        if (in_array($methodCode, ['cdek_pickup', 'cdek_postamat'], true) && ! ($delivery['pvz']['code'] ?? $delivery['pvz_code'] ?? null)) {
+            return 'В заказе не выбран пункт выдачи СДЭК. Откройте блок «Доставка», нажмите «Редактировать» → «Выбрать на карте», выберите пункт и сохраните.';
+        }
         if (! ($delivery['tariff_code'] ?? null)) {
             return 'В заказе нет данных доставки СДЭК: не выбран тариф. Выберите способ доставки СДЭК в заказе и повторите отправку.';
         }

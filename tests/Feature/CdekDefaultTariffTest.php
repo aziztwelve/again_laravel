@@ -47,4 +47,14 @@ class CdekDefaultTariffTest extends TestCase
 
         $this->assertArrayNotHasKey('tariff_code', $order->fresh()->delivery_data);
     }
+
+    public function test_pickup_order_without_pvz_gets_a_clear_message_about_choosing_the_point(): void
+    {
+        $method = \App\Models\DeliveryMethod::firstOrCreate(['code' => 'cdek_pickup'], ['name' => 'СДЭК ПВЗ', 'is_active' => true]);
+        $order = Order::factory()->create(['delivery_method_id' => $method->id, 'delivery_data' => null]);
+
+        $error = app(CdekDeliveryService::class)->readinessError($order);
+
+        $this->assertStringContainsString('не выбран пункт выдачи', $error);
+    }
 }
