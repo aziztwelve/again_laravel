@@ -75,4 +75,17 @@ class MoySkladPaymentFlowTest extends TestCase
         $this->assertSame(221610, PaymentInService::toKopecks('2216.10'));
         $this->assertSame(0, PaymentInService::toKopecks(null));
     }
+
+    public function test_delivery_position_is_a_service_line_even_for_zero_cost(): void
+    {
+        $line = \App\Services\MoySklad\OrderService::deliveryPosition(459.94, 'https://ms/api', 'svc-1');
+        $this->assertSame('service', $line['assortment']['meta']['type']);
+        $this->assertSame('https://ms/api/entity/service/svc-1', $line['assortment']['meta']['href']);
+        $this->assertSame(45994, $line['price']);
+        $this->assertSame(1, $line['quantity']);
+
+        $free = \App\Services\MoySklad\OrderService::deliveryPosition(0, 'https://ms/api', 'svc-1');
+        $this->assertSame(0, $free['price']);
+        $this->assertSame(1, $free['quantity']);
+    }
 }

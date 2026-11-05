@@ -51,6 +51,27 @@ class OrderService
      *
      * @throws Exception
      */
+    /** Услуга «Доставка» в аккаунте МойСклад (её используют заказы, оформленные раньше). */
+    public const DELIVERY_SERVICE_UUID = 'e0d2dde5-b704-11f0-0a80-0c220015352d';
+
+    /**
+     * Строка заказа с услугой «Доставка»: цена — стоимость доставки заказа, количество 1.
+     */
+    public static function deliveryPosition(float $cost, string $baseURL, string $serviceUuid): array
+    {
+        return [
+            'assortment' => [
+                'meta' => [
+                    'href'      => "{$baseURL}/entity/service/{$serviceUuid}",
+                    'type'      => 'service',
+                    'mediaType' => 'application/json',
+                ],
+            ],
+            'price'    => (int) round(max(0, $cost) * 100),
+            'quantity' => 1,
+        ];
+    }
+
     public function pushOrder(Order $order): string
     {
         $order->loadMissing(['items.variant', 'items.product', 'address', 'client', 'deliveryMethod']);
@@ -60,6 +81,14 @@ class OrderService
         $positions        = $this->buildPositions($order);
 
         $this->logIncompletePositionsIfAny($order, $positions);
+
+        // Доставка — отдельная строка-услуга, всегда (даже за 0 ₽), как в заказах
+        // МойСклад, оформленных раньше.
+        $positions[] = self::deliveryPosition(
+            (float) $order->delivery_cost,
+            $this->baseURL,
+            (string) config('services.moysklad.delivery_service_uuid', self::DELIVERY_SERVICE_UUID),
+        );
 
         $payload = [
             'organization' => ['meta' => $organizationMeta],
