@@ -366,7 +366,10 @@ class Order extends Model
 
         // Записываем в историю
         $this->history()->create([
+            'action' => 'updated',
+            'status' => $this->status instanceof \BackedEnum ? $this->status->value : (string) $this->status,
             'payment_status' => $status->value,
+            'description' => "Статус оплаты изменён на '{$status->label()}'",
             'comment' => "Статус оплаты изменен на: {$status->label()}",
             'user_id' => auth()->id(),
         ]);

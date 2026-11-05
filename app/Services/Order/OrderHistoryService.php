@@ -94,6 +94,25 @@ class OrderHistoryService
         }
     }
 
+    /**
+     * Смена статуса заказа не через форму редактирования: отмена (в том числе автоотмена
+     * через 2 часа), статусы служб доставки, кнопки смены статуса. Пишет одну запись
+     * «Статус заказа изменён с 'A' на 'B'» (+ причину, если есть).
+     */
+    public function logStatusChange(Order $order, ?OrderStatus $from, OrderStatus $to, ?string $reason = null): void
+    {
+        if ($from === $to) {
+            return;
+        }
+
+        $description = "Статус заказа изменён с '".($from?->label() ?? '—')."' на '{$to->label()}'";
+        if ($reason) {
+            $description .= " ({$reason})";
+        }
+
+        $this->write($order, self::ACTION_UPDATED, $description);
+    }
+
     public function logItemAdded(Order $order, OrderItem $item): void
     {
         $name = $item->product?->name ?? "позиция #{$item->id}";

@@ -680,11 +680,13 @@ class OrderCreationService
             }
 
             // Обновляем статус заказа
+            $previousStatus = $order->status;
             $order->update([
                 'status' => OrderStatus::CANCELLED,
                 'cancellation_reason' => $reason,
                 'cancelled_at' => now(),
             ]);
+            $this->historyService->logStatusChange($order, $previousStatus, OrderStatus::CANCELLED, $reason);
 
             $this->refundGiftCardOnCancellation($order);
 
@@ -727,10 +729,12 @@ class OrderCreationService
     public function updateOrderStatus(Order $order, OrderStatus $status): bool
     {
         try {
+            $previousStatus = $order->status;
             $order->update([
                 'status' => $status,
                 'updated_at' => now(),
             ]);
+            $this->historyService->logStatusChange($order, $previousStatus, $status);
 
             // Специальные действия для определенных статусов
             if ($status === OrderStatus::DELIVERED) {
