@@ -71,6 +71,12 @@ class OrderService
             'positions'    => $positions,
         ];
 
+        // Склад заказа: без него поле «Склад» в заказе пустое, хотя резерв
+        // привязан к складу.
+        if ($storeMeta = $this->getStoreMeta()) {
+            $payload['store'] = ['meta' => $storeMeta];
+        }
+
         // Адрес доставки (строкой — самый простой вариант)
         $shipmentAddress = $this->buildShipmentAddress($order);
         if ($shipmentAddress) {
@@ -82,7 +88,7 @@ class OrderService
         // документа «Заказ покупателя» в конкретном аккаунте МойСклад.
         // Если совпадения нет (аккаунт не настроен под наши статусы) —
         // просто не передаём state, МойСклад оставит текущий/дефолтный.
-        $stateMeta = $this->resolveStateMeta($order->status, $order->isPaid());
+        $stateMeta = $this->resolveStateMeta($order->status);
         if ($stateMeta) {
             $payload['state'] = ['meta' => $stateMeta];
         }
@@ -179,6 +185,22 @@ class OrderService
      *
      * @throws Exception
      */
+    /**
+     * Meta основного (первого) склада аккаунта. Кэшируется на 10 минут; при ошибке
+     * МойСклад возвращает null — заказ тогда выгружается без склада.
+     */
+    private function getStoreMeta(): ?array
+    {
+        return \Illuminate\Support\Facades\Cache::remember('moysklad:default-store-meta', 600, function () {
+            $response = Http::withHeaders([
+                'Authorization'   => 'Bearer ' . $this->token,
+                'Accept-Encoding' => 'gzip',
+            ])->get("{$this->baseURL}/entity/store", ['limit' => 1]);
+
+            return $response->successful() ? $response->json('rows.0.meta') : null;
+        });
+    }
+
     public function getOrganizationMeta(): array
     {
         $response = Http::withHeaders([
@@ -203,7 +225,7 @@ class OrderService
      * @return array|null meta статуса, либо null если совпадения не нашлось
      *                     (аккаунт МойСклад не настроен под наши статусы)
      */
-    private function resolveStateMeta(\App\Enums\OrderStatus $status, bool $paid = false): ?array
+    private function resolveStateMeta(\App\Enums\OrderStatus $status): ?array
     {
         $states = \Illuminate\Support\Facades\Cache::remember(
             'moysklad:customerorder:states',
@@ -226,11 +248,6 @@ class OrderService
 
         // В аккаунте МойСклад статус «Согласован» называется «Подтвержден».
         $aliases = [\App\Enums\OrderStatus::APPROVED->value => 'Подтвержден'];
-
-        // Новый оплаченный заказ показываем в МойСклад как «Оплачен».
-        if ($paid && $status === \App\Enums\OrderStatus::NEW && isset($states['Оплачен'])) {
-            return $states['Оплачен'];
-        }
 
         return $states[$status->label()] ?? $states[$aliases[$status->value] ?? ''] ?? null;
     }
