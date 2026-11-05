@@ -749,6 +749,10 @@ class CdekDeliveryService extends DeliveryService
     }
     private function package(array $items, string $number): array
     {
+        // items[].payment.value в API СДЭК — сумма, которую получатель платит при
+        // получении (наложенный платёж). Заказы в СДЭК оформляются только после
+        // оплаты на сайте (CreateCdekOrderJob), поэтому с получателя ничего не
+        // взимаем: всегда 0. Объявленная ценность задаётся отдельно (cost).
         $items = array_values($items);
         $measurements = array_map(fn (array $item) => $this->measurement($item), $items);
         $fallback = $this->settings['default_package'] ?? [];
@@ -759,7 +763,7 @@ class CdekDeliveryService extends DeliveryService
         $width = max(1, (int) collect($measurements)->max('width'));
         $height = max(1, (int) collect($measurements)->sum(fn (array $item) => $item['height'] * $item['quantity']));
 
-        return ['number' => Str::limit($number, 30, ''), 'weight' => $weight, 'length' => $length, 'width' => $width, 'height' => $height, 'items' => array_map(fn (array $item, int $index) => ['name' => Str::limit((string) ($item['name'] ?? 'Товар'), 255, ''), 'ware_key' => (string) ($item['sku'] ?? $item['id'] ?? 'item'), 'payment' => ['value' => (float) ($item['price'] ?? 0)], 'cost' => $this->declaredCost((float) ($item['price'] ?? 0)), 'amount' => $measurements[$index]['quantity'], 'weight' => $measurements[$index]['weight']], $items, array_keys($items))];
+        return ['number' => Str::limit($number, 30, ''), 'weight' => $weight, 'length' => $length, 'width' => $width, 'height' => $height, 'items' => array_map(fn (array $item, int $index) => ['name' => Str::limit((string) ($item['name'] ?? 'Товар'), 255, ''), 'ware_key' => (string) ($item['sku'] ?? $item['id'] ?? 'item'), 'payment' => ['value' => 0.0], 'cost' => $this->declaredCost((float) ($item['price'] ?? 0)), 'amount' => $measurements[$index]['quantity'], 'weight' => $measurements[$index]['weight']], $items, array_keys($items))];
     }
     private function declaredCost(float $price): float
     {
