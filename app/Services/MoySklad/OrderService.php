@@ -82,7 +82,7 @@ class OrderService
         // документа «Заказ покупателя» в конкретном аккаунте МойСклад.
         // Если совпадения нет (аккаунт не настроен под наши статусы) —
         // просто не передаём state, МойСклад оставит текущий/дефолтный.
-        $stateMeta = $this->resolveStateMeta($order->status);
+        $stateMeta = $this->resolveStateMeta($order->status, $order->isPaid());
         if ($stateMeta) {
             $payload['state'] = ['meta' => $stateMeta];
         }
@@ -203,7 +203,7 @@ class OrderService
      * @return array|null meta статуса, либо null если совпадения не нашлось
      *                     (аккаунт МойСклад не настроен под наши статусы)
      */
-    private function resolveStateMeta(\App\Enums\OrderStatus $status): ?array
+    private function resolveStateMeta(\App\Enums\OrderStatus $status, bool $paid = false): ?array
     {
         $states = \Illuminate\Support\Facades\Cache::remember(
             'moysklad:customerorder:states',
@@ -226,6 +226,11 @@ class OrderService
 
         // В аккаунте МойСклад статус «Согласован» называется «Подтвержден».
         $aliases = [\App\Enums\OrderStatus::APPROVED->value => 'Подтвержден'];
+
+        // Новый оплаченный заказ показываем в МойСклад как «Оплачен».
+        if ($paid && $status === \App\Enums\OrderStatus::NEW && isset($states['Оплачен'])) {
+            return $states['Оплачен'];
+        }
 
         return $states[$status->label()] ?? $states[$aliases[$status->value] ?? ''] ?? null;
     }

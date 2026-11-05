@@ -6,6 +6,7 @@ use App\Models\Order;
 use App\Services\MoySklad\DemandService;
 use App\Services\MoySklad\MoySkladSettings;
 use App\Services\MoySklad\OrderService;
+use App\Services\MoySklad\PaymentInService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -17,10 +18,10 @@ use Illuminate\Support\Facades\Log;
 /**
  * Выгружает заказ в МойСклад (создаёт или обновляет документ «Заказ
  * покупателя») и списывает товар со склада через документ «Отгрузка»
- * (demand) после подтверждения оплаты. До оплаты товар только зарезервирован
- * в заказе покупателя (reserve). Если оплата не поступит за 2 часа, автоотмена
- * (см. App\Console\Commands\CancelUnpaidOrdersCommand) отменяет заказ, и МойСклад
- * снимает резерв.
+ * (demand), когда заказ передан в доставку (статус «Отгружен»). До этого товар
+ * только зарезервирован (reserve), а оплата передаётся входящим платежом. Если
+ * оплата не поступит за 2 часа, автоотмена (см. CancelUnpaidOrdersCommand)
+ * отменяет заказ, и МойСклад снимает резерв.
  *
  * Вызывается сразу при создании заказа и повторно при оплате/смене
  * статуса/отмене (тогда обновляет уже существующий документ customerorder).
@@ -40,6 +41,21 @@ class SyncOrderToMoySkladJob implements ShouldQueue
     public function middleware(): array
     {
         return [(new WithoutOverlapping('moysklad-order:'.$this->orderId))->expireAfter(900)];
+    }
+
+    /** Отгрузка создаётся, когда заказ уже передан в доставку. */
+    public static function shouldShip(Order $order): bool
+    {
+        return in_array($order->status, [
+            \App\Enums\OrderStatus::SHIPPED,
+            \App\Enums\OrderStatus::DELIVERED,
+        ], true);
+    }
+
+    /** Входящий платёж нужен оплаченным заказам, которые не отменены. */
+    public static function shouldRegisterPayment(Order $order): bool
+    {
+        return $order->isPaid() && $order->status !== \App\Enums\OrderStatus::CANCELLED;
     }
 
     /**
@@ -65,12 +81,16 @@ class SyncOrderToMoySkladJob implements ShouldQueue
         try {
             app(OrderService::class)->pushOrder($order);
 
-            // Пока заказ не оплачен, товар только зарезервирован (reserve в
-            // позициях заказа). Отгрузка (списание) создаётся после подтверждения
-            // оплаты (idempotent — shipOrder() не создаст повторную отгрузку).
-            // Отменённые заказы не списываем — для них возврат/отмена
-            // обрабатывается отдельно (см. cancelOrder()).
-            if ($order->status !== \App\Enums\OrderStatus::CANCELLED && $order->isPaid()) {
+            // Оплата передаётся входящим платежом: «Оплачено» в заказе МойСклад
+            // заполняется, и заказ не считается неоплаченным.
+            if (self::shouldRegisterPayment($order)) {
+                app(PaymentInService::class)->registerPayment($order->fresh());
+            }
+
+            // Отгрузка (списание товара) создаётся только когда заказ передан в
+            // доставку (статус «Отгружен» и дальше). До этого товар лишь зарезервирован.
+            // Идемпотентно — shipOrder() не создаст повторную отгрузку.
+            if (self::shouldShip($order)) {
                 app(DemandService::class)->shipOrder($order->fresh());
             }
         } catch (\Throwable $e) {

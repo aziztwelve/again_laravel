@@ -101,6 +101,7 @@ class Order extends Model
         'moysklad_order_uuid',
         'moysklad_synced_at',
         'moysklad_demand_uuid',
+        'moysklad_paymentin_uuid',
     ];
 
     protected $casts = [
