@@ -41,6 +41,13 @@ return [
             'root' => storage_path('app/public'),
             'url' => env('APP_URL').'/storage',
             'visibility' => 'public',
+            // Папки месяца создаёт то очередь (root), то веб-сервер (www-data).
+            // С правами 0755 папка root закрывала запись веб-серверу, и
+            // вложения чатов молча терялись. Группа www-data должна писать.
+            'permissions' => [
+                'file' => ['public' => 0664, 'private' => 0600],
+                'dir' => ['public' => 0775, 'private' => 0700],
+            ],
             'throw' => false,
         ],
 

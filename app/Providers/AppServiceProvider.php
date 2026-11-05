@@ -32,6 +32,13 @@ class AppServiceProvider extends ServiceProvider
     {
         JsonResource::withoutWrapping();
 
+        // Очередь и планировщик работают от root, веб-сервер — от www-data. Папки,
+        // созданные root с umask 0022 (права 0755), закрывали запись веб-серверу:
+        // вложения чатов из вебхуков молча терялись. Группа должна писать.
+        if ($this->app->runningInConsole()) {
+            umask(0002);
+        }
+
         // Триггер «товар появился в наличии» для рассылки подписчикам «Скоро в продаже».
         \App\Models\Product::observe(\App\Observers\ProductObserver::class);
         \App\Models\ProductVariant::observe(\App\Observers\ProductVariantObserver::class);

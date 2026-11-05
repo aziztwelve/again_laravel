@@ -358,7 +358,13 @@ class VKService
             $filePath = $directory . '/' . $storedFileName;
 
             // Сохраняем в storage
-            Storage::disk('public')->put($filePath, $fileContent);
+            // put() не бросает исключение (диск с throw=false): без проверки файл
+            // молча терялся, а в чате оставалась ссылка на несуществующую картинку.
+            if (! Storage::disk('public')->put($filePath, $fileContent)) {
+                Log::error('VKService: Failed to write file to storage', ['file_path' => $filePath]);
+
+                return null;
+            }
 
             Log::info("VKService: File saved successfully", [
                 'file_path' => $filePath,

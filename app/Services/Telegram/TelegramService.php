@@ -325,7 +325,13 @@ class TelegramService
             $directory = 'chat-attachments/' . now()->format('Y/m');
             $fullPath = $directory . '/' . $storedFileName;
 
-            Storage::disk('public')->put($fullPath, $fileContent);
+            // put() не бросает исключение (диск с throw=false): без проверки файл
+            // молча терялся, а в чате оставалась ссылка на несуществующую картинку.
+            if (! Storage::disk('public')->put($fullPath, $fileContent)) {
+                Log::error('Telegram: Failed to write file to storage', ['path' => $fullPath]);
+
+                return null;
+            }
 
             Log::info('File saved to storage', ['path' => $fullPath]);
 
