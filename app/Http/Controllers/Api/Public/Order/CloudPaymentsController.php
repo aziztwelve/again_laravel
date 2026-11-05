@@ -71,7 +71,9 @@ class CloudPaymentsController extends Controller
                 'amount' => $amount,
                 'currency' => 'RUB',
                 'description' => "Оплата заказа №{$order->order_number}",
-                'externalId' => "payment-{$payment->id}",
+                // В кабинете CloudPayments это поле называется «Номер заказа»:
+                // передаём номер заказа магазина, а платёж находим по metadata.payment_id.
+                'externalId' => (string) $order->order_number,
                 'paymentSchema' => 'Single',
                 'culture' => 'ru-RU',
                 // Widget показывает только способы, входящие в выбранную в
@@ -218,18 +220,49 @@ class CloudPaymentsController extends Controller
 
     private function resolvePayment(Request $request): ?Payment
     {
+        $paymentId = $this->paymentIdFromRequest($request);
+        if ($paymentId) {
+            return Payment::with('order')->find($paymentId);
+        }
+
+        // Запасной путь: в InvoiceId номер заказа магазина, а метаданных нет.
+        $invoiceId = trim((string) ($request->input('ExternalId') ?? $request->input('InvoiceId') ?? ''));
+        if ($invoiceId === '') {
+            return null;
+        }
+
+        return Payment::with('order')
+            ->where('provider', 'cloudpayment')
+            ->whereHas('order', fn ($query) => $query->where('order_number', $invoiceId))
+            ->orderByDesc('id')
+            ->first();
+    }
+
+    /**
+     * Номер нашего платежа из уведомления. Виджет кладёт его в Data как
+     * {"Metadata": {"payment_id": N}} (так он и приходит в вебхуках), поэтому
+     * ищем и в плоском виде, и во вложенном. Старый формат InvoiceId
+     * «payment-N» поддерживаем для платежей, начатых до смены номера заказа.
+     */
+    private function paymentIdFromRequest(Request $request): ?int
+    {
         $metadata = $request->input('Data', $request->input('metadata', []));
         if (is_string($metadata)) {
             $metadata = json_decode($metadata, true) ?: [];
         }
 
-        $paymentId = is_array($metadata) ? ($metadata['payment_id'] ?? null) : null;
-        $externalId = (string) ($request->input('ExternalId') ?? $request->input('InvoiceId') ?? '');
-        if (! $paymentId && preg_match('/^payment-(\d+)$/', $externalId, $matches)) {
-            $paymentId = $matches[1];
+        if (is_array($metadata)) {
+            $paymentId = $metadata['payment_id']
+                ?? data_get($metadata, 'Metadata.payment_id')
+                ?? data_get($metadata, 'metadata.payment_id');
+            if (is_numeric($paymentId)) {
+                return (int) $paymentId;
+            }
         }
 
-        return $paymentId ? Payment::with('order')->find($paymentId) : null;
+        $externalId = (string) ($request->input('ExternalId') ?? $request->input('InvoiceId') ?? '');
+
+        return preg_match('/^payment-(\d+)$/', $externalId, $matches) ? (int) $matches[1] : null;
     }
 
     private function matchesPayment(Payment $payment, Request $request): bool
