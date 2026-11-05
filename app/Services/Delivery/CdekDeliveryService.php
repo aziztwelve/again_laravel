@@ -393,6 +393,23 @@ class CdekDeliveryService extends DeliveryService
      * `delivery_data`, и без этой проверки job молча падал в очереди —
      * в интерфейсе после нажатия кнопки не появлялось ничего.
      */
+    /**
+     * Заказы, оформленные вручную в админке или импортированные, содержат ПВЗ, но не тариф.
+     * Для ПВЗ и постамата подставляем стандартный тариф «склад-склад» / «склад-постамат».
+     */
+    public function applyDefaultTariff(Order $order): void
+    {
+        $delivery = is_array($order->delivery_data) ? $order->delivery_data : [];
+        if (($delivery['tariff_code'] ?? null) || ($delivery['provider'] ?? 'cdek') !== 'cdek') return;
+
+        $type = $delivery['delivery_type'] ?? null;
+        if (! in_array($type, ['pickup', 'postamat'], true) || ! ($delivery['pvz']['code'] ?? $delivery['pvz_code'] ?? null)) return;
+
+        $delivery['tariff_code'] = $type === 'postamat' ? 368 : 136;
+        $delivery['tariff_name'] ??= $type === 'postamat' ? 'Посылка склад-постамат' : 'Посылка склад-склад';
+        $order->forceFill(['delivery_data' => $delivery])->save();
+    }
+
     public function readinessError(Order $order): ?string
     {
         $sender = $this->settings['sender'] ?? [];
@@ -423,6 +440,7 @@ class CdekDeliveryService extends DeliveryService
 
     public function createExternalOrder(Order $order, CdekOrder $cdekOrder): array
     {
+        $this->applyDefaultTariff($order);
         if ($error = $this->readinessError($order)) throw new InvalidArgumentException($error);
 
         $delivery = $order->delivery_data ?? [];

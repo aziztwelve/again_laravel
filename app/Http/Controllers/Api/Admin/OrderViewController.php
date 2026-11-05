@@ -236,6 +236,7 @@ class OrderViewController extends Controller
         // Проверяем данные до постановки в очередь: иначе job падал в воркере,
         // а менеджер после нажатия кнопки не видел ни ошибки, ни изменений
         // (типичный случай — legacy-заказ с пустым delivery_data).
+        app(CdekDeliveryService::class)->applyDefaultTariff($order);
         if ($error = app(CdekDeliveryService::class)->readinessError($order)) {
             $cdekOrder->update(['last_error' => $error]);
             return $this->errorResponse($error, 422, ['cdek_order' => $cdekOrder->fresh()]);

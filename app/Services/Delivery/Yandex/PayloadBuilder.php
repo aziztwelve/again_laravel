@@ -115,8 +115,9 @@ class PayloadBuilder
             // Значение должно ссылаться на barcode из places[].
             'place_barcode' => $placeBarcode,
             'billing_details' => [
-                'unit_price' => (float) ($item['price'] ?? 0),
-                'assessed_unit_price' => (float) ($item['price'] ?? 0),
+                // Яндекс принимает только целые рубли: цена с копейками (2216.10) даёт 400 «Wrong type».
+                'unit_price' => (int) round((float) ($item['price'] ?? 0)),
+                'assessed_unit_price' => (int) round((float) ($item['price'] ?? 0)),
             ],
             'physical_dims' => [
                 'dx' => $this->dimension($size['length'] ?? null),

@@ -67,4 +67,19 @@ class YandexCourierWithoutGeocoderTest extends TestCase
     {
         $this->getJson('/api/public/delivery/yandex/pvz')->assertStatus(422)->assertJsonPath('success', false);
     }
+
+    public function test_item_prices_are_whole_rubles_for_yandex(): void
+    {
+        $payload = (new PayloadBuilder)->offers(
+            ['platform_station_id' => 'st-1'],
+            'courier',
+            [['weight' => 0.5, 'quantity' => 1, 'price' => 2216.10]],
+            null,
+            ['address' => 'Москва, Тверская 1'],
+        );
+
+        $billing = $payload['items'][0]['billing_details'];
+        $this->assertSame(2216, $billing['unit_price']);
+        $this->assertSame(2216, $billing['assessed_unit_price']);
+    }
 }
