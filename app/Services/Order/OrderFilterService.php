@@ -363,10 +363,14 @@ class OrderFilterService
         $phoneNeedles = $this->phoneNeedles($search);
 
         return $query->where(function ($q) use ($search, $phoneNeedles) {
+            // Номер заказа: точное совпадение, чтобы 40249 (или №40249 из письма
+            // и CloudPayments) находил заказ прямо в верхней строке. Частичный
+            // поиск по номеру остаётся в фильтре столбца «Номер заказа» (order_number),
+            // иначе короткие числа засоряли бы выдачу.
+            $q->orWhere('order_number', $this->normalizeOrderNumber($search));
+
             // Поиск по ID заказа — только для заказов БЕЗ order_number
             // (в списке они показывают id как номер, см. filterByOrderNumber).
-            // Поиск по номеру здесь не дублируем: он идёт отдельным
-            // параметром order_number из фильтра столбца «Номер заказа».
             if (is_numeric($search)) {
                 $q->orWhere(function ($idQuery) use ($search) {
                     $idQuery->whereNull('order_number')
@@ -433,12 +437,21 @@ class OrderFilterService
     }
 
     /**
+     * Номер заказа так, как он хранится: без пробелов и знака «№» / «#» в начале.
+     * Номер часто копируют из письма или CloudPayments («Оплата заказа №40249»).
+     */
+    private function normalizeOrderNumber(string $value): string
+    {
+        return trim(preg_replace('/^[\s№#]+/u', '', trim($value)));
+    }
+
+    /**
      * Фильтр по номеру заказа (order_number) или ID.
      * Ищет по точному совпадению order_number и по числовому ID.
      */
     private function filterByOrderNumber(Builder $query, string $value): Builder
     {
-        $value = trim($value);
+        $value = $this->normalizeOrderNumber($value);
 
         return $query->where(function ($q) use ($value) {
             // Поиск по order_number (like, чтобы работал частичный ввод)
