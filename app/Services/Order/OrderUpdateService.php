@@ -39,6 +39,8 @@ class OrderUpdateService
                 'seller_comment' => $order->seller_comment,
                 'assigned_user_id' => $order->assigned_user_id,
             ];
+            // Снимок адреса, получателя, пункта выдачи, позиций и промокода
+            $detailsBefore = $this->historyService->detailsSnapshot($order);
             // Поля напрямую обновляемые в таблице orders
             $allowedFields = [
                 'notes',
@@ -224,6 +226,7 @@ class OrderUpdateService
                 'assigned_user_id' => $order->assigned_user_id,
             ];
             $this->historyService->logUpdated($order, $originalSnapshot, $updatedSnapshot);
+            $this->historyService->logDetails($order, $detailsBefore, $this->historyService->detailsSnapshot($order));
 
             // Если заказ уже выгружен в МойСклад и менялось что-то значимое
             // для документа там (состав заказа, статус, оплата, доставка,
