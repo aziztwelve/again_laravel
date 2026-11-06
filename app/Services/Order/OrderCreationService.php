@@ -447,7 +447,9 @@ class OrderCreationService
                     'order_id' => $order->id,
                     'product_id' => $item['product_id'],
                     'product_variant_id' => $item['variant_id'],
-                    'color_id' => $item['color_id'] ?? null,
+                    // Цвет, выбранный в корзине; иначе цвет самого варианта.
+                    'color_id' => $item['color_id']
+                        ?? (! empty($item['variant_id']) ? \App\Models\ProductVariant::query()->whereKey($item['variant_id'])->value('color_id') : null),
                     'quantity' => $quantity,
                     'price' => $finalPrice,
                     'discount' => $totalItemDiscount,

@@ -43,6 +43,7 @@ class OrderViewController extends Controller
             'items.product.images',
             'items.variant.images',
             'items.variant.optionValues.option',
+            'items.variant.table_color',
             'items.color',
             'client.profile',
             'promoCode',

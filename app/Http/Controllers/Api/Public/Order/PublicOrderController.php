@@ -31,6 +31,7 @@ class PublicOrderController extends Controller
             ->with([
                 'items.product.images',
                 'items.variant.images',
+                'items.variant.table_color',
                 'items.color',
                 'address',
                 'deliveryMethod',
@@ -108,7 +109,8 @@ class PublicOrderController extends Controller
         $items = $order->items->map(function ($item) {
             $name = $item->product?->name ?? $item->legacy_name ?? '—';
             $variantName = $item->variant?->name;
-            $colorName = $item->color?->name;
+            // Цвет позиции; у заказов без своего color_id — цвет самого варианта.
+            $colorName = $item->color?->name ?? $item->variant?->table_color?->name;
             $extras = array_filter([$variantName, $colorName]);
             if (! empty($extras)) {
                 $name .= ' ('.implode(' / ', $extras).')';
@@ -125,7 +127,7 @@ class PublicOrderController extends Controller
                 // обычный checkout.
                 'product_id' => $item->product_id,
                 'product_variant_id' => $item->product_variant_id,
-                'color_id' => $item->color_id,
+                'color_id' => $item->color_id ?? $item->variant?->color_id,
                 'product_name' => $item->product?->name ?? $item->legacy_name ?? null,
                 'variant_name' => $variantName,
                 'color_name' => $colorName,
