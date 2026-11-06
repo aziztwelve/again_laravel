@@ -18,6 +18,8 @@ class CreateOrderRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        $this->applyDefaultDeliveryDate();
+
         // Fallback 1: если авторизованный клиент не прислал part полей (старая
         // сборка фронта или JS-кэш), дотягиваем недостающие first_name/last_name/phone
         // из его же профиля в БД — заказ всё равно оформляется на этого же клиента,
@@ -156,36 +158,108 @@ class CreateOrderRequest extends FormRequest
             return;
         }
 
+        $minimumDate = $this->minimumDeliveryDate();
+
         $value = $this->input('delivery_address.delivery_date');
-        if (empty($value)) {
-            return;
+        if (! empty($value)) {
+            $deliveryDate = $this->parseDeliveryDate($value);
+            if ($deliveryDate !== null) {
+                if ($deliveryDate->lt($minimumDate)) {
+                    $validator->errors()->add(
+                        'delivery_address.delivery_date',
+                        'Выберите дату доставки не ранее '.$minimumDate->format('d.m.Y').'.'
+                    );
+
+                    return;
+                }
+
+                if ($deliveryDate->isWeekend()) {
+                    $validator->errors()->add(
+                        'delivery_address.delivery_date',
+                        'Доставка по выходным дням недоступна.'
+                    );
+
+                    return;
+                }
+            }
         }
 
+        // Яндекс.Доставка: дату даёт выбранный тариф, календаря на витрине нет.
+        // Тариф с датой раньше допустимой принимать нельзя.
+        $scheduled = $this->input('delivery_data.scheduled_time') ?? $this->input('scheduled_time');
+        if (! empty($scheduled)) {
+            $scheduledDate = $this->parseDeliveryDate($scheduled);
+            if ($scheduledDate !== null && $scheduledDate->lt($minimumDate)) {
+                $validator->errors()->add(
+                    'delivery_data.scheduled_time',
+                    'Выберите тариф доставки с датой не ранее '.$minimumDate->format('d.m.Y').'.'
+                );
+            }
+        }
+    }
+
+    /**
+     * Минимальная дата доставки из публичного checkout: через 2 календарных
+     * дня (заказ в четверг — на следующий день), выходные пропускаются.
+     */
+    private function minimumDeliveryDate(): Carbon
+    {
+        $orderDate = now()->startOfDay();
+        $minimum = $orderDate->copy()->addDays($orderDate->isThursday() ? 1 : 2);
+
+        return $minimum;
+    }
+
+    /** Ближайший рабочий день не раньше минимальной даты. */
+    private function firstAllowedDeliveryDate(): Carbon
+    {
+        $date = $this->minimumDeliveryDate();
+        while ($date->isWeekend()) {
+            $date->addDay();
+        }
+
+        return $date;
+    }
+
+    private function parseDeliveryDate(mixed $value): ?Carbon
+    {
         try {
-            $deliveryDate = Carbon::parse($value)->startOfDay();
+            // Приводим к часовому поясу приложения: дата в ISO с «Z» иначе
+            // может сместиться на предыдущие сутки.
+            return Carbon::parse((string) $value)
+                ->setTimezone(config('app.timezone'))
+                ->startOfDay();
         } catch (\Throwable) {
             // Формат уже проверяется правилом `date`.
+            return null;
+        }
+    }
+
+    /**
+     * Заказ с сайта без даты доставки получает ближайшую допустимую дату,
+     * чтобы он не уходил в день оформления. Если дату задаёт тариф Яндекса
+     * (scheduled_time), её не затираем.
+     */
+    private function applyDefaultDeliveryDate(): void
+    {
+        if (! $this->routeIs('public.orders.store')) {
             return;
         }
 
-        $orderDate = now()->startOfDay();
-        $minimumDate = $orderDate->copy()->addDays($orderDate->isThursday() ? 1 : 2);
-
-        if ($deliveryDate->lt($minimumDate)) {
-            $validator->errors()->add(
-                'delivery_address.delivery_date',
-                'Выберите дату доставки не ранее '.$minimumDate->format('d.m.Y').'.'
-            );
-
+        if (! empty($this->input('delivery_address.delivery_date'))) {
             return;
         }
 
-        if ($deliveryDate->isWeekend()) {
-            $validator->errors()->add(
-                'delivery_address.delivery_date',
-                'Доставка по выходным дням недоступна.'
-            );
+        if (! empty($this->input('delivery_data.scheduled_time')) || ! empty($this->input('scheduled_time'))) {
+            return;
         }
+
+        $address = $this->input('delivery_address');
+        if (! is_array($address)) {
+            $address = [];
+        }
+        $address['delivery_date'] = $this->firstAllowedDeliveryDate()->format('Y-m-d');
+        $this->merge(['delivery_address' => $address]);
     }
 
     /**
