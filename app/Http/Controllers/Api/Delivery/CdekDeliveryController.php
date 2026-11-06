@@ -26,6 +26,9 @@ class CdekDeliveryController
             'city_code' => 'required|integer',
             'type' => 'nullable|in:PVZ,POSTAMAT,ALL',
             'nearby' => 'nullable|boolean',
+            // Страна города (ISO-2): пункты выдачи СДЭК фильтруются по стране,
+            // без неё города СНГ (KG, KZ, BY…) отдавали пустой список.
+            'country_code' => 'nullable|string|size:2',
         ]);
 
         $nearby = (bool) ($data['nearby'] ?? false);
