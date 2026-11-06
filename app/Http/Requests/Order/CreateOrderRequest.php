@@ -141,6 +141,7 @@ class CreateOrderRequest extends FormRequest
 
             $this->validatePromotions($validator);
             $this->validateDeliveryDate($validator);
+            $this->validatePickupPoint($validator);
         });
     }
 
@@ -195,6 +196,37 @@ class CreateOrderRequest extends FormRequest
                     'Выберите тариф доставки с датой не ранее '.$minimumDate->format('d.m.Y').'.'
                 );
             }
+        }
+    }
+
+    /**
+     * Самовывоз (ПВЗ/постамат СДЭК, ПВЗ Яндекса) из публичного checkout нельзя
+     * оформить без выбранного пункта выдачи: иначе заказ остаётся без адреса и
+     * его невозможно отправить.
+     */
+    private function validatePickupPoint($validator): void
+    {
+        if (! $this->routeIs('public.orders.store')) {
+            return;
+        }
+
+        $name = $this->input('delivery_method.name');
+        if (empty($name)) {
+            return;
+        }
+
+        $code = \App\Models\DeliveryMethod::query()->where('name', $name)->value('code');
+        if (! in_array($code, ['cdek_pickup', 'cdek_postamat', 'yandex_pickup'], true)) {
+            return;
+        }
+
+        $hasPoint = filled($this->input('pvz_code'))
+            || filled($this->input('delivery_data.pvz_code'))
+            || filled($this->input('delivery_data.pvz.code'))
+            || filled($this->input('delivery_data.pvz.id'));
+
+        if (! $hasPoint) {
+            $validator->errors()->add('delivery_data.pvz', 'Выберите пункт выдачи на карте.');
         }
     }
 
