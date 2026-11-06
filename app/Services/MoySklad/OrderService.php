@@ -69,7 +69,15 @@ class OrderService
             ],
             'price'    => (int) round(max(0, $cost) * 100),
             'quantity' => 1,
+            'vat'        => self::vatRate(),
+            'vatEnabled' => true,
         ];
+    }
+
+    /** Ставка НДС позиций заказа (%), как в чеках онлайн-касс. */
+    public static function vatRate(): int
+    {
+        return (int) config('services.moysklad.vat', 5);
     }
 
     public function pushOrder(Order $order): string
@@ -98,6 +106,8 @@ class OrderService
             'moment'       => $order->created_at->format('Y-m-d H:i:s'),
             'description'  => $this->buildDescription($order),
             'positions'    => $positions,
+            'vatEnabled'   => true,
+            'vatIncluded'  => true,
         ];
 
         // Склад заказа: без него поле «Склад» в заказе пустое, хотя резерв
@@ -503,6 +513,8 @@ class OrderService
                 // Скидка в процентах (0 если нет скидки)
                 'discount' => $discountPct,
                 'reserve'  => $isActive ? (float) $item->quantity : 0,
+                'vat'        => self::vatRate(),
+                'vatEnabled' => true,
             ];
         }
 
