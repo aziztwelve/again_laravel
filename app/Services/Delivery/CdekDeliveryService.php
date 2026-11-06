@@ -256,6 +256,12 @@ class CdekDeliveryService extends DeliveryService
         // The configured codes are default checkout tariffs, one for each
         // destination type: 137 courier, 136 pickup point, 368 postamat.
         $allowedCodes = array_map('intval', $this->settings['tariff_codes'] ?? []);
+        // За пределами РФ (Беларусь, Казахстан…) СДЭК отдаёт международные
+        // экспресс-тарифы: 482 — склад-дверь, 483 — склад-склад. Без них список
+        // фильтровался в ноль, заказ уходил без тарифа и доставки.
+        if ($allowedCodes !== []) {
+            $allowedCodes = array_values(array_unique(array_merge($allowedCodes, [482, 483])));
+        }
         $daysOffset = max(0, (int) ($this->settings['delivery_days_offset'] ?? 0));
         return collect($result['data']['tariff_codes'] ?? [])
             ->filter(fn (array $tariff) => in_array((int) ($tariff['delivery_mode'] ?? 0), $deliveryModes, true))
