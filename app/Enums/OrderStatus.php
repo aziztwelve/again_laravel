@@ -41,12 +41,12 @@ enum OrderStatus: string
     public function color(): string
     {
         return match ($this) {
-            self::NEW => '#fb7878',
+            self::NEW => '#22c55e', // зелёный: «Новый» не должен сливаться с «Отменен»
             self::APPROVED => '#60a5fa',
             self::PROCESSING => '#efd49c',
             self::SHIPPED => '#7391ec',
             self::DELIVERED => '#6fbaba',
-            self::CANCELLED => '#f88686',
+            self::CANCELLED => '#b91c1c', // тёмно-красный
             self::PRODUCT_RETURN => '#f59e0b', // оранжевый для возврата
             self::RETURN_PAYMENT => '#9333ea', // фиолетовый для возврата оплаты
 
