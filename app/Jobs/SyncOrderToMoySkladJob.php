@@ -3,7 +3,6 @@
 namespace App\Jobs;
 
 use App\Models\Order;
-use App\Services\MoySklad\DemandService;
 use App\Services\MoySklad\MoySkladSettings;
 use App\Services\MoySklad\OrderService;
 use App\Services\MoySklad\PaymentInService;
@@ -43,13 +42,10 @@ class SyncOrderToMoySkladJob implements ShouldQueue
         return [(new WithoutOverlapping('moysklad-order:'.$this->orderId))->expireAfter(900)];
     }
 
-    /** Отгрузка создаётся, когда заказ уже передан в доставку. */
+    /** Отгрузку создаёт не сайт: склад и сценарий МойСклад (иначе товар списывается дважды). */
     public static function shouldShip(Order $order): bool
     {
-        return in_array($order->status, [
-            \App\Enums\OrderStatus::SHIPPED,
-            \App\Enums\OrderStatus::DELIVERED,
-        ], true);
+        return false;
     }
 
     /** Входящий платёж нужен оплаченным заказам, которые не отменены. */
@@ -87,12 +83,9 @@ class SyncOrderToMoySkladJob implements ShouldQueue
                 app(PaymentInService::class)->registerPayment($order->fresh());
             }
 
-            // Отгрузка (списание товара) создаётся только когда заказ передан в
-            // доставку (статус «Отгружен» и дальше). До этого товар лишь зарезервирован.
-            // Идемпотентно — shipOrder() не создаст повторную отгрузку.
-            if (self::shouldShip($order)) {
-                app(DemandService::class)->shipOrder($order->fresh());
-            }
+            // Отгрузку (списание) создаёт склад и сценарий МойСклад при статусе «Отгружен».
+            // Мы передаём только статусы, иначе у заказа появляется вторая проведённая
+            // отгрузка и товар списывается дважды.
         } catch (\Throwable $e) {
             Log::error('SyncOrderToMoySkladJob: не удалось синхронизировать заказ', [
                 'order_id' => $order->id,

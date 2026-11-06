@@ -23,13 +23,10 @@ class MoySkladPaymentFlowTest extends TestCase
         ]);
     }
 
-    public function test_shipment_is_created_only_when_order_is_handed_to_delivery(): void
+    public function test_site_never_creates_shipments_in_moysklad(): void
     {
-        foreach ([OrderStatus::NEW, OrderStatus::APPROVED, OrderStatus::PROCESSING, OrderStatus::CANCELLED] as $status) {
+        foreach (OrderStatus::cases() as $status) {
             $this->assertFalse(SyncOrderToMoySkladJob::shouldShip($this->order($status, PaymentStatus::PAID)), $status->value);
-        }
-        foreach ([OrderStatus::SHIPPED, OrderStatus::DELIVERED] as $status) {
-            $this->assertTrue(SyncOrderToMoySkladJob::shouldShip($this->order($status, PaymentStatus::PAID)), $status->value);
         }
     }
 
