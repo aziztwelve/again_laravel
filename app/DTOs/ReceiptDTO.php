@@ -23,7 +23,7 @@ class ReceiptDTO
                 'quantity' => $item->quantity,
                 'price' => $item->price,
                 'sum' => $item->quantity * $item->price,
-                'vat' => '20%', // Настройте под ваши нужды
+                'vat' => '5%',
             ])->toArray(),
             customer: [
                 'email' => $payment->order->client->email,

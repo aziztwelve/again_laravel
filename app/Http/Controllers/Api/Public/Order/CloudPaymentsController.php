@@ -298,7 +298,7 @@ class CloudPaymentsController extends Controller
                     'price' => round(($amount + $lineDiscount) / $quantity, 2),
                     'quantity' => $quantity,
                     'amount' => $amount,
-                    'vat' => (int) config('payment.providers.cloudpayment.receipt_vat', 20),
+                    'vat' => (int) config('payment.providers.cloudpayment.receipt_vat', 5),
                 ];
             })
             ->values();
@@ -310,7 +310,7 @@ class CloudPaymentsController extends Controller
                 'price' => $deliveryCost,
                 'quantity' => 1,
                 'amount' => $deliveryCost,
-                'vat' => (int) config('payment.providers.cloudpayment.receipt_vat', 20),
+                'vat' => (int) config('payment.providers.cloudpayment.receipt_vat', 5),
             ]);
         }
 

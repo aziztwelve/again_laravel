@@ -11,7 +11,7 @@ return [
             'shop_id' => env('YOOKASSA_SHOP_ID'),
             'secret_key' => env('YOOKASSA_SECRET_KEY'),
             'send_receipt' => env('YOOKASSA_SEND_RECEIPT', false),
-            'vat_code' => env('YOOKASSA_VAT_CODE', '1'),
+            'vat_code' => env('YOOKASSA_VAT_CODE', '7'),
         ],
 
         // Яндекс Пэй / Сплит — базовая механика полной оплаты.
@@ -33,7 +33,7 @@ return [
             // Ставка НДС для cart.items[].receipt.tax. Заполнять только когда
             // в кабинете включена онлайн-касса и ставка согласована с
             // бухгалтерией: https://pay.yandex.ru/docs/ru/custom/backend/fns#tax
-            'receipt_tax' => env('YANDEX_PAY_RECEIPT_TAX'),
+            'receipt_tax' => env('YANDEX_PAY_RECEIPT_TAX', 8),
         ],
 
         'cloudpayment' => [
@@ -44,7 +44,7 @@ return [
             'api_url' => env('CLOUDPAYMENT_API_URL', 'https://api.cloudpayments.ru'),
             // Ставка НДС для позиций CloudKassir. По умолчанию совпадает с
             // текущей настройкой HelixMedia; при другой ставке задать в .env.
-            'receipt_vat' => (int) env('CLOUDPAYMENTS_RECEIPT_VAT', 20),
+            'receipt_vat' => (int) env('CLOUDPAYMENTS_RECEIPT_VAT', 5),
         ],
 
         'robokassa' => [
@@ -68,7 +68,7 @@ return [
                 'class' => \App\Services\Receipt\HelixmediaReceiptService::class,
                 'api_key' => env('HELIXMEDIA_API_KEY'),
                 'api_url' => env('HELIXMEDIA_API_URL'),
-                'vat_type' => env('HELIXMEDIA_VAT_TYPE', 'vat20'),
+                'vat_type' => env('HELIXMEDIA_VAT_TYPE', 'vat5'),
             ],
         ],
     ],
