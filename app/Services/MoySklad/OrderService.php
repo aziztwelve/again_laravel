@@ -69,7 +69,15 @@ class OrderService
             ],
             'price'    => (int) round(max(0, $cost) * 100),
             'quantity' => 1,
+            'vat'        => self::defaultVat(),
+            'vatEnabled' => true,
         ];
+    }
+
+    /** Ставка НДС по умолчанию (%): доставка и товары без ставки в МойСклад. */
+    public static function defaultVat(): int
+    {
+        return (int) config('payment.receipt_default_vat', 5);
     }
 
     public function pushOrder(Order $order): string
@@ -98,6 +106,10 @@ class OrderService
             'moment'       => $order->created_at->format('Y-m-d H:i:s'),
             'description'  => $this->buildDescription($order),
             'positions'    => $positions,
+            // МойСклад не берёт НДС из карточки при создании заказа через API:
+            // без явной ставки позиции получают «без НДС».
+            'vatEnabled'   => true,
+            'vatIncluded'  => true,
         ];
 
         // Склад заказа: без него поле «Склад» в заказе пустое, хотя резерв
@@ -503,6 +515,9 @@ class OrderService
                 // Скидка в процентах (0 если нет скидки)
                 'discount' => $discountPct,
                 'reserve'  => $isActive ? (float) $item->quantity : 0,
+                // Ставка товара из МойСклад (у варианта — родительского товара).
+                'vat'        => $item->product?->receiptVat() ?? self::defaultVat(),
+                'vatEnabled' => true,
             ];
         }
 

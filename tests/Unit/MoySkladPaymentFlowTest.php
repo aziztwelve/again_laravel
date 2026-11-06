@@ -80,6 +80,8 @@ class MoySkladPaymentFlowTest extends TestCase
         $this->assertSame('https://ms/api/entity/service/svc-1', $line['assortment']['meta']['href']);
         $this->assertSame(45994, $line['price']);
         $this->assertSame(1, $line['quantity']);
+        $this->assertSame(5, $line['vat']);
+        $this->assertTrue($line['vatEnabled']);
 
         $free = \App\Services\MoySklad\OrderService::deliveryPosition(0, 'https://ms/api', 'svc-1');
         $this->assertSame(0, $free['price']);
