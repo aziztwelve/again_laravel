@@ -41,6 +41,7 @@ class Product extends Model implements HasMedia
         'barcode',
         'code',
         'weight',
+        'vat',
         'length',
         'width',
         'height',
@@ -63,6 +64,7 @@ class Product extends Model implements HasMedia
         'cost_price' => 'decimal:2',
         'discount_price' => 'decimal:2',
         'weight' => 'decimal:3',
+        'vat' => 'integer',
         'length' => 'decimal:2',
         'width' => 'decimal:2',
         'height' => 'decimal:2',
@@ -387,4 +389,15 @@ class Product extends Model implements HasMedia
         return $this;
     }
 
+
+    /**
+     * Ставка НДС для чека (%): из МойСклад, а если там не задана — общая
+     * ставка из настроек (payment.receipt_default_vat).
+     */
+    public function receiptVat(): int
+    {
+        return $this->vat !== null
+            ? (int) $this->vat
+            : (int) config('payment.receipt_default_vat', 5);
+    }
 }

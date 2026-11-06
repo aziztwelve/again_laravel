@@ -284,9 +284,10 @@ class CloudPaymentsController extends Controller
     private function buildReceipt(Order $order, float $paymentAmount): ?array
     {
         $order->loadMissing(['items.product']);
+        $defaultVat = (int) config('payment.providers.cloudpayment.receipt_vat', 5);
 
         $items = $order->items
-            ->map(function ($item): array {
+            ->map(function ($item) use ($defaultVat): array {
                 $quantity = max(1, (int) $item->quantity);
                 $amount = round((float) $item->price * $quantity, 2);
                 $lineDiscount = max(0, round((float) ($item->discount ?? 0), 2));
@@ -298,7 +299,7 @@ class CloudPaymentsController extends Controller
                     'price' => round(($amount + $lineDiscount) / $quantity, 2),
                     'quantity' => $quantity,
                     'amount' => $amount,
-                    'vat' => (int) config('payment.providers.cloudpayment.receipt_vat', 5),
+                    'vat' => $item->product?->receiptVat() ?? $defaultVat,
                 ];
             })
             ->values();
@@ -310,7 +311,7 @@ class CloudPaymentsController extends Controller
                 'price' => $deliveryCost,
                 'quantity' => 1,
                 'amount' => $deliveryCost,
-                'vat' => (int) config('payment.providers.cloudpayment.receipt_vat', 5),
+                'vat' => $defaultVat,
             ]);
         }
 

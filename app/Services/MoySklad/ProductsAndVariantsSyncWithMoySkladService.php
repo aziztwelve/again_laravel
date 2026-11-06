@@ -152,6 +152,18 @@ class ProductsAndVariantsSyncWithMoySkladService
      * МойСклад отдаёт вес товара в граммах. Это же значение храним у товара:
      * его напрямую используют расчёты СДЭК и Яндекс.Доставки.
      */
+    /** Ставка НДС товара (%): effectiveVat при включённом НДС, иначе null. */
+    private function extractVat($data): ?int
+    {
+        if (! ($data->vatEnabled ?? false)) {
+            return null;
+        }
+
+        $vat = $data->effectiveVat ?? $data->vat ?? null;
+
+        return is_numeric($vat) ? (int) $vat : null;
+    }
+
     private function extractWeight($data): float
     {
         return $this->normalizeNumericValue($data->weight ?? 0, self::MAX_WEIGHT);
@@ -249,6 +261,11 @@ class ProductsAndVariantsSyncWithMoySkladService
             'has_variants' => ($data->variantsCount ?? 0) > 0,
             'deleted_at' => null,
         ];
+
+        // Колонка появляется миграцией: до её запуска синхронизация не падает.
+        if (\Illuminate\Support\Facades\Schema::hasColumn('products', 'vat')) {
+            $attributes['vat'] = $this->extractVat($data);
+        }
 
         if ($product) {
             // uuid НЕ убираем из атрибутов: если товар найден по uuid, значение

@@ -411,6 +411,7 @@ class YandexPayService
                 round(($unitPrice + $unitDiscount) * $quantity, 2),
                 $unitPrice + $unitDiscount,
                 $unitPrice,
+                $item->product?->receiptVat(),
             );
         }
 
@@ -477,8 +478,9 @@ class YandexPayService
         ?float $subtotal = null,
         ?float $unitPrice = null,
         ?float $discountedUnitPrice = null,
+        ?int $vatPercent = null,
     ): array {
-        $receiptTax = config('payment.providers.yandexpay.receipt_tax');
+        $receiptTax = $this->taxCode($vatPercent) ?? config('payment.providers.yandexpay.receipt_tax');
 
         return array_filter([
             'productId' => $productId,
@@ -492,6 +494,12 @@ class YandexPayService
             // кабинете: иначе Яндекс Пэй чек не формирует и поле не нужно.
             'receipt' => filled($receiptTax) ? ['tax' => (int) $receiptTax] : null,
         ], static fn ($value) => $value !== null);
+    }
+
+    /** Код ставки НДС Яндекс Пэй (тег 1199) по проценту; null — неизвестная ставка. */
+    private function taxCode(?int $percent): ?int
+    {
+        return [0 => 5, 5 => 8, 7 => 7, 10 => 2, 20 => 11][$percent] ?? null;
     }
 
     private function money(float $value): string

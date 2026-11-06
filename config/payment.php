@@ -5,6 +5,9 @@ return [
     'default' => env('DEFAULT_PAYMENT_PROVIDER', 'yookassa'),
 
     // Настройки провайдеров
+    // Ставка НДС (%) для позиций без ставки из МойСклад и для доставки.
+    'receipt_default_vat' => (int) env('RECEIPT_DEFAULT_VAT', 5),
+
     'providers' => [
         'yookassa' => [
             'class' => \App\Services\Payment\YookassaProvider::class,
