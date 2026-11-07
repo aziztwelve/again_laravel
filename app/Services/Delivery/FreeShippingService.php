@@ -464,10 +464,24 @@ class FreeShippingService
 
         $resolved = clone $context;
 
-        if ($resolved->cityId === null && $resolved->cityName) {
-            $resolved->cityId = $this->intOrNull(
-                City::whereRaw('LOWER(name) = ?', [mb_strtolower(trim($resolved->cityName))])->value('id')
+        // Страну определяем первой — по названию или коду («Россия», «RU»).
+        // Иначе одноимённый город другой страны («Южный» и т.п.) подменял
+        // страну заказа, и правило бесплатной доставки по странам не срабатывало.
+        if ($resolved->countryId === null && $resolved->countryName) {
+            $needle = mb_strtolower(trim($resolved->countryName));
+            $resolved->countryId = $this->intOrNull(
+                Country::whereRaw('LOWER(name) = ?', [$needle])
+                    ->orWhereRaw('LOWER(code) = ?', [$needle])
+                    ->value('id')
             );
+        }
+
+        if ($resolved->cityId === null && $resolved->cityName) {
+            $cityQuery = City::whereRaw('LOWER(name) = ?', [mb_strtolower(trim($resolved->cityName))]);
+            if ($resolved->countryId !== null) {
+                $cityQuery->whereIn('region_id', Region::where('country_id', $resolved->countryId)->select('id'));
+            }
+            $resolved->cityId = $this->intOrNull($cityQuery->value('id'));
         }
 
         if ($resolved->regionId === null && $resolved->cityId !== null) {
