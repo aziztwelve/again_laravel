@@ -60,6 +60,22 @@ class OrderUpdateService
                 array_flip($allowedFields)
             );
 
+            // Стоимость доставки правит менеджер (в том числе в ручных заказах).
+            // Явное значение (в т.ч. 0) записываем как есть; без него при смене
+            // способа доставки сбрасываем прежнюю стоимость: тариф старого способа
+            // к новому не относится, а убрать её иначе было нечем.
+            $deliveryMethodChanged = isset($filteredData['delivery_method_id'])
+                && (int) $filteredData['delivery_method_id'] !== (int) $order->delivery_method_id;
+            if (array_key_exists('delivery_cost', $data)) {
+                $filteredData['delivery_cost'] = max(0, round((float) ($data['delivery_cost'] ?? 0), 2));
+                $filteredData['delivery_cost_original'] = null;
+                $filteredData['free_shipping_rule_id'] = null;
+            } elseif ($deliveryMethodChanged) {
+                $filteredData['delivery_cost'] = 0;
+                $filteredData['delivery_cost_original'] = null;
+                $filteredData['free_shipping_rule_id'] = null;
+            }
+
             // Комментарий продавца обрабатываем отдельно: разрешаем пустую строку/null
             // (очистить комментарий), чего array_filter выше не позволяет.
             if (array_key_exists('seller_comment', $data)) {
