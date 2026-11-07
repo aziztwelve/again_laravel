@@ -753,8 +753,15 @@ class OrderUpdateService
     /**
      * Проверить можно ли редактировать заказ
      */
+    /** Поля, которые можно менять даже у доставленного заказа. */
+    public const COMMENT_FIELDS = ['seller_comment', 'notes'];
+
     public function canUpdate(Order $order, array $data = []): bool
     {
+        if ($order->status === OrderStatus::DELIVERED) {
+            return $data !== [] && array_diff(array_keys($data), self::COMMENT_FIELDS) === [];
+        }
+
         // Отменённый заказ можно только вернуть в статус «Новый».
         if ($order->status === OrderStatus::CANCELLED) {
             return count($data) === 1 && ($data['status'] ?? null) === OrderStatus::NEW->value;

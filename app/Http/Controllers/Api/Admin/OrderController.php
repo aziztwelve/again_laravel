@@ -548,6 +548,11 @@ class OrderController extends Controller
         }
 
         $data = $request->validated();
+        // Доставленный заказ закрыт для правок, но комментарии оставлять можно.
+        // Форма админки шлёт заказ целиком, поэтому оставляем только комментарии.
+        if ($order->status === \App\Enums\OrderStatus::DELIVERED) {
+            $data = array_intersect_key($data, array_flip(OrderUpdateService::COMMENT_FIELDS));
+        }
         if (! $this->orderUpdateService->canUpdate($order, $data)) {
             return $this->errorResponse(
                 'Невозможно редактировать заказ в текущем статусе',
