@@ -355,7 +355,11 @@ class YandexDeliveryService extends DeliveryService
         if ($order->delivery_data !== $updatedDelivery) {
             $order->update(['delivery_data' => $updatedDelivery]);
         }
-        if ($requestId && $order->tracking_number !== $requestId) {
+        // Трек, вписанный вручную (например, ID у партнёра по доставке LO-…),
+        // опрос статусов не перезаписывает: подставляем ID заявки только в
+        // пустой трек или тот, что сам был равен ID заявки.
+        if ($requestId && $order->tracking_number !== $requestId
+            && (blank($order->tracking_number) || $order->tracking_number === $existing?->claim_id)) {
             $order->update(['tracking_number' => $requestId]);
         }
         if ($previousStatus !== $status) {
