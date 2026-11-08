@@ -49,6 +49,12 @@ Schedule::command('cart:process-abandoned')
 
 // Чистка пустых/протухших гостевых корзин (универсальная корзина) — раз в сутки.
 // См. docs/tasks/universal-cart.md.
+// Аудит-логи СДЭК и Яндекс.Доставки: успешные запросы хранятся 30 дней, ошибки 90.
+Schedule::command('delivery-logs:prune')
+    ->dailyAt('03:30')
+    ->withoutOverlapping()
+    ->runInBackground();
+
 Schedule::command('cart:gc-guest-carts')
     ->dailyAt('04:30')
     ->withoutOverlapping()

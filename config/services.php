@@ -125,4 +125,10 @@ return [
         // VK: https://vk.me/<screen_name>?ref=<TOKEN> (по умолчанию public<community_id>)
         'vk_screen_name' => env('VK_SCREEN_NAME'),
     ],
+
+    // Хранение аудит-логов обращений к API СДЭК и Яндекс.Доставки (команда delivery-logs:prune).
+    'delivery_api_logs' => [
+        'retention_days' => (int) env('API_LOG_RETENTION_DAYS', 30),
+        'error_retention_days' => (int) env('API_LOG_ERROR_RETENTION_DAYS', 90),
+    ],
 ];
