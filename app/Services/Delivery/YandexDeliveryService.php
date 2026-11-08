@@ -249,8 +249,26 @@ class YandexDeliveryService extends DeliveryService
                 'to' => (float) $filter['longitude_to'],
             ] : null,
         ], fn ($value) => $value !== null);
+        // Список пунктов выдачи тяжёлый (до десятков МБ) и меняется редко: на каждое
+        // открытие карты в оформлении его запрашивать не нужно. Кэш на 30 минут в
+        // файловом хранилище (кэш по умолчанию лежит в базе, большие значения туда
+        // не кладём). Неудачные ответы не кэшируем.
+        $cache = Cache::store('file');
+        $cacheKey = 'yandex:pvz:'.md5(json_encode($payload));
+        $cached = $cache->get($cacheKey);
+        if (is_array($cached)) {
+            return collect($cached);
+        }
+
         $result = $this->client->request('POST', '/api/b2b/platform/pickup-points/list', $payload);
-        return $result['successful'] ? collect($result['data']['points'] ?? []) : collect();
+        if (! $result['successful']) {
+            return collect();
+        }
+
+        $points = $result['data']['points'] ?? [];
+        $cache->put($cacheKey, $points, now()->addMinutes(30));
+
+        return collect($points);
     }
 
     public function detectLocation(string $location): array

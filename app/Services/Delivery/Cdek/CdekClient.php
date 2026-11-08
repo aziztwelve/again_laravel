@@ -10,6 +10,9 @@ use Illuminate\Support\Facades\Log;
 
 class CdekClient
 {
+    /** Списки длиннее этого числа элементов в cdek_api_logs не сохраняются. */
+    private const LOG_LIST_LIMIT = 100;
+
     public function __construct(private array $settings)
     {
     }
@@ -116,9 +119,14 @@ class CdekClient
     {
         $successful = $status >= 200 && $status < 300;
         try {
+            // Списки пунктов выдачи (тысячи записей) в аудит-лог целиком не пишем:
+            // маскирование и запись давали задержки, а таблица выросла до сотен МБ.
+            $responseForLog = array_is_list($data) && count($data) > self::LOG_LIST_LIMIT
+                ? ['truncated' => true, 'items_count' => count($data)]
+                : $this->maskSensitive($data);
             CdekApiLog::create([
                 'cdek_order_id' => $cdekOrderId, 'direction' => 'request', 'method' => $method, 'http_method' => $httpMethod,
-                'url' => $url, 'request_body' => $this->maskSensitive($requestBody), 'response_body' => $this->maskSensitive($data),
+                'url' => $url, 'request_body' => $this->maskSensitive($requestBody), 'response_body' => $responseForLog,
                 'status_code' => $status, 'duration_ms' => $duration, 'is_error' => ! $successful,
             ]);
         } catch (\Throwable $exception) {

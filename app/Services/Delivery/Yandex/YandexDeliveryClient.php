@@ -9,6 +9,9 @@ use Illuminate\Support\Facades\Log;
 
 class YandexDeliveryClient
 {
+    /** Максимальный размер ответа (байт), который пишется в yandex_api_logs целиком. */
+    private const LOG_BODY_LIMIT = 65536;
+
     public function __construct(private array $settings)
     {
     }
@@ -43,11 +46,17 @@ class YandexDeliveryClient
     private function result(int $status, array $data, string $httpMethod, string $method, string $url, array $requestBody, ?int $orderId, ?string $requestId, int $duration, ?string $body = null): array
     {
         $successful = $status >= 200 && $status < 300;
+        // Ответ со списком пунктов выдачи весит до десятков МБ: разбор, маскирование
+        // и запись в базу давали секунды задержки и раздували таблицу (1,9 ГБ).
+        // Большие ответы в аудит-лог не кладём, оставляем только размер и ключи.
+        $responseForLog = $body !== null && strlen($body) > self::LOG_BODY_LIMIT
+            ? ['truncated' => true, 'size_bytes' => strlen($body), 'top_level_keys' => array_slice(array_keys($data), 0, 10)]
+            : $this->maskSensitive($data ?: ['raw' => $body]);
         YandexApiLog::create([
             'order_id' => $orderId, 'claim_id' => $requestId, 'direction' => 'request',
             'method' => $method, 'http_method' => $httpMethod, 'url' => $url,
             'request_body' => $this->maskSensitive($requestBody),
-            'response_body' => $this->maskSensitive($data ?: ['raw' => $body]),
+            'response_body' => $responseForLog,
             'status_code' => $status, 'duration_ms' => $duration, 'is_error' => !$successful,
         ]);
 
