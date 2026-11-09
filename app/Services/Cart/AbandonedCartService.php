@@ -5,9 +5,11 @@ namespace App\Services\Cart;
 use App\Helpers\NumberHelper;
 use App\Models\Cart;
 use App\Models\CartCommunication;
+use App\Models\Order;
 use App\Models\PromoCode;
 use App\Services\Notifications\CustomerChannelResolver;
 use App\Services\Notifications\Jobs\SendNotificationJob;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Брошенная корзина: детект + триггерная цепочка напоминаний.
@@ -47,6 +49,9 @@ class AbandonedCartService
 
         $count = 0;
         foreach ($carts as $cart) {
+            if ($this->settleIfAlreadyOrdered($cart)) {
+                continue;
+            }
             $cart->update([
                 'abandoned_at' => now(),
                 'recovery_token' => $this->generateRecoveryToken(),
@@ -84,6 +89,9 @@ class AbandonedCartService
             ->get();
 
         foreach ($carts as $cart) {
+            if ($this->settleIfAlreadyOrdered($cart)) {
+                continue;
+            }
             // Третий шаг завершает цикл целиком, включая каналы, добавленные
             // клиентом позже. Уже поставленные в очередь задания обработает воркер.
             if ($cart->communications->contains(fn ($comm) => $comm->type === 'trigger'
@@ -154,6 +162,56 @@ class AbandonedCartService
         }
 
         return ['sent' => $sent, 'skipped' => $skipped];
+    }
+
+    /**
+     * Корзина, повторяющая уже оплаченный заказ клиента, — не брошенная.
+     *
+     * После оплаты витрина может заново сохранить на сервере локальную корзину
+     * (её состав совпадает с только что оплаченным заказом), и она попадала в цепочку
+     * «Вы забыли оформить заказ» хотя клиент уже заплатил (заказ 40660). Если у клиента
+     * есть оплаченный заказ, оформленный за двое суток до создания корзины, с тем же
+     * набором товаров и вариантов, помечаем корзину оформленной и напоминания не шлём.
+     */
+    private function settleIfAlreadyOrdered(Cart $cart): bool
+    {
+        if (! $cart->client_id) {
+            return false;
+        }
+
+        $cartKeys = $cart->items()->get(['product_id', 'product_variant_id'])
+            ->map(fn ($item) => $item->product_id.':'.(int) $item->product_variant_id)
+            ->unique()->sort()->values()->all();
+        if ($cartKeys === []) {
+            return false;
+        }
+
+        $from = ($cart->created_at ?? now())->copy()->subDays(2);
+        $orders = Order::query()
+            ->where('client_id', $cart->client_id)
+            ->where('payment_status', \App\Enums\PaymentStatus::PAID->value)
+            ->where('created_at', '>=', $from)
+            ->with('items')
+            ->get();
+
+        foreach ($orders as $order) {
+            $orderKeys = $order->items
+                ->filter(fn ($item) => ! $item->is_gift && $item->product_id)
+                ->map(fn ($item) => $item->product_id.':'.(int) $item->product_variant_id)
+                ->unique()->sort()->values()->all();
+
+            if ($orderKeys === $cartKeys) {
+                $cart->update(['status' => 'ordered', 'ordered_at' => now(), 'updated_at' => now()]);
+                Log::info('AbandonedCart: cart equals a paid order, reminders skipped', [
+                    'cart_id' => $cart->id,
+                    'order_id' => $order->id,
+                ]);
+
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
