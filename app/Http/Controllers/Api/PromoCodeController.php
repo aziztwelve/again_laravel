@@ -408,6 +408,7 @@ class PromoCodeController extends Controller
             'code' => 'required|string',
             'client_id' => 'nullable|exists:clients,id',
             'product_ids' => 'nullable|array',
+            'quantities' => 'nullable|array',
         ], $this->validationMessages(), $this->validationAttributes());
 
         $result = $this->promoCodeService->validatePromo($request);

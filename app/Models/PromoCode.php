@@ -270,6 +270,49 @@ class PromoCode extends Model
     }
 
     /**
+     * Фиксированный промокод даёт скидку на ВЕСЬ заказ, а не на каждую позицию.
+     * Метод распределяет номинал по позициям пропорционально их стоимости.
+     *
+     * @param  array<int|string, array{base_unit: float, quantity: int}>  $lines
+     *         позиции, к которым применим промокод: цена одной штуки, к которой
+     *         применяется промокод (после товарной скидки при stack, оригинал при replace),
+     *         и количество
+     * @return array<int|string, float> скидка на ОДНУ штуку по ключам позиций.
+     *         Считается в копейках с округлением вниз, поэтому сумма скидок никогда
+     *         не превышает номинал промокода и стоимость самих позиций.
+     */
+    public function allocateFixedDiscount(array $lines): array
+    {
+        $totalCents = 0;
+        $lineCents = [];
+        foreach ($lines as $key => $line) {
+            $qty = max(1, (int) ($line['quantity'] ?? 1));
+            $lineCents[$key] = (int) round(((float) $line['base_unit']) * 100) * $qty;
+            $totalCents += $lineCents[$key];
+        }
+
+        $result = [];
+        if ($totalCents <= 0) {
+            foreach ($lines as $key => $line) {
+                $result[$key] = 0.0;
+            }
+
+            return $result;
+        }
+
+        $budgetCents = min((int) round(((float) $this->discount_amount) * 100), $totalCents);
+
+        foreach ($lines as $key => $line) {
+            $qty = max(1, (int) ($line['quantity'] ?? 1));
+            $shareCents = intdiv($budgetCents * $lineCents[$key], $totalCents);
+            $unitCents = min(intdiv($shareCents, $qty), (int) round(((float) $line['base_unit']) * 100));
+            $result[$key] = (float) ($unitCents / 100);
+        }
+
+        return $result;
+    }
+
+    /**
      * Рассчитать размер скидки
      */
     public function calculateDiscount($amount)

@@ -340,6 +340,8 @@ class OrderDiscountService
         $totalPromoDiscount = 0.0;
         $totalItemsDiscount = 0.0;
 
+        // Проход 1: считаем, как промокод ложится на каждую позицию по отдельности.
+        $plans = [];
         foreach ($order->items()->get() as $item) {
             if ($item->is_gift || ! $item->product_id) {
                 continue;
@@ -363,17 +365,47 @@ class OrderDiscountService
             }
 
             $result = $promoCode->calculateFinalPrice($original, $currentPrice, $hasDiscount);
-            $finalPrice         = (float) $result['final_price'];
-            $promoDiscountUnit  = (float) $result['promo_discount'];
-            $totalDiscountUnit  = round($original - $finalPrice, 2);
+            $plans[$item->id] = [
+                'item'              => $item,
+                'original'          => $original,
+                'autoManualPerUnit' => $autoManualPerUnit,
+                'qty'               => $qty,
+                'finalPrice'        => (float) $result['final_price'],
+                'promoDiscountUnit' => (float) $result['promo_discount'],
+            ];
+        }
+
+        // Фиксированный промокод — скидка на весь заказ: номинал делится между
+        // позициями пропорционально стоимости, а не списывается с каждой позиции.
+        if ($promoCode->discount_type === 'fixed' && $plans !== []) {
+            $lines = [];
+            foreach ($plans as $id => $plan) {
+                $lines[$id] = [
+                    'base_unit' => $plan['finalPrice'] + $plan['promoDiscountUnit'],
+                    'quantity'  => $plan['qty'],
+                ];
+            }
+            foreach ($promoCode->allocateFixedDiscount($lines) as $id => $unitDiscount) {
+                $plans[$id]['finalPrice'] = round($lines[$id]['base_unit'] - $unitDiscount, 2);
+                $plans[$id]['promoDiscountUnit'] = $unitDiscount;
+            }
+        }
+
+        // Проход 2: записываем цены позиций и считаем итоги.
+        foreach ($plans as $plan) {
+            $item              = $plan['item'];
+            $qty               = $plan['qty'];
+            $finalPrice        = $plan['finalPrice'];
+            $promoDiscountUnit = $plan['promoDiscountUnit'];
+            $totalDiscountUnit = round($plan['original'] - $finalPrice, 2);
 
             // items-часть на этой позиции зависит от behavior:
             //  - replace: auto+manual «съедены» промокодом, items-часть = 0;
             //  - stack:   items-часть = auto+manual (сохраняются);
-            //  - skip:    обработано в ветке !$applicable.
+            //  - skip:    обработано выше (позиция не попала в $plans).
             $itemsPartUnit = match ($promoCode->discount_behavior) {
                 'replace' => 0.0,
-                default   => $autoManualPerUnit,
+                default   => $plan['autoManualPerUnit'],
             };
 
             $item->update([

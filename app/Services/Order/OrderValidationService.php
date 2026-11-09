@@ -50,6 +50,10 @@ class OrderValidationService
             }
         }
 
+        // Фиксированный промокод — скидка на весь заказ, а не на каждую позицию:
+        // доли позиций считаем заранее по всей корзине.
+        $fixedPromoDiscounts = $promoCode ? $this->fixedPromoUnitDiscounts($items, $promoCode, $client) : [];
+
         foreach ($items as $index => $item) {
             //            Log::info("Validating item #{$index}", [
             //                'product_id' => $item['product_id'] ?? null,
@@ -58,7 +62,7 @@ class OrderValidationService
             //            ]);
 
             try {
-                $result = $this->validateSingleItem($item, $index, $promoCode, $client);
+                $result = $this->validateSingleItem($item, $index, $promoCode, $client, $fixedPromoDiscounts[$index] ?? null);
 
                 if ($result['error']) {
                     Log::warning("Item #{$index} validation failed", $result['error']);
@@ -113,8 +117,9 @@ class OrderValidationService
         ?Client $client = null
     ): array {
         $priced = [];
+        $fixedPromoDiscounts = $promoCode ? $this->fixedPromoUnitDiscounts($items, $promoCode, $client) : [];
 
-        foreach ($items as $item) {
+        foreach ($items as $index => $item) {
             $productId = (int) ($item['product_id'] ?? 0);
             $variantId = $item['product_variant_id'] ?? $item['variant_id'] ?? null;
             $quantity = max(0, (int) ($item['quantity'] ?? 0));
@@ -146,6 +151,10 @@ class OrderValidationService
                 continue;
             }
 
+            if (isset($fixedPromoDiscounts[$index]) && $priceData['promo_applied']) {
+                $priceData['final_price'] = (float) $priceData['final_price'] + (float) $priceData['promo_discount'] - $fixedPromoDiscounts[$index];
+            }
+
             $priced[] = [
                 'product_id' => $productId,
                 'quantity' => $quantity,
@@ -157,11 +166,64 @@ class OrderValidationService
         return $priced;
     }
 
+    /**
+     * Фиксированный промокод даёт скидку на весь заказ: номинал распределяется по
+     * позициям корзины пропорционально их стоимости (PromoCode::allocateFixedDiscount).
+     *
+     * @return array<int, float> индекс позиции => скидка на одну штуку (пусто для %-промокодов)
+     */
+    private function fixedPromoUnitDiscounts(array $items, PromoCode $promoCode, ?Client $client): array
+    {
+        if ($promoCode->discount_type !== 'fixed') {
+            return [];
+        }
+
+        $lines = [];
+        foreach ($items as $index => $item) {
+            $productId = (int) ($item['product_id'] ?? 0);
+            $variantId = $item['product_variant_id'] ?? $item['variant_id'] ?? null;
+            $quantity = (int) ($item['quantity'] ?? 0);
+
+            if ($productId <= 0 || $quantity <= 0) {
+                continue;
+            }
+
+            $modelResult = $this->loadProductModel($productId, $variantId ? (int) $variantId : null);
+            if (! $modelResult['success']) {
+                continue;
+            }
+
+            try {
+                $priceData = $this->calculateItemPrice(
+                    $modelResult['model'],
+                    $productId,
+                    $variantId ? (int) $variantId : null,
+                    $promoCode,
+                    $client
+                );
+            } catch (\Throwable $e) {
+                continue;
+            }
+
+            if (! $priceData['promo_applied']) {
+                continue;
+            }
+
+            $lines[$index] = [
+                'base_unit' => (float) $priceData['final_price'] + (float) $priceData['promo_discount'],
+                'quantity' => $quantity,
+            ];
+        }
+
+        return $promoCode->allocateFixedDiscount($lines);
+    }
+
     private function validateSingleItem(
         array $item,
         int $index,
         ?PromoCode $promoCode = null,
-        ?Client $client = null
+        ?Client $client = null,
+        ?float $fixedPromoUnitDiscount = null
     ): array
     {        $productId = $item['product_id'];
         $variantId = $item['product_variant_id'] ?? null;
@@ -238,6 +300,13 @@ class OrderValidationService
                 'file' => $e->getFile(),
             ]);
             throw $e;
+        }
+
+        // Доля позиции в фиксированном промокоде на весь заказ (см. fixedPromoUnitDiscounts).
+        if ($fixedPromoUnitDiscount !== null && $priceData['promo_applied']) {
+            $promoBase = (float) $priceData['final_price'] + (float) $priceData['promo_discount'];
+            $priceData['promo_discount'] = round($fixedPromoUnitDiscount, 2);
+            $priceData['final_price'] = round($promoBase - $fixedPromoUnitDiscount, 2);
         }
 
         // 7. Проверка соответствия цены
@@ -651,6 +720,32 @@ class OrderValidationService
                 'total_discount'       => $totalDiscount,
                 'promo_applied'        => $promoDiscount > 0,
             ];
+        }
+
+        // Фиксированный промокод — скидка на весь заказ: перераспределяем номинал
+        // по позициям, к которым он применился.
+        if ($promoCode->discount_type === 'fixed') {
+            $lines = [];
+            foreach ($validatedItems as $i => $row) {
+                if (! empty($row['promo_applied'])) {
+                    $lines[$i] = [
+                        'base_unit' => (float) $row['final_price'] + (float) $row['promo_discount'],
+                        'quantity'  => (int) $row['quantity'],
+                    ];
+                }
+            }
+
+            foreach ($promoCode->allocateFixedDiscount($lines) as $i => $unitDiscount) {
+                $row = $validatedItems[$i];
+                $base = (float) $row['final_price'] + (float) $row['promo_discount'];
+                $final = round($base - $unitDiscount, 2);
+                $total = round((float) $row['original_price'] - $final, 2);
+                $validatedItems[$i]['final_price'] = $final;
+                $validatedItems[$i]['promo_discount'] = round($unitDiscount, 2);
+                $validatedItems[$i]['total_discount'] = $total;
+                $validatedItems[$i]['discount_amount'] = max(0.0, round($total - $unitDiscount, 2));
+                $validatedItems[$i]['promo_applied'] = $unitDiscount > 0;
+            }
         }
 
         return $validatedItems;

@@ -125,6 +125,16 @@ class PromoCodeService
 
 
         $applicableWithPrices = $this->calculateProductsPrices($applicable, $promoCode, $customerType);
+
+        // Фиксированный промокод — скидка на весь заказ: номинал делится между позициями
+        // пропорционально стоимости (нужны количества: quantities[productId][variantId|0]).
+        if ($promoCode->discount_type === 'fixed') {
+            $applicableWithPrices = $this->allocateFixedPromoAcrossCart(
+                $applicableWithPrices,
+                $promoCode,
+                (array) $request->get('quantities', [])
+            );
+        }
         $notApplicableWithPrices = $this->calculateProductsPrices($notApplicable, null, $customerType);
 
 
@@ -188,6 +198,49 @@ class PromoCodeService
     /**
      * Рассчитать цены для списка продуктов с учетом скидок и промокода
      */
+    /**
+     * Пересчитать цены с фиксированным промокодом так, чтобы суммарная скидка по
+     * корзине равнялась номиналу (а не номиналу на каждую позицию).
+     *
+     * @param  array  $rows        результат calculateProductsPrices()
+     * @param  array  $quantities  quantities[productId][variantId|0] => количество (по умолчанию 1)
+     */
+    private function allocateFixedPromoAcrossCart(array $rows, PromoCode $promoCode, array $quantities): array
+    {
+        $lines = [];
+        foreach ($rows as $i => $row) {
+            if (empty($row['promo_code_applied']) || empty($row['promo_code_info'])) {
+                continue;
+            }
+
+            $variantKey = $row['variant_id'] ?: 0;
+            $qty = $quantities[$row['product_id']][$variantKey] ?? $quantities[$row['product_id']][(string) $variantKey] ?? 1;
+            $lines[$i] = [
+                'base_unit' => (float) $row['final_price'] + (float) ($row['promo_code_info']['promo_discount'] ?? 0),
+                'quantity'  => max(1, (int) $qty),
+            ];
+        }
+
+        foreach ($promoCode->allocateFixedDiscount($lines) as $i => $unitDiscount) {
+            $base = $lines[$i]['base_unit'];
+            $newFinal = round($base - $unitDiscount, 2);
+
+            $rows[$i]['final_price'] = $newFinal;
+            $rows[$i]['promo_code_info']['promo_discount'] = $unitDiscount;
+            $rows[$i]['promo_code_info']['price_with_promo'] = $newFinal;
+            $rows[$i]['promo_code_applied'] = $unitDiscount > 0;
+            $rows[$i]['savings'] = $this->calculateSavings(
+                $rows[$i]['original_price'],
+                $rows[$i]['price_after_discount'],
+                $newFinal,
+                $rows[$i]['discount'],
+                $rows[$i]['promo_code_info']
+            );
+        }
+
+        return $rows;
+    }
+
     private function calculateProductsPrices(
         array $products,
         ?PromoCode $promoCode = null,
