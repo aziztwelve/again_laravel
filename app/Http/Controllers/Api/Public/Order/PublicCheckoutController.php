@@ -177,6 +177,32 @@ class PublicCheckoutController extends Controller
                 return $this->validationErrorResponse($itemsValidation['errors']);
             }
 
+            // Покупатель выбрал пункт выдачи СДЭК, но данные пришли без тарифа (витрина шлёт
+            // только pvz_code) — раньше заказ сохранялся в формате Яндекса, и в админке
+            // СДЭК «терял» пункт. Собираем данные СДЭК, тариф и город пункта считаем на сервере.
+            $cdekMethodCode = DeliveryMethod::query()
+                ->where('name', $validated['delivery_method']['name'] ?? '')
+                ->whereIn('code', ['cdek_pickup', 'cdek_postamat'])
+                ->value('code');
+            if ($cdekMethodCode && ($validated['delivery_data']['provider'] ?? null) !== 'cdek') {
+                $given = is_array($validated['delivery_data'] ?? null) ? $validated['delivery_data'] : [];
+                $pvzCode = $validated['pvz_code'] ?? $given['pvz']['code'] ?? $given['pvz_code'] ?? $given['pvz']['id'] ?? null;
+
+                if ($pvzCode) {
+                    $isPostamat = $cdekMethodCode === 'cdek_postamat';
+                    $validated['delivery_data'] = $this->cdekDeliveryService->completeDelivery([
+                        'provider' => 'cdek',
+                        'delivery_type' => $isPostamat ? 'postamat' : 'pickup',
+                        'pvz' => array_filter([
+                            'code' => (string) $pvzCode,
+                            'type' => $isPostamat ? 'POSTAMAT' : 'PVZ',
+                            'address' => $validated['pvz_address'] ?? $given['pvz']['address'] ?? null,
+                            'coordinates' => $validated['pvz_coordinates'] ?? $given['pvz']['coordinates'] ?? null,
+                        ], fn ($value) => $value !== null),
+                    ], $itemsValidation['validated_items']);
+                }
+            }
+
             if (($validated['delivery_data']['provider'] ?? null) === 'cdek') {
                 $deliveryMethod = DeliveryMethod::query()
                     ->where('name', $validated['delivery_method']['name'] ?? '')
