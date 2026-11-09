@@ -170,8 +170,8 @@ class AbandonedCartService
      * После оплаты витрина может заново сохранить на сервере локальную корзину
      * (её состав совпадает с только что оплаченным заказом), и она попадала в цепочку
      * «Вы забыли оформить заказ» хотя клиент уже заплатил (заказ 40660). Если у клиента
-     * есть оплаченный заказ, оформленный за двое суток до создания корзины, с тем же
-     * набором товаров и вариантов, помечаем корзину оформленной и напоминания не шлём.
+     * есть оплаченный заказ, оформленный за двое суток до создания корзины, со всеми
+     * товарами и вариантами корзины, помечаем корзину оформленной и напоминания не шлём.
      */
     private function settleIfAlreadyOrdered(Cart $cart): bool
     {
@@ -200,7 +200,8 @@ class AbandonedCartService
                 ->map(fn ($item) => $item->product_id.':'.(int) $item->product_variant_id)
                 ->unique()->sort()->values()->all();
 
-            if ($orderKeys === $cartKeys) {
+            // Все позиции корзины уже куплены в оплаченном заказе (корзина равна заказу или его части).
+            if (array_diff($cartKeys, $orderKeys) === []) {
                 $cart->update(['status' => 'ordered', 'ordered_at' => now(), 'updated_at' => now()]);
                 Log::info('AbandonedCart: cart equals a paid order, reminders skipped', [
                     'cart_id' => $cart->id,
