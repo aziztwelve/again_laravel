@@ -79,8 +79,10 @@ class PromoCode extends Model
     {
         $target = $this->customer_type ?: self::CUSTOMER_TYPE_ALL;
 
+        // Скрытый код не показывается в списках, но применяется везде, где его ввели
+        // (чекаут сайта и заказ в админке), для гостей и авторизованных.
         if ($target === self::CUSTOMER_TYPE_HIDDEN) {
-            return false;
+            return true;
         }
 
         return $target === self::CUSTOMER_TYPE_ALL || $target === $customerType;
