@@ -41,6 +41,8 @@ class OrderUpdateService
             ];
             // Снимок адреса, получателя, пункта выдачи, позиций и промокода
             $detailsBefore = $this->historyService->detailsSnapshot($order);
+            // Состояние, от которого зависят правила бесплатной доставки (до правок).
+            $freeShippingBefore = $this->freeShippingFingerprint($order);
             // Поля напрямую обновляемые в таблице orders
             $allowedFields = [
                 'notes',
@@ -226,7 +228,7 @@ class OrderUpdateService
             // доставки/оплаты или сама цена доставки могли измениться, а порог
             // сравнивается с актуальной суммой выкупа. Убрали половину товаров —
             // доставка снова становится платной (см. docs/tasks/free-shipping.md).
-            $this->recalculateFreeShipping($order, $data);
+            $this->recalculateFreeShipping($order, $data, $freeShippingBefore);
 
             // Пишем в историю diff отслеживаемых полей
             $order->refresh();
@@ -497,6 +499,37 @@ class OrderUpdateService
     }
 
     /**
+     * Отпечаток всего, что влияет на правила бесплатной доставки: позиции с ценами,
+     * промокод, способ доставки и оплаты, данные доставки, адрес, подарочная карта.
+     */
+    private function freeShippingFingerprint(Order $order): string
+    {
+        $items = $order->items()->get()
+            ->map(fn ($item) => [
+                (int) $item->product_id,
+                (int) $item->product_variant_id,
+                (int) $item->quantity,
+                round((float) $item->price, 2),
+                (bool) $item->is_gift,
+            ])
+            ->sortBy(fn ($row) => $row[0].'-'.$row[1].'-'.$row[4])
+            ->values()
+            ->all();
+        $address = $order->address()->first();
+        $payment = $order->payment_method;
+
+        return md5(json_encode([
+            'items' => $items,
+            'promo' => $order->promo_code_id,
+            'delivery_method' => $order->delivery_method_id,
+            'payment' => $payment instanceof \BackedEnum ? $payment->value : (string) $payment,
+            'delivery_data' => $order->delivery_data,
+            'gift_card' => round((float) $order->gift_card_amount, 2),
+            'geo' => [$address?->country, $address?->region, $address?->city],
+        ], JSON_UNESCAPED_UNICODE));
+    }
+
+    /**
      * Переприменить правила бесплатной доставки после изменения заказа.
      *
      * Дёргается только когда менялось что-то, влияющее на условия правил, —
@@ -507,27 +540,18 @@ class OrderUpdateService
      * `delivery_cost_original` ляжет именно введённая сумма, и она вернётся,
      * когда правило перестанет подходить.
      */
-    private function recalculateFreeShipping(Order $order, array $data): void
+    private function recalculateFreeShipping(Order $order, array $data, ?string $fingerprintBefore = null): void
     {
-        $affectingKeys = [
-            'items',
-            'promo_code',
-            'delivery_method_id',
-            'payment_method',
-            'delivery_cost',
-            'delivery_data',
-            'gift_card_amount',
-        ];
-
-        $affected = false;
-        foreach ($affectingKeys as $key) {
-            if (array_key_exists($key, $data)) {
-                $affected = true;
-                break;
-            }
-        }
-
-        if (! $affected) {
+        // Админка присылает способ доставки и оплаты при ЛЮБОМ сохранении (даже смене статуса),
+        // поэтому «ключ есть в запросе» ничего не значит. Пересчитываем, только если реально
+        // изменилось то, от чего зависят правила (состав и цены, промокод, доставка, оплата,
+        // адрес, подарочная карта), либо менеджер сам задал стоимость доставки. Иначе заказ,
+        // получивший бесплатную доставку по акции, терял её при смене статуса (218 заказов,
+        // 9 ноября: после окончания акции склад переводил заказы «В работу», и доставка
+        // возвращалась из delivery_cost_original).
+        $costEdited = array_key_exists('delivery_cost', $data);
+        if (! $costEdited && $fingerprintBefore !== null
+            && $this->freeShippingFingerprint($order) === $fingerprintBefore) {
             return;
         }
 
