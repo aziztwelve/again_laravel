@@ -8,6 +8,32 @@ use Illuminate\Http\Resources\Json\JsonResource;
 /** Customer-facing history: expose receipt data, never internal order notes. */
 class OrderHistoryResource extends JsonResource
 {
+    /** @var array<string, \App\Models\Image|null> */
+    private static array $legacyImages = [];
+
+    private static function legacyImage(?string $sku)
+    {
+        if (blank($sku)) {
+            return null;
+        }
+
+        if (! array_key_exists($sku, self::$legacyImages)) {
+            $variant = \App\Models\ProductVariant::query()
+                ->with(['images', 'product.images'])
+                ->where('sku', $sku)
+                ->first();
+            $images = $variant?->images;
+            $image = $images?->firstWhere('is_main', true) ?? $images?->first();
+            if (! $image) {
+                $images = $variant?->product?->images;
+                $image = $images?->firstWhere('is_main', true) ?? $images?->first();
+            }
+            self::$legacyImages[$sku] = $image;
+        }
+
+        return self::$legacyImages[$sku];
+    }
+
     public function toArray(Request $request): array
     {
         $items = $this->items->map(function ($item) {
@@ -15,6 +41,9 @@ class OrderHistoryResource extends JsonResource
             $image = $images?->firstWhere('is_main', true) ?? $images?->first();
             $images = $item->product?->images;
             $image ??= $images?->firstWhere('is_main', true) ?? $images?->first();
+            // Позиции заказов, перенесённых из старой системы, не привязаны к товару
+            // (только legacy_sku): подбираем картинку по артикулу варианта.
+            $image ??= self::legacyImage($item->legacy_sku);
             $quantity = (int) $item->quantity;
             $price = (float) $item->price;
             $discount = (float) $item->discount;
