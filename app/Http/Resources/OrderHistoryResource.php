@@ -11,27 +11,53 @@ class OrderHistoryResource extends JsonResource
     /** @var array<string, \App\Models\Image|null> */
     private static array $legacyImages = [];
 
-    private static function legacyImage(?string $sku)
+    /** Старые названия, которые на сайте называются иначе. */
+    private const LEGACY_NAME_ALIASES = [
+        'Набор менструального белья START AGAIN' => 'Набор белья START AGAIN',
+    ];
+
+    private static function mainImage($images)
     {
-        if (blank($sku)) {
+        return $images?->firstWhere('is_main', true) ?? $images?->first();
+    }
+
+    private static function legacyImage(?string $sku, ?string $name = null)
+    {
+        $key = ($sku ?? '').'|'.($name ?? '');
+        if ($key === '|') {
             return null;
         }
 
-        if (! array_key_exists($sku, self::$legacyImages)) {
-            $variant = \App\Models\ProductVariant::query()
-                ->with(['images', 'product.images'])
-                ->where('sku', $sku)
-                ->first();
-            $images = $variant?->images;
-            $image = $images?->firstWhere('is_main', true) ?? $images?->first();
-            if (! $image) {
-                $images = $variant?->product?->images;
-                $image = $images?->firstWhere('is_main', true) ?? $images?->first();
+        if (! array_key_exists($key, self::$legacyImages)) {
+            $image = null;
+
+            // 1) по артикулу варианта
+            if (filled($sku)) {
+                $variant = \App\Models\ProductVariant::query()
+                    ->with(['images', 'product.images'])
+                    ->where('sku', $sku)
+                    ->first();
+                $image = self::mainImage($variant?->images) ?? self::mainImage($variant?->product?->images);
             }
-            self::$legacyImages[$sku] = $image;
+
+            // 2) по названию товара без размера и цвета: «Название (M / Чёрный)» → «Название»
+            if (! $image && filled($name)) {
+                $base = trim(explode(' (', $name)[0]);
+                $base = self::LEGACY_NAME_ALIASES[$base] ?? $base;
+                $product = \App\Models\Product::query()
+                    ->with('images')
+                    ->where('name', $base)
+                    ->where('is_active', true)
+                    ->whereHas('images')
+                    ->orderByDesc('id')
+                    ->first();
+                $image = self::mainImage($product?->images);
+            }
+
+            self::$legacyImages[$key] = $image;
         }
 
-        return self::$legacyImages[$sku];
+        return self::$legacyImages[$key];
     }
 
     public function toArray(Request $request): array
@@ -43,7 +69,7 @@ class OrderHistoryResource extends JsonResource
             $image ??= $images?->firstWhere('is_main', true) ?? $images?->first();
             // Позиции заказов, перенесённых из старой системы, не привязаны к товару
             // (только legacy_sku): подбираем картинку по артикулу варианта.
-            $image ??= self::legacyImage($item->legacy_sku);
+            $image ??= self::legacyImage($item->legacy_sku, $item->legacy_name);
             $quantity = (int) $item->quantity;
             $price = (float) $item->price;
             $discount = (float) $item->discount;
