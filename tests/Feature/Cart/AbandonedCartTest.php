@@ -1057,12 +1057,12 @@ class AbandonedCartTest extends TestCase
             'recovery_token' => 'tok'.uniqid(),
         ]);
 
-        $this->service()->processChain();               // пауза: сдвиг старта цепочки
-        $this->travel(25)->hours();                      // пауза закончилась
-        $result = $this->service()->processChain();      // старт цепочки + 90 минут ещё не прошло
+        $this->service()->processChain();               // пауза: старт цепочки сдвинут на её конец (+22 ч)
+        $this->travel(23)->hours();                      // пауза закончилась час назад, 90 минут ещё не прошло
+        $result = $this->service()->processChain();
 
         $this->assertSame(0, $result['sent']);
-        $this->travel(2)->hours();                       // прошло больше 90 минут после конца паузы
+        $this->travel(2)->hours();                       // с конца паузы больше 90 минут, второй шаг (23,5 ч) ещё не пора
         $result = $this->service()->processChain();
 
         $this->assertSame(1, $result['sent']);
