@@ -29,6 +29,10 @@ return [
     // доступный контакт клиента (см. CustomerChannelResolver).
     'channel_priority' => ['telegram', 'email', 'whatsapp', 'vk'],
 
+    // «Тихий» период после оплаты заказа клиента (часы): напоминания о брошенной корзине
+    // не отправляются, цепочка стартует после его окончания. 0 — выключено.
+    'post_purchase_quiet_hours' => (int) env('ABANDONED_CART_POST_PURCHASE_QUIET_HOURS', 24),
+
     // Ручная отправка напоминания из админки (шаг F): минимальный интервал между
     // ручными отправками на одну корзину (анти-спам). См. docs/tasks/abandoned-cart.md.
     'manual_throttle_minutes' => (int) env('ABANDONED_CART_MANUAL_THROTTLE_MINUTES', 10),

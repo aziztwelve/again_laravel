@@ -826,4 +826,283 @@ class AbandonedCartTest extends TestCase
         $cart->refresh();
         $this->assertNull($cart->recovery_promo_code);
     }
+
+    // ── Оплата заказа и напоминания о брошенной корзине ──────────────────────────
+
+    /** @param array<int, array{0: Product, 1: int}> $lines */
+    private function cartWith(Client $client, ?string $status, \DateTimeInterface $activity, array $lines, array $extra = []): Cart
+    {
+        $cart = Cart::create(array_merge([
+            'client_id' => $client->id,
+            'status' => $status,
+            'created_at' => $activity,
+            'updated_at' => $activity,
+            'total' => 0,
+            'total_original' => 0,
+            'total_discount' => 0,
+        ], $extra));
+
+        $sum = 0;
+        foreach ($lines as [$product, $qty]) {
+            $cart->items()->create([
+                'product_id' => $product->id,
+                'quantity' => $qty,
+                'price' => 1990,
+                'price_original' => 1990,
+                'total' => 1990 * $qty,
+                'total_original' => 1990 * $qty,
+                'total_discount' => 0,
+            ]);
+            $sum += 1990 * $qty;
+        }
+        $cart->forceFill(['total' => $sum, 'total_original' => $sum])->save();
+
+        return $cart->fresh('items');
+    }
+
+    /** @param array<int, array{0: Product, 1: int}> $lines */
+    private function orderFor(Client $client, array $lines, \DateTimeInterface $createdAt, string $paymentStatus = 'paid'): Order
+    {
+        $order = Order::create([
+            'order_number' => 'TEST-'.uniqid(),
+            'client_id' => $client->id,
+            'status' => 'processing',
+            'payment_status' => $paymentStatus,
+            'total_amount' => 1990,
+        ]);
+        foreach ($lines as [$product, $qty]) {
+            $order->items()->create(['product_id' => $product->id, 'quantity' => $qty, 'price' => 1990]);
+        }
+        $order->forceFill(['created_at' => $createdAt])->save();
+
+        return $order;
+    }
+
+    public function test_cart_equal_to_a_paid_order_is_marked_ordered_and_gets_no_reminder(): void
+    {
+        Queue::fake();
+        config(['abandoned_cart.post_purchase_quiet_hours' => 0]);
+
+        $client = $this->client(['email' => 'paid-equal@example.com']);
+        $bought = $this->product();
+        $this->orderFor($client, [[$bought, 1]], now()->subMinutes(5));
+        $cart = $this->cartWith($client, 'abandoned', now()->subMinutes(120), [[$bought, 1]], [
+            'abandoned_at' => now()->subMinutes(100),
+            'recovery_token' => 'tok'.uniqid(),
+        ]);
+
+        $result = $this->service()->processChain();
+
+        $this->assertSame(0, $result['sent']);
+        Queue::assertNothingPushed();
+        $this->assertSame('ordered', $cart->fresh()->status);
+    }
+
+    public function test_purchased_items_are_removed_from_the_cart_and_not_listed_in_the_reminder(): void
+    {
+        Queue::fake();
+        config(['abandoned_cart.post_purchase_quiet_hours' => 0]);
+
+        $client = $this->client(['email' => 'paid-partial@example.com']);
+        $bought = $this->product();
+        $left = $this->product();
+        // Заказ оплачен, затем сайт сохранил на сервере корзину целиком (купленное + оставшееся).
+        $this->orderFor($client, [[$bought, 2]], now()->subMinutes(200));
+        $cart = $this->cartWith($client, 'abandoned', now()->subMinutes(190), [[$bought, 2], [$left, 1]], [
+            'abandoned_at' => now()->subMinutes(100),
+            'recovery_token' => 'tok'.uniqid(),
+        ]);
+
+        $result = $this->service()->processChain();
+
+        $this->assertSame(1, $result['sent']);
+        $cart->refresh();
+        $this->assertSame(1, $cart->items()->count());
+        $this->assertSame($left->id, $cart->items()->first()->product_id);
+        $this->assertEquals(1990, $cart->total);
+        $comm = CartCommunication::where('cart_id', $cart->id)->firstOrFail();
+        $this->assertStringContainsString($left->name, (string) $comm->body);
+        $this->assertStringNotContainsString($bought->name, (string) $comm->body);
+    }
+
+    public function test_purchased_quantity_is_subtracted_from_the_cart_line(): void
+    {
+        Queue::fake();
+        config(['abandoned_cart.post_purchase_quiet_hours' => 0]);
+
+        $client = $this->client(['email' => 'paid-qty@example.com']);
+        $product = $this->product();
+        $other = $this->product();
+        $this->orderFor($client, [[$product, 2]], now()->subMinutes(200));
+        $cart = $this->cartWith($client, 'abandoned', now()->subMinutes(190), [[$product, 3], [$other, 1]], [
+            'abandoned_at' => now()->subMinutes(100),
+            'recovery_token' => 'tok'.uniqid(),
+        ]);
+
+        $this->service()->processChain();
+
+        $line = $cart->items()->where('product_id', $product->id)->firstOrFail();
+        $this->assertSame(1, (int) $line->quantity);
+        $this->assertEquals(1990, $line->total);
+        $this->assertEquals(3980, $cart->fresh()->total);
+    }
+
+    public function test_cart_created_before_the_order_is_not_trimmed(): void
+    {
+        Queue::fake();
+        config(['abandoned_cart.post_purchase_quiet_hours' => 0]);
+
+        $client = $this->client(['email' => 'paid-later@example.com']);
+        $product = $this->product();
+        $other = $this->product();
+        $cart = $this->cartWith($client, 'abandoned', now()->subMinutes(300), [[$product, 1], [$other, 1]], [
+            'abandoned_at' => now()->subMinutes(200),
+            'recovery_token' => 'tok'.uniqid(),
+        ]);
+        // Заказ оформлен позже корзины: позиции корзины не трогаем.
+        $this->orderFor($client, [[$product, 1]], now()->subMinutes(10));
+
+        $this->service()->processChain();
+
+        $this->assertSame(2, $cart->items()->count());
+    }
+
+    public function test_unpaid_order_does_not_trim_the_cart(): void
+    {
+        Queue::fake();
+        config(['abandoned_cart.post_purchase_quiet_hours' => 0]);
+
+        $client = $this->client(['email' => 'unpaid@example.com']);
+        $product = $this->product();
+        $this->orderFor($client, [[$product, 1]], now()->subMinutes(200), 'pending');
+        $cart = $this->cartWith($client, 'abandoned', now()->subMinutes(190), [[$product, 1]], [
+            'abandoned_at' => now()->subMinutes(100),
+            'recovery_token' => 'tok'.uniqid(),
+        ]);
+
+        $result = $this->service()->processChain();
+
+        $this->assertSame(1, $result['sent']);
+        $this->assertSame(1, $cart->items()->count());
+        $this->assertNotSame('ordered', $cart->fresh()->status);
+    }
+
+    public function test_other_clients_paid_order_does_not_affect_the_cart(): void
+    {
+        Queue::fake();
+        config(['abandoned_cart.post_purchase_quiet_hours' => 0]);
+
+        $client = $this->client(['email' => 'mine@example.com']);
+        $stranger = $this->client(['email' => 'stranger@example.com']);
+        $product = $this->product();
+        $this->orderFor($stranger, [[$product, 1]], now()->subMinutes(200));
+        $cart = $this->cartWith($client, 'abandoned', now()->subMinutes(190), [[$product, 1]], [
+            'abandoned_at' => now()->subMinutes(100),
+            'recovery_token' => 'tok'.uniqid(),
+        ]);
+
+        $result = $this->service()->processChain();
+
+        $this->assertSame(1, $result['sent']);
+        $this->assertSame(1, $cart->items()->count());
+    }
+
+    public function test_cart_is_not_abandoned_during_quiet_period_after_payment(): void
+    {
+        config(['abandoned_cart.post_purchase_quiet_hours' => 24]);
+
+        $client = $this->client(['email' => 'quiet@example.com']);
+        $bought = $this->product();
+        $left = $this->product();
+        $this->orderFor($client, [[$bought, 1]], now()->subHours(2));
+        $cart = $this->cartWith($client, 'active', now()->subMinutes(45), [[$left, 1]]);
+
+        $this->assertSame(0, $this->service()->markAbandonedCarts());
+        $this->assertNull($cart->fresh()->abandoned_at);
+    }
+
+    public function test_no_reminders_during_quiet_period_and_chain_start_is_shifted_to_its_end(): void
+    {
+        Queue::fake();
+        config(['abandoned_cart.post_purchase_quiet_hours' => 24]);
+
+        $client = $this->client(['email' => 'quiet2@example.com']);
+        $left = $this->product();
+        $order = $this->orderFor($client, [[$this->product(), 1]], now()->subHours(2));
+        $cart = $this->cartWith($client, 'abandoned', now()->subMinutes(300), [[$left, 1]], [
+            'abandoned_at' => now()->subMinutes(200),
+            'recovery_token' => 'tok'.uniqid(),
+        ]);
+
+        $result = $this->service()->processChain();
+
+        $this->assertSame(0, $result['sent']);
+        Queue::assertNothingPushed();
+        $this->assertEquals(
+            $order->fresh()->created_at->copy()->addHours(24)->timestamp,
+            $cart->fresh()->abandoned_at->timestamp,
+        );
+    }
+
+    public function test_after_quiet_period_only_the_first_step_is_sent_not_all_at_once(): void
+    {
+        Queue::fake();
+        config(['abandoned_cart.post_purchase_quiet_hours' => 24]);
+
+        $client = $this->client(['email' => 'quiet3@example.com']);
+        $left = $this->product();
+        $this->orderFor($client, [[$this->product(), 1]], now()->subHours(2));
+        $cart = $this->cartWith($client, 'abandoned', now()->subMinutes(300), [[$left, 1]], [
+            'abandoned_at' => now()->subMinutes(200),
+            'recovery_token' => 'tok'.uniqid(),
+        ]);
+
+        $this->service()->processChain();               // пауза: сдвиг старта цепочки
+        $this->travel(25)->hours();                      // пауза закончилась
+        $result = $this->service()->processChain();      // старт цепочки + 90 минут ещё не прошло
+
+        $this->assertSame(0, $result['sent']);
+        $this->travel(2)->hours();                       // прошло больше 90 минут после конца паузы
+        $result = $this->service()->processChain();
+
+        $this->assertSame(1, $result['sent']);
+        $this->assertSame(1, CartCommunication::where('cart_id', $cart->id)->count());
+        $this->assertSame(1, (int) CartCommunication::where('cart_id', $cart->id)->value('step'));
+    }
+
+    public function test_quiet_period_can_be_disabled_with_zero_hours(): void
+    {
+        config(['abandoned_cart.post_purchase_quiet_hours' => 0]);
+
+        $client = $this->client(['email' => 'noquiet@example.com']);
+        $this->orderFor($client, [[$this->product(), 1]], now()->subHours(1));
+        $cart = $this->cartWith($client, 'active', now()->subMinutes(45), [[$this->product(), 1]]);
+
+        $this->assertSame(1, $this->service()->markAbandonedCarts());
+        $this->assertNotNull($cart->fresh()->abandoned_at);
+    }
+
+    public function test_unpaid_order_does_not_start_the_quiet_period(): void
+    {
+        config(['abandoned_cart.post_purchase_quiet_hours' => 24]);
+
+        $client = $this->client(['email' => 'pending@example.com']);
+        $this->orderFor($client, [[$this->product(), 1]], now()->subHours(1), 'pending');
+        $cart = $this->cartWith($client, 'active', now()->subMinutes(45), [[$this->product(), 1]]);
+
+        $this->assertSame(1, $this->service()->markAbandonedCarts());
+        $this->assertNotNull($cart->fresh()->abandoned_at);
+    }
+
+    public function test_order_older_than_quiet_period_does_not_block_reminders(): void
+    {
+        config(['abandoned_cart.post_purchase_quiet_hours' => 24]);
+
+        $client = $this->client(['email' => 'old-order@example.com']);
+        $this->orderFor($client, [[$this->product(), 1]], now()->subHours(30));
+        $cart = $this->cartWith($client, 'active', now()->subMinutes(45), [[$this->product(), 1]]);
+
+        $this->assertSame(1, $this->service()->markAbandonedCarts());
+        $this->assertNotNull($cart->fresh()->abandoned_at);
+    }
 }

@@ -52,6 +52,10 @@ class AbandonedCartService
             if ($this->settleIfAlreadyOrdered($cart)) {
                 continue;
             }
+            // Клиент только что оплатил заказ: корзина остаётся активной, цепочка начнётся позже.
+            if ($this->quietUntil($cart)) {
+                continue;
+            }
             $cart->update([
                 'abandoned_at' => now(),
                 'recovery_token' => $this->generateRecoveryToken(),
@@ -90,6 +94,15 @@ class AbandonedCartService
 
         foreach ($carts as $cart) {
             if ($this->settleIfAlreadyOrdered($cart)) {
+                continue;
+            }
+            // «Тихий» период после оплаты заказа: ничего не шлём, а старт цепочки сдвигаем на его конец,
+            // чтобы после паузы не ушли сразу все шаги.
+            if ($quietUntil = $this->quietUntil($cart)) {
+                if ($cart->abandoned_at && $quietUntil->gt($cart->abandoned_at)) {
+                    $cart->update(['abandoned_at' => $quietUntil]);
+                }
+
                 continue;
             }
             // Третий шаг завершает цикл целиком, включая каналы, добавленные
@@ -212,7 +225,97 @@ class AbandonedCartService
             }
         }
 
+        // В корзине есть и купленное, и оставшееся: купленное из корзины убираем,
+        // чтобы напоминание не перечисляло то, что клиент уже оплатил.
+        foreach ($orders as $order) {
+            $this->trimPurchasedItems($cart, $order);
+        }
+
         return false;
+    }
+
+    /**
+     * Убрать из корзины товары, купленные в оплаченном заказе, если корзина создана после заказа
+     * (витрина сохраняет на сервере корзину целиком, вместе с уже оплаченными позициями).
+     * Количество вычитается: в корзине 3 шт., куплено 2, остаётся 1.
+     */
+    private function trimPurchasedItems(Cart $cart, Order $order): void
+    {
+        if ($cart->created_at && $order->created_at && $order->created_at->gt($cart->created_at)) {
+            return;
+        }
+
+        $bought = [];
+        foreach ($order->items as $item) {
+            if ($item->is_gift || ! $item->product_id) {
+                continue;
+            }
+            $key = $item->product_id.':'.(int) $item->product_variant_id;
+            $bought[$key] = ($bought[$key] ?? 0) + (int) $item->quantity;
+        }
+
+        $changed = false;
+        foreach ($cart->items()->get() as $cartItem) {
+            $key = $cartItem->product_id.':'.(int) $cartItem->product_variant_id;
+            $left = (int) ($bought[$key] ?? 0);
+            if ($left <= 0) {
+                continue;
+            }
+
+            $qty = (int) $cartItem->quantity;
+            $take = min($qty, $left);
+            $bought[$key] = $left - $take;
+
+            if ($take >= $qty) {
+                $cartItem->delete();
+            } else {
+                $rest = $qty - $take;
+                $cartItem->forceFill([
+                    'quantity' => $rest,
+                    'total' => round((float) $cartItem->total / $qty * $rest, 2),
+                    'total_original' => round((float) $cartItem->total_original / $qty * $rest, 2),
+                    'total_discount' => round((float) $cartItem->total_discount / $qty * $rest, 2),
+                ])->save();
+            }
+            $changed = true;
+        }
+
+        if (! $changed) {
+            return;
+        }
+
+        $cart->forceFill([
+            'total' => $cart->items()->sum('total'),
+            'total_original' => $cart->items()->sum('total_original'),
+            'total_discount' => $cart->items()->sum('total_discount'),
+            'updated_at' => now(),
+        ])->save();
+        $cart->unsetRelation('items');
+
+        Log::info('AbandonedCart: purchased items removed from the cart', [
+            'cart_id' => $cart->id,
+            'order_id' => $order->id,
+        ]);
+    }
+
+    /**
+     * Конец «тихого» периода после оплаты заказа клиента (напоминания в это время не шлём).
+     * null — клиент недавно ничего не оплачивал или период выключен (0 часов).
+     */
+    private function quietUntil(Cart $cart): ?\Illuminate\Support\Carbon
+    {
+        $hours = (int) config('abandoned_cart.post_purchase_quiet_hours', 24);
+        if ($hours <= 0 || ! $cart->client_id) {
+            return null;
+        }
+
+        $lastPaid = Order::query()
+            ->where('client_id', $cart->client_id)
+            ->where('payment_status', \App\Enums\PaymentStatus::PAID->value)
+            ->where('created_at', '>=', now()->subHours($hours))
+            ->max('created_at');
+
+        return $lastPaid ? \Illuminate\Support\Carbon::parse($lastPaid)->addHours($hours) : null;
     }
 
     /**
