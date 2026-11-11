@@ -103,7 +103,7 @@ class CloudPaymentsIntentTest extends TestCase
             ->assertJsonPath('payment.receipt.items.0.price', 250)
             ->assertJsonPath('payment.receipt.items.0.quantity', 2)
             ->assertJsonPath('payment.receipt.items.0.amount', 400)
-            ->assertJsonPath('payment.receipt.items.0.vat', 20)
+            ->assertJsonPath('payment.receipt.items.0.vat', 5)
             ->assertJsonPath('payment.receipt.amounts.electronic', 400);
     }
 
