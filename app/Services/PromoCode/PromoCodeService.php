@@ -423,19 +423,13 @@ class PromoCodeService
             return Client::find($clientId);
         }
 
-        $user = $request->user();
+        // Маршрут публичный: токен читаем явно. Нет токена — гость.
+        $user = $request->user('sanctum');
 
         if ($user instanceof Client) {
             return $user;
         }
 
-        if ($user instanceof \App\Models\User) {
-            return null;
-        }
-
-        return response()->json([
-            'success' => false,
-            'message' => 'Пользователь не авторизован.',
-        ], 401);
+        return null;
     }
 }

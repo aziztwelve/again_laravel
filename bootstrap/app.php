@@ -63,6 +63,10 @@ return Application::configure(basePath: dirname(__DIR__))
             }
         });
 
+        // Для api/* всегда отвечаем JSON: иначе гость на закрытом маршруте без заголовка
+        // Accept: application/json получал 500 (Route [login] not defined) вместо 401.
+        $exceptions->shouldRenderJsonWhen(fn (Request $request, \Throwable $e) => $request->is('api/*') || $request->expectsJson());
+
         $exceptions->render(function (\Illuminate\Auth\AuthenticationException $e, Request $request) {
             if ($request->is('api/*')) {
                 return response()->json([

@@ -348,6 +348,10 @@ Route::get('/users/get-profile/image', [UserController::class, 'getProfileImage'
 // getImagePromoCode
 Route::get('promo-code/getImage', [PromoCodeController::class, 'getImage']);
 
+// Проверка промокода в корзине: гость и авторизованный клиент; токен читается внутри (sanctum),
+// лимит запросов защищает от перебора кодов.
+Route::get('/promo-codes/validate', [PromoCodeController::class, 'validate'])->middleware('throttle:30,1');
+
 // clients
 Route::prefix('/cart-items')->group(function () {
     Route::get('/', [CartController::class, 'cart_items']);
@@ -660,7 +664,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::delete('/{slide}', [SlideController::class, 'destroy']);
     });
 
-    Route::get('/promo-codes/validate', [PromoCodeController::class, 'validate']);
 
     Route::prefix('/delivery-services')->group(function () {
 
