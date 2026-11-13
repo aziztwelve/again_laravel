@@ -228,20 +228,32 @@ npm ci --no-audit --no-fund 2>&1 | tail -8
 ```
 Откат: `git revert` нужного коммита в `again_front`, push, затем снова скрипт.
 
-### 6. Дашборд (vue-admin) — пересобирать всегда
+### 6. Дашборд (vue-admin) — пересобирать всегда, БЕЗ простоя
 `vue-admin` использует Yarn 1 (`packageManager` в `package.json` и `yarn.lock`).
 Не использовать `npm install`: npm строго валидирует peer-зависимости и падает
 на существующем конфликте `vue-chart-3` / `chart.js`, а также может менять
 `package-lock.json` на сервере. Источник правды для зависимостей — `yarn.lock`.
+
+**Собирать НЕ на месте (`yarn build` без `--dest`), а в отдельную папку и менять после успеха.**
+`vue-cli-service build` сначала стирает `dist`, поэтому на время сборки (несколько минут)
+админка целиком отдаёт 500 («directory index of dist/ is forbidden»). Так случилось
+13.11.2026, когда одна сессия собирала на месте, пока другая выкладывала свои правки.
 ```bash
 ssh -o BatchMode=yes -o ConnectTimeout=900 root@186.246.14.59 '
 set -euo pipefail
 cd /var/www/html/vue-admin
 corepack enable
-corepack yarn install --frozen-lockfile --non-interactive 2>&1 | tail -8
-NODE_OPTIONS=--max-old-space-size=2048 corepack yarn build 2>&1 | tail -6
+corepack yarn install --frozen-lockfile --non-interactive 2>&1 | tail -8   # только если менялся yarn.lock
+rm -rf dist-new
+NODE_OPTIONS=--max-old-space-size=2048 nice -n 10 npx vue-cli-service build --dest dist-new 2>&1 | tail -6
+# замена ТОЛЬКО после успешной сборки (set -e остановит скрипт раньше при ошибке)
+test -f dist-new/index.html
+rm -rf dist-old && mv dist dist-old && mv dist-new dist && rm -rf dist-old
 '
 ```
+Сборка длится несколько минут: запускать в фоне (`nohup`) и ждать `BUILD_EXIT=0`. Если в
+`/var/www/html/vue-admin` уже идёт чья-то сборка (`ps aux | grep vue-cli-service`),
+не запускать вторую параллельно (на сервере 8 ГБ, MySQL уже падал по OOM).
 
 ### 7. Проверка (smoke)
 ```bash
