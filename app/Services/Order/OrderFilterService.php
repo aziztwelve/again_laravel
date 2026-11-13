@@ -359,10 +359,10 @@ class OrderFilterService
      */
     private function search(Builder $query, string $search): Builder
     {
-        // Все варианты needle'ов для поиска по телефону (включая 7↔8 для RU)
-        $phoneNeedles = $this->phoneNeedles($search);
+        $search = trim($search);
+        $tokens = $this->searchTokens($search);
 
-        return $query->where(function ($q) use ($search, $phoneNeedles) {
+        return $query->where(function ($q) use ($search, $tokens) {
             // Номер заказа: точное совпадение, чтобы 40249 (или №40249 из письма
             // и CloudPayments) находил заказ прямо в верхней строке. Частичный
             // поиск по номеру остаётся в фильтре столбца «Номер заказа» (order_number),
@@ -378,46 +378,115 @@ class OrderFilterService
                 });
             }
 
-            // Поиск по данным клиента: email, имя, телефон, адрес из user_profiles
-            $q->orWhereHas('client', function ($clientQuery) use ($search, $phoneNeedles) {
-                $clientQuery->where(function ($cq) use ($search, $phoneNeedles) {
-                    // Email клиента
-                    $cq->where('email', 'like', '%' . $search . '%');
-
-                    // Данные профиля
-                    $cq->orWhereHas('profile', function ($profileQuery) use ($search, $phoneNeedles) {
-                        $profileQuery->where('first_name', 'like', '%' . $search . '%')
-                            ->orWhere('last_name', 'like', '%' . $search . '%')
-                            ->orWhereRaw("CONCAT(first_name, ' ', last_name) like ?", ['%' . $search . '%']);
-
-                        // Телефон: нормализуем обе стороны (REGEXP_REPLACE убирает все нецифры)
-                        $this->applyPhoneLike($profileQuery, 'phone', $phoneNeedles);
-
-                        // Общий адрес клиента
-                        $profileQuery->orWhere('address', 'like', '%' . $search . '%');
+            // Телефон целиком («+7 (999) 123-45-67» содержит пробелы и не должен
+            // разваливаться на слова). Только если в запросе нет букв.
+            if (! preg_match('/\p{L}/u', $search)) {
+                $phoneNeedles = $this->phoneNeedles($search);
+                if ($phoneNeedles !== [] && strlen($this->normalizePhone($search)) >= 4) {
+                    // where(fn) группирует OR-условия, иначе они ломают связь подзапроса с заказом
+                    $q->orWhereHas('client', fn ($cq) => $cq->whereHas('profile', function ($pq) use ($phoneNeedles) {
+                        $pq->where(fn ($w) => $this->applyPhoneLike($w, 'phone', $phoneNeedles));
+                    }));
+                    $q->orWhereHas('address', function ($aq) use ($phoneNeedles) {
+                        $aq->where(fn ($w) => $this->applyPhoneLike($w, 'recipient_phone', $phoneNeedles));
                     });
+                }
+            }
+
+            // Текст: «Калинина Елена», «Казань Калинина», «Иванов ул Ленина» —
+            // КАЖДОЕ слово запроса должно найтись в данных заказа (где угодно:
+            // получатель, клиент, адрес, email), порядок слов не важен.
+            if ($tokens !== []) {
+                $q->orWhere(function ($all) use ($tokens) {
+                    foreach ($tokens as $token) {
+                        $all->where(fn ($t) => $this->applyTokenMatch($t, $token));
+                    }
                 });
-            });
-
-            // Поиск по адресу доставки заказа (order_addresses)
-            $q->orWhereHas('address', function ($addrQuery) use ($search, $phoneNeedles) {
-                $addrQuery->where('country', 'like', '%' . $search . '%')
-                    ->orWhere('region', 'like', '%' . $search . '%')
-                    ->orWhere('city', 'like', '%' . $search . '%')
-                    ->orWhere('address', 'like', '%' . $search . '%')
-                    ->orWhere('postal_code', 'like', '%' . $search . '%')
-                    ->orWhere('recipient_first_name', 'like', '%' . $search . '%')
-                    ->orWhere('recipient_last_name', 'like', '%' . $search . '%');
-
-                // Телефон получателя: нормализуем обе стороны
-                $this->applyPhoneLike($addrQuery, 'recipient_phone', $phoneNeedles);
-            });
-
-            // Поиск по другим полям в orders
-            if (\Schema::hasColumn('orders', 'notes')) {
-                $q->orWhere('orders.notes', 'like', '%' . $search . '%');
             }
         });
+    }
+
+    /**
+     * Слова поискового запроса (разделители — пробелы, запятые, точки с запятой).
+     *
+     * @return list<string>
+     */
+    private function searchTokens(string $search): array
+    {
+        $tokens = preg_split('/[\s,;]+/u', trim($search), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        return array_values(array_unique($tokens));
+    }
+
+    /**
+     * Условия «слово встречается хотя бы в одном поле заказа».
+     */
+    private function applyTokenMatch(Builder $q, string $token): void
+    {
+        $like = '%' . addcslashes($token, '%_\\') . '%';
+        $phoneNeedles = strlen($this->normalizePhone($token)) >= 4 ? $this->phoneNeedles($token) : [];
+
+        // Данные клиента: email и профиль
+        $q->orWhereHas('client', function ($clientQuery) use ($like, $phoneNeedles) {
+            $clientQuery->where(function ($cq) use ($like, $phoneNeedles) {
+                $cq->where('email', 'like', $like);
+
+                $cq->orWhereHas('profile', function ($profileQuery) use ($like, $phoneNeedles) {
+                    $profileQuery->where('first_name', 'like', $like)
+                        ->orWhere('last_name', 'like', $like)
+                        ->orWhere('address', 'like', $like);
+
+                    $this->applyPhoneLike($profileQuery, 'phone', $phoneNeedles);
+                });
+            });
+        });
+
+        // Получатель и адрес доставки заказа (в address хранится и адрес ПВЗ)
+        $q->orWhereHas('address', function ($addrQuery) use ($like, $phoneNeedles) {
+            $addrQuery->where('country', 'like', $like)
+                ->orWhere('region', 'like', $like)
+                ->orWhere('city', 'like', $like)
+                ->orWhere('address', 'like', $like)
+                ->orWhere('postal_code', 'like', $like)
+                ->orWhere('recipient_first_name', 'like', $like)
+                ->orWhere('recipient_last_name', 'like', $like)
+                ->orWhere('recipient_middle_name', 'like', $like);
+
+            $this->applyPhoneLike($addrQuery, 'recipient_phone', $phoneNeedles);
+        });
+
+        // Email гостевого заказа лежит прямо в orders.email
+        $q->orWhere('orders.email', 'like', $like);
+
+        if (\Schema::hasColumn('orders', 'notes')) {
+            $q->orWhere('orders.notes', 'like', $like);
+        }
+    }
+
+    /**
+     * Порядок «сначала заказы, где запрос — это ФИО получателя/клиента»: при поиске
+     * «Калинина» заказы получательницы Калининой выше заказов, где это просто улица.
+     */
+    private function applySearchRelevance(Builder $query, string $search): Builder
+    {
+        $tokens = $this->searchTokens($search);
+        if ($tokens === []) {
+            return $query;
+        }
+
+        $conds = [];
+        $bindings = [];
+        foreach ($tokens as $token) {
+            $prefix = addcslashes($token, '%_\\') . '%';
+            $conds[] = '(oa.recipient_last_name LIKE ? OR oa.recipient_first_name LIKE ?)';
+            array_push($bindings, $prefix, $prefix);
+        }
+
+        // Все слова запроса должны быть в имени получателя: «Калинина Елена»
+        $sql = 'CASE WHEN EXISTS (SELECT 1 FROM order_addresses oa WHERE oa.order_id = orders.id AND '
+            . implode(' AND ', $conds) . ') THEN 0 ELSE 1 END';
+
+        return $query->orderByRaw($sql, $bindings);
     }
 
     /**
@@ -523,6 +592,12 @@ class OrderFilterService
 
         if (!in_array(strtolower($sortOrder), ['asc', 'desc'])) {
             $sortOrder = 'desc';
+        }
+
+        // При текстовом поиске (без явной сортировки, кроме «новые сверху») сначала
+        // идут заказы, где запрос совпал с ФИО получателя.
+        if ($request->filled('search') && $sortBy === 'created_at') {
+            $query = $this->applySearchRelevance($query, (string) $request->search);
         }
 
         if ($sortBy === 'order_number') {
