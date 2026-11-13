@@ -34,6 +34,55 @@ let isReady = false;
 let client = null;
 
 // ============================================
+// DIAGNOSTICS
+// ============================================
+
+function diag(...args) {
+  console.log(new Date().toISOString(), '[diag]', ...args);
+}
+
+function safeUrl(raw) {
+  try {
+    const u = new URL(raw);
+    return `${u.protocol}//${u.hostname}${u.pathname.slice(0, 60)}`;
+  } catch (e) {
+    return String(raw).slice(0, 80);
+  }
+}
+
+// Chromium создаётся внутри client.initialize(), поэтому ждём появления страницы
+// и вешаем наблюдателей: обрывы запросов/WebSocket к WhatsApp и ошибки страницы.
+function attachPageDiagnostics(c) {
+  let tries = 0;
+  const timer = setInterval(async () => {
+    tries += 1;
+    if (tries > 240) return clearInterval(timer);
+    const page = c.pupPage;
+    if (!page) return;
+    clearInterval(timer);
+    try {
+      page.on('requestfailed', (req) => {
+        const host = safeUrl(req.url());
+        if (/whatsapp|facebook|fbcdn/.test(host)) {
+          diag('request failed:', host, req.failure()?.errorText);
+        }
+      });
+      page.on('pageerror', (e) => diag('page error:', String(e?.message || e).slice(0, 200)));
+      page.on('framenavigated', (f) => {
+        if (f === page.mainFrame()) diag('navigated:', safeUrl(f.url()));
+      });
+      const cdp = await page.createCDPSession();
+      await cdp.send('Network.enable');
+      cdp.on('Network.webSocketCreated', (e) => diag('ws open:', safeUrl(e.url)));
+      cdp.on('Network.webSocketClosed', () => diag('ws closed'));
+      cdp.on('Network.webSocketFrameError', (e) => diag('ws error:', String(e.errorMessage).slice(0, 120)));
+    } catch (err) {
+      diag('diagnostics attach failed:', String(err?.message || err).slice(0, 120));
+    }
+  }, 500);
+}
+
+// ============================================
 // SETUP CLIENT EVENTS
 // ============================================
 
@@ -113,6 +162,18 @@ function setupClientEvents() {
       console.error('Error processing message:', error.message);
     }
   });
+
+  // Диагностика привязки: помогает отличить сбой соединения/прокси от отказа WhatsApp.
+  // Пишем только статусы и хосты, без данных аккаунта и сессии.
+  client.on('change_state', (state) => {
+    diag('state:', state);
+  });
+
+  client.on('remote_session_saved', () => {
+    diag('session saved');
+  });
+
+  attachPageDiagnostics(client);
 
   // Disconnect Event
   client.on('disconnected', (reason) => {
