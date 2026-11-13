@@ -208,7 +208,7 @@ class YandexDeliveryService extends DeliveryService
         $offerId = $order->delivery_data['offer_id'] ?? null;
         if (! $offerId) return $this->createOrder($order, $yandexOrder);
         $result = $this->confirmOffer($offerId, $order->id);
-        if ($result['successful']) $this->saveRequest($order, $result['data'], $yandexOrder);
+        if ($result['successful']) $this->saveRequest($order, $this->withPartnerData($order, $result['data']), $yandexOrder);
         return $result;
     }
 
@@ -218,8 +218,44 @@ class YandexDeliveryService extends DeliveryService
         $yandexOrder ??= $order->yandexOrder;
         $payload = $this->payloadBuilder->order($order, $this->settings);
         $result = $this->client->request('POST', '/api/b2b/platform/request/create', $payload, $order->id, $yandexOrder?->claim_id, ['send_unix' => 'false']);
-        if ($result['successful']) $this->saveRequest($order, $result['data'], $yandexOrder);
+        if ($result['successful']) $this->saveRequest($order, $this->withPartnerData($order, $result['data']), $yandexOrder);
         return $result;
+    }
+
+    /**
+     * Номер партнёра по доставке: в кабинете Яндекса «ID у партнёра по доставке» (LO-…).
+     * API отдаёт его числом в поле courier_order_id (в ответе на создание заявки его нет,
+     * он приходит в request/info сразу после создания).
+     */
+    public static function partnerTrackingNumber(mixed $courierOrderId): ?string
+    {
+        $digits = trim((string) $courierOrderId);
+
+        return preg_match('/^\d+$/', $digits) === 1 ? 'LO-'.$digits : null;
+    }
+
+    /**
+     * Ответ на создание заявки содержит только request_id. Сразу запрашиваем полные данные,
+     * чтобы трек заказа с первой записи был номером партнёра (LO-…), а не ID заявки.
+     * Сбой запроса не критичен: номер подставит обычный опрос статусов.
+     */
+    private function withPartnerData(Order $order, array $data): array
+    {
+        $requestId = $data['request_id'] ?? null;
+        if (! $requestId || filled($data['courier_order_id'] ?? null)) {
+            return $data;
+        }
+
+        try {
+            $info = $this->getRequestInfo($requestId, $order->id);
+            if ($info['successful'] && is_array($info['data'] ?? null)) {
+                return array_merge($data, $info['data']);
+            }
+        } catch (\Throwable $exception) {
+            Log::warning('Yandex partner id fetch after create failed', ['order_id' => $order->id, 'error' => $exception->getMessage()]);
+        }
+
+        return $data;
     }
 
     public function getRequestInfo(string $requestId, ?int $orderId = null): array
@@ -340,6 +376,35 @@ class YandexDeliveryService extends DeliveryService
     public function cancelShipment(Shipment $shipment): bool { return $this->cancelRequest($shipment->tracking_number, $shipment->order_id)['successful']; }
     public function printLabel(Shipment $shipment): string { return ''; }
 
+    /**
+     * Трек заказа = номер партнёра по доставке (LO-…). Вручную вписанный трек не перезаписываем:
+     * меняем только пустой, равный ID заявки или ранее подставленный нами номер партнёра.
+     * Пока номера партнёра нет (редкий сбой запроса), в пустой трек ставим ID заявки.
+     */
+    public function applyOrderTracking(Order $order, ?string $partnerTracking, ?string $requestId, ?YandexOrder $existing = null): void
+    {
+        $current = $order->tracking_number;
+        $systemSet = blank($current)
+            || $current === $requestId
+            || $current === $existing?->claim_id
+            || (filled($existing?->tracking_number) && $current === $existing->tracking_number);
+
+        if ($partnerTracking !== null) {
+            if ($current !== $partnerTracking && $systemSet) {
+                $order->update(['tracking_number' => $partnerTracking]);
+            }
+
+            return;
+        }
+
+        if ($requestId && $current !== $requestId && blank($current)) {
+            $order->update(['tracking_number' => $requestId]);
+        } elseif ($requestId && $current !== $requestId && $current === $existing?->claim_id) {
+            // как и раньше: трек, равный старому ID заявки, следует за новой заявкой
+            $order->update(['tracking_number' => $requestId]);
+        }
+    }
+
     private function saveRequest(Order $order, array $data, ?YandexOrder $existing = null): YandexOrder
     {
         $requestId = $data['request_id'] ?? $existing?->claim_id;
@@ -350,7 +415,8 @@ class YandexDeliveryService extends DeliveryService
         $previousCustomerStatus = $existing?->customer_status;
         $customerStatus = $this->customerStatusMapper->toCustomer($status);
         $trackingUrl = $data['sharing_url'] ?? $data['tracking_url'] ?? $existing?->tracking_url;
-        $trackingNumber = $data['tracking_number'] ?? $data['barcode'] ?? $existing?->tracking_number;
+        $partnerTracking = self::partnerTrackingNumber($data['courier_order_id'] ?? null);
+        $trackingNumber = $partnerTracking ?? $data['tracking_number'] ?? $data['barcode'] ?? $existing?->tracking_number;
         $yandexOrder = YandexOrder::updateOrCreate(['order_id' => $order->id], [
             'claim_id' => $requestId, 'status' => $status, 'internal_status' => $this->statusMapper->toInternal($status),
             'customer_status' => $customerStatus ?? $previousCustomerStatus,
@@ -374,13 +440,7 @@ class YandexDeliveryService extends DeliveryService
         if ($order->delivery_data !== $updatedDelivery) {
             $order->update(['delivery_data' => $updatedDelivery]);
         }
-        // Трек, вписанный вручную (например, ID у партнёра по доставке LO-…),
-        // опрос статусов не перезаписывает: подставляем ID заявки только в
-        // пустой трек или тот, что сам был равен ID заявки.
-        if ($requestId && $order->tracking_number !== $requestId
-            && (blank($order->tracking_number) || $order->tracking_number === $existing?->claim_id)) {
-            $order->update(['tracking_number' => $requestId]);
-        }
+        $this->applyOrderTracking($order, $partnerTracking, $requestId, $existing);
         if ($previousStatus !== $status) {
             YandexStatusEvent::create([
                 'yandex_order_id' => $yandexOrder->id,
