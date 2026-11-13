@@ -30,6 +30,7 @@ app.use(express.json());
 
 // Переменные состояния
 let qrCode = null;
+let pairingCode = null; // код для привязки по номеру телефона (вместо QR), меняется каждые ~3 мин
 let isReady = false;
 let client = null;
 
@@ -144,6 +145,7 @@ function setupClientEvents() {
     console.log('WhatsApp client is ready!');
     isReady = true;
     qrCode = null; // Очищаем QR после успешного подключения
+    pairingCode = null;
   });
 
   // Не выводим session payload: он даёт доступ к аккаунту. Оставляем только
@@ -214,6 +216,12 @@ function setupClientEvents() {
     diag('state:', state);
   });
 
+  // Код привязки по номеру телефона (само значение в журнал не пишем)
+  client.on('code', (code) => {
+    pairingCode = code;
+    diag('pairing code issued');
+  });
+
   client.on('remote_session_saved', () => {
     diag('session saved');
   });
@@ -224,6 +232,7 @@ function setupClientEvents() {
   client.on('disconnected', (reason) => {
     console.log('Client was logged out', reason);
     isReady = false;
+    pairingCode = null;
   });
 }
 
@@ -285,18 +294,63 @@ setupClientEvents();
 
 // Получить QR code
 app.get('/qr', (req, res) => {
-  if (qrCode) {
-    return res.json({ qr: qrCode, ready: false });
-  }
   if (isReady) {
-    return res.json({ qr: null, ready: true });
+    return res.json({ qr: null, ready: true, pairing_code: null });
   }
-  return res.json({ qr: null, ready: false, message: 'Initializing...' });
+  if (qrCode) {
+    return res.json({ qr: qrCode, ready: false, pairing_code: pairingCode });
+  }
+  return res.json({ qr: null, ready: false, pairing_code: pairingCode, message: 'Initializing...' });
 });
 
 // Статус
 app.get('/status', (req, res) => {
-  res.json({ ready: isReady, hasQR: !!qrCode });
+  res.json({ ready: isReady, hasQR: !!qrCode, hasPairingCode: !!pairingCode });
+});
+
+// Привязка по коду: пользователь вводит номер телефона, сервис возвращает код из 8 символов,
+// который вводится в WhatsApp на телефоне («Связать по номеру телефона»). Не требует
+// сканирования QR. WhatsApp при этом присылает на телефон уведомление.
+app.post('/pairing-code', async (req, res) => {
+  const phone = String(req.body?.phone_number || '').replace(/\D+/g, '');
+
+  if (!/^\d{7,15}$/.test(phone)) {
+    return res.status(400).json({
+      success: false,
+      error: 'Укажите номер в международном формате, только цифры (например 79991234567)',
+    });
+  }
+  if (isReady) {
+    return res.status(409).json({ success: false, error: 'WhatsApp уже подключён' });
+  }
+  if (!client || !client.pupPage) {
+    return res.status(503).json({ success: false, error: 'Сервис ещё запускается, повторите через минуту' });
+  }
+
+  try {
+    diag('pairing code requested');
+    const code = await withTimeout(client.requestPairingCode(phone, true), 30000);
+    pairingCode = code;
+    return res.json({ success: true, code });
+  } catch (error) {
+    // Номер и код в журнал не пишем
+    console.error('Error requesting pairing code:', String(error?.message || error).slice(0, 120));
+    return res.status(500).json({ success: false, error: 'Не удалось получить код. Подождите минуту и попробуйте ещё раз' });
+  }
+});
+
+// Отменить привязку по коду и вернуться к QR
+app.post('/pairing-code/cancel', async (req, res) => {
+  try {
+    pairingCode = null;
+    if (client && client.pupPage && !isReady) {
+      await withTimeout(client.cancelPairingCode(), 15000);
+    }
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Error cancelling pairing code:', String(error?.message || error).slice(0, 120));
+    return res.status(500).json({ success: false, error: 'Не удалось отменить' });
+  }
 });
 
 // Health check
@@ -363,6 +417,7 @@ app.post('/logout', async (req, res) => {
     console.log('WhatsApp client logged out');
     isReady = false;
     qrCode = null;
+    pairingCode = null;
 
     // Пересоздаём client для нового подключения
     await client.destroy();
