@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\SlideRequest;
 use App\Http\Resources\SlideResource;
 use App\Models\Slide;
+use App\Services\Slide\SlideOrderService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
@@ -21,7 +22,7 @@ class SlideController extends Controller
 
     public function index()
     {
-        $slides = Slide::orderBy('order')->get();
+        $slides = Slide::orderBy('order')->orderBy('id')->get();
         return SlideResource::collection($slides);
     }
 
@@ -29,6 +30,7 @@ class SlideController extends Controller
     public function getSlidesForFrontend()
     {
         $slides = Slide::orderBy('order')
+            ->orderBy('id')
             ->where('is_active', 1)
             ->get();
         return SlideResource::collection($slides);
@@ -119,6 +121,14 @@ class SlideController extends Controller
                 'trace' => $exception->getTrace()
             ]);
         }
+    }
+
+    /** Переставить слайд на указанное место (остальные сдвигаются, как в «Товарах онлайн»). */
+    public function updateOrder(Request $request, Slide $slide, SlideOrderService $orders)
+    {
+        $data = $request->validate(['order' => 'required|integer|min:0|max:9999']);
+
+        return response()->json($orders->move($slide, (int) $data['order']));
     }
 
     public function destroy(Slide $slide)

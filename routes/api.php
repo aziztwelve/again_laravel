@@ -660,6 +660,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::patch('/{slide}', [SlideController::class, 'update']);
         Route::put('/{slide}', [SlideController::class, 'update']);
 
+        // переставить на другое место в порядке показа
+        Route::post('/{slide}/order', [SlideController::class, 'updateOrder']);
+
         // удалить
         Route::delete('/{slide}', [SlideController::class, 'destroy']);
     });
