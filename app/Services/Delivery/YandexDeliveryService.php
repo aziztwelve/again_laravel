@@ -391,17 +391,34 @@ class YandexDeliveryService extends DeliveryService
 
         if ($partnerTracking !== null) {
             if ($current !== $partnerTracking && $systemSet) {
-                $order->update(['tracking_number' => $partnerTracking]);
+                $this->setOrderTracking($order, $partnerTracking);
             }
 
             return;
         }
 
-        if ($requestId && $current !== $requestId && blank($current)) {
-            $order->update(['tracking_number' => $requestId]);
-        } elseif ($requestId && $current !== $requestId && $current === $existing?->claim_id) {
-            // как и раньше: трек, равный старому ID заявки, следует за новой заявкой
-            $order->update(['tracking_number' => $requestId]);
+        if ($requestId && $current !== $requestId && (blank($current) || $current === $existing?->claim_id)) {
+            // пока номера партнёра нет: пустой трек (или трек, равный прежнему ID заявки) = ID заявки
+            $this->setOrderTracking($order, $requestId);
+        }
+    }
+
+    /**
+     * Записать трек заказа ТИХО и отправить в МойСклад только поле «Трек номер».
+     * Обычное обновление заказа ставит ПОЛНУЮ выгрузку в МойСклад (OrderObserver), а она приводит
+     * статус и позиции МойСклад к состоянию сайта: массовая замена трека при опросе статусов
+     * сбросила бы статусы в МойСклад.
+     */
+    private function setOrderTracking(Order $order, string $track): void
+    {
+        Order::withoutEvents(fn () => $order->update(['tracking_number' => $track]));
+
+        if (filled($order->moysklad_order_uuid) && \App\Services\MoySklad\MoySkladSettings::isConfigured()) {
+            try {
+                (new \App\Services\MoySklad\OrderService)->pushTrackingNumber($order, $track);
+            } catch (\Throwable $exception) {
+                Log::warning('MoySklad: не удалось обновить «Трек номер» заказа', ['order_id' => $order->id, 'error' => $exception->getMessage()]);
+            }
         }
     }
 

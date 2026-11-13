@@ -197,4 +197,29 @@ class YandexPartnerTrackingTest extends TestCase
                 && $r->data() === ['attributes' => [['meta' => ['href' => 'https://ms.test/attr/track', 'type' => 'attributemetadata'], 'value' => 'LO-1077128001']]];
         });
     }
+
+    public function test_regular_poll_does_not_queue_full_moysklad_sync_and_pushes_only_tracking_attribute(): void
+    {
+        Queue::fake();
+        Cache::forget('moysklad:customerorder:attributes');
+        DeliveryServiceSetting::updateOrCreate(['service_name' => 'moysklad'], ['token' => 'ms-token', 'enabled' => true]);
+        $this->fakeYandex();
+        Http::fake([
+            'https://api.moysklad.ru/api/remap/1.2/entity/customerorder/metadata/attributes' => Http::response(['rows' => [
+                ['name' => 'Трек номер', 'meta' => ['href' => 'https://ms.test/attr/track', 'type' => 'attributemetadata']],
+            ]]),
+            'https://api.moysklad.ru/api/remap/1.2/entity/customerorder/uuid-poll' => Http::response([]),
+        ]);
+        [$order, $yandexOrder] = $this->orderWithClaim('claim-1-udp');
+        $order->forceFill(['moysklad_order_uuid' => 'uuid-poll'])->saveQuietly();
+
+        app(YandexDeliveryService::class)->sync($yandexOrder);
+
+        $this->assertSame('LO-1077128001', $order->fresh()->tracking_number);
+        Queue::assertNothingPushed();
+        Http::assertSent(fn (Request $r) => $r->method() === 'PUT'
+            && str_ends_with($r->url(), '/entity/customerorder/uuid-poll')
+            && array_keys($r->data()) === ['attributes']
+            && $r->data()['attributes'][0]['value'] === 'LO-1077128001');
+    }
 }
