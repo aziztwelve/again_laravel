@@ -78,6 +78,19 @@ class ConversationService
         });
     }
 
+    /**
+     * Причина, по которой исходящее сообщение отправлять нельзя (null — можно).
+     * Проверяется ДО сохранения сообщения, чтобы в истории не копились неотправленные.
+     */
+    public function outgoingBlockReason(Conversation $conversation): ?string
+    {
+        if ($conversation->source === 'whatsapp' && $this->whatsappAdapter && ! $this->whatsappAdapter->isConnected()) {
+            return 'WhatsApp не подключён. Подключите его в «Интеграции → мессенджеры» и повторите отправку.';
+        }
+
+        return null;
+    }
+
     public function addMessage(Conversation $conversation, array $messageData): Message
     {
         // Валидация входных данных
@@ -174,6 +187,28 @@ class ConversationService
                             'max' => $this->maxAdapter !== null,
                         ],
                     ]);
+                }
+            }
+
+            // Результат отправки не должен теряться: раньше сообщение навсегда оставалось
+            // «отправлено», даже если канал отказал (например, WhatsApp отключён).
+            if ($messageData['direction'] === 'outgoing') {
+                $attempted = match ($conversation->source) {
+                    'telegram' => true,
+                    'vk' => $this->vkAdapter !== null,
+                    'whatsapp' => $this->whatsappAdapter !== null,
+                    'email' => $this->emailAdapter !== null,
+                    'max' => $this->maxAdapter !== null,
+                    default => false,
+                };
+
+                if ($attempted) {
+                    $finalStatus = $sent
+                        ? ($message->status === Message::STATUS_SENDING ? Message::STATUS_SENT : $message->status)
+                        : Message::STATUS_FAILED;
+                    if ($finalStatus !== $message->status) {
+                        $message->update(['status' => $finalStatus]);
+                    }
                 }
             }
 

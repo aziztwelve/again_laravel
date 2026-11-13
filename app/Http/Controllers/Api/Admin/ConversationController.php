@@ -502,6 +502,11 @@ class ConversationController extends Controller
             'attachments.*' => 'file|mimes:jpg,jpeg,png,mp3,wav,ogg,m4a,mp4|max:10240',
         ]);
 
+        // Канал недоступен (например, WhatsApp отключён): ничего не сохраняем и не грузим файлы.
+        if ($reason = $this->conversationService->outgoingBlockReason($conversation)) {
+            return response()->json(['success' => false, 'message' => $reason], 409);
+        }
+
         $attachmentsData = [];
 
         try {
@@ -526,6 +531,16 @@ class ConversationController extends Controller
                 // 3) Сбрасываем счётчик непрочитанных входящих
                 'unread_messages_count' => 0,
             ]);
+
+            // Канал принял запрос, но отправка не удалась: сообщение сохранено со статусом
+            // «не отправлено», а оператор получает явную ошибку.
+            if ($message->status === Message::STATUS_FAILED) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Сообщение не отправлено: канал связи отказал. Проверьте подключение мессенджера и повторите.',
+                    'data' => $message,
+                ], 502);
+            }
 
             return response()->json([
                 'message' => 'Reply sent successfully.',

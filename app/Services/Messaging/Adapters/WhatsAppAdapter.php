@@ -66,6 +66,20 @@ class WhatsAppAdapter extends AbstractMessageAdapter
     }
 
     /**
+     * Подключён ли WhatsApp (сервис отвечает и сессия активна). Любая ошибка = не подключён.
+     */
+    public function isConnected(): bool
+    {
+        try {
+            $response = Http::timeout(3)->acceptJson()->get("{$this->whatsappServiceUrl}/status");
+
+            return $response->successful() && (bool) $response->json('ready');
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    /**
      * Отметить сообщение как прочитанное
      */
     public function markAsRead(string $externalId): bool
