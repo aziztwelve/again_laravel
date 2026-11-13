@@ -14,6 +14,8 @@ class ConversationResource extends JsonResource
             'id' => $this->id,
             'source' => $this->source,
             'external_id' => $this->external_id,
+            'contact_name' => $this->contact_name,
+            'contact_phone' => $this->contact_phone,
             'status' => $this->status,
             'unread_messages_count' => $this->unread_messages_count,
             'last_message_at' => $this->last_message_at?->toISOString(),

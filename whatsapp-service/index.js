@@ -82,6 +82,47 @@ function attachPageDiagnostics(c) {
   }, 500);
 }
 
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
+  ]);
+}
+
+// WhatsApp отдаёт отправителя как внутренний идентификатор (…@lid). Настоящий номер
+// библиотека может узнать отдельно — но только если WhatsApp его открывает (человек
+// в контактах или не скрыл номер). Не получилось — не страшно: Laravel покажет имя
+// профиля или идентификатор. Группы и статусы пропускаем.
+async function resolveSender(message) {
+  const result = { phone: null, name: null };
+  const from = message.from || '';
+  if (from.endsWith('@g.us') || from === 'status@broadcast') return result;
+
+  try {
+    if (from.endsWith('@c.us')) {
+      result.phone = from.split('@')[0];
+    } else if (from.endsWith('@lid')) {
+      const found = await withTimeout(client.getContactLidAndPhone([from]), 5000);
+      const pn = found?.[0]?.pn;
+      if (pn && String(pn).endsWith('@c.us')) result.phone = String(pn).split('@')[0];
+    }
+  } catch (err) {
+    diag('phone lookup failed:', String(err?.message || err).slice(0, 80));
+  }
+
+  try {
+    const contact = await withTimeout(message.getContact(), 5000);
+    result.name = contact?.pushname || contact?.name || null;
+  } catch (err) {
+    diag('name lookup failed:', String(err?.message || err).slice(0, 80));
+  }
+
+  if (result.phone && !/^\d{7,15}$/.test(result.phone)) result.phone = null;
+  // Сами значения не пишем в журнал (персональные данные), только факт.
+  diag('sender resolved: phone', result.phone ? 'yes' : 'no', ', name', result.name ? 'yes' : 'no');
+  return result;
+}
+
 // ============================================
 // SETUP CLIENT EVENTS
 // ============================================
@@ -133,6 +174,8 @@ function setupClientEvents() {
       const timestamp = new Date(message.timestamp * 1000).toISOString(); // время
       const fromId = message.from; // ID отправителя
 
+      const sender = await resolveSender(message);
+
       // Отправляем webhook в Laravel
       const webhookData = {
         phone_number: phoneNumber,
@@ -140,6 +183,8 @@ function setupClientEvents() {
         message_id: messageId,
         timestamp: timestamp,
         from_id: fromId,
+        sender_phone: sender.phone,
+        sender_name: sender.name,
       };
 
       console.log('Sending webhook to Laravel:', webhookData);

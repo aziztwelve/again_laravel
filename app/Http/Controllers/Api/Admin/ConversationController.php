@@ -83,6 +83,10 @@ class ConversationController extends Controller
                         });
                 });
 
+                // Имя и телефон собеседника из мессенджера (если клиент не привязан)
+                $q->orWhere('contact_name', 'like', "%{$search}%")
+                    ->orWhere('contact_phone', 'like', "%{$search}%");
+
                 // Поиск по тексту последнего сообщения
                 $q->orWhereHas('lastMessage', function ($messageQuery) use ($search) {
                     $messageQuery->where('content', 'like', "%{$search}%");

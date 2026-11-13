@@ -11,6 +11,8 @@ class Conversation extends Model
     protected $fillable = [
         'source',
         'external_id',
+        'contact_name',
+        'contact_phone',
         'client_id',
         'assigned_to',
         'status',
