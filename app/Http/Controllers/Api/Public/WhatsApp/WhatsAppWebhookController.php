@@ -28,7 +28,9 @@ class WhatsAppWebhookController extends Controller
         try {
             $data = $request->validate([
                 'phone_number' => 'required|string',
-                'message_text' => 'required|string',
+                // У фото, голосовых, стикеров и файлов текста нет (приходит пустая строка):
+                // такие сообщения не отбрасываем, а показываем оператору с пометкой.
+                'message_text' => 'nullable|string',
                 'message_id' => 'required|string',
                 'timestamp' => 'required|string',
                 'from_id' => 'required|string',
@@ -39,7 +41,10 @@ class WhatsAppWebhookController extends Controller
             return DB::transaction(function () use ($data) {
                 // external_id = phone_number
                 $phoneNumber = $data['phone_number'];
-                $messageText = $data['message_text'];
+                $messageText = trim((string) ($data['message_text'] ?? ''));
+                if ($messageText === '') {
+                    $messageText = '[Сообщение без текста: фото, голосовое, стикер или файл. Откройте его в WhatsApp]';
+                }
 
                 // Ищем или создаём conversation
                 $conversation = Conversation::firstOrCreate(
