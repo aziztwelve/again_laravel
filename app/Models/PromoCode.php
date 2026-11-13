@@ -280,16 +280,26 @@ class PromoCode extends Model
      *         применяется промокод (после товарной скидки при stack, оригинал при replace),
      *         и количество
      * @return array<int|string, float> скидка на ОДНУ штуку по ключам позиций.
-     *         Считается в копейках с округлением вниз, поэтому сумма скидок никогда
-     *         не превышает номинал промокода и стоимость самих позиций.
+     *         Считается в копейках: сумма скидок не превышает номинал промокода и
+     *         стоимость самих позиций, и при этом равна номиналу, когда это возможно.
+     *
+     *         Доли каждой позиции округляются вниз, а недостающие копейки добавляются
+     *         позициям с наибольшим остатком (метод наибольших остатков). Раньше остатки
+     *         терялись: промокод на 12 024 ₽ давал скидку 12 023,96 ₽ (заказ 40958).
+     *         У позиции с количеством больше 1 скидка на штуку одна и та же, поэтому
+     *         копейка ей достаётся сразу на все штуки; если оставшихся копеек на это
+     *         не хватает, добавка идёт другим позициям.
      */
     public function allocateFixedDiscount(array $lines): array
     {
         $totalCents = 0;
         $lineCents = [];
+        $quantity = [];
+        $baseCents = [];
         foreach ($lines as $key => $line) {
-            $qty = max(1, (int) ($line['quantity'] ?? 1));
-            $lineCents[$key] = (int) round(((float) $line['base_unit']) * 100) * $qty;
+            $quantity[$key] = max(1, (int) ($line['quantity'] ?? 1));
+            $baseCents[$key] = (int) round(((float) $line['base_unit']) * 100);
+            $lineCents[$key] = $baseCents[$key] * $quantity[$key];
             $totalCents += $lineCents[$key];
         }
 
@@ -304,11 +314,38 @@ class PromoCode extends Model
 
         $budgetCents = min((int) round(((float) $this->discount_amount) * 100), $totalCents);
 
+        // 1. Доля каждой позиции с округлением вниз; запоминаем, сколько от неё «не добрали».
+        $unitCents = [];
+        $remainder = [];
+        $allocated = 0;
         foreach ($lines as $key => $line) {
-            $qty = max(1, (int) ($line['quantity'] ?? 1));
-            $shareCents = intdiv($budgetCents * $lineCents[$key], $totalCents);
-            $unitCents = min(intdiv($shareCents, $qty), (int) round(((float) $line['base_unit']) * 100));
-            $result[$key] = (float) ($unitCents / 100);
+            $ideal = $budgetCents * $lineCents[$key]; // доля в копейках, умноженная на $totalCents
+            $unitCents[$key] = min(intdiv(intdiv($ideal, $totalCents), $quantity[$key]), $baseCents[$key]);
+            $remainder[$key] = $ideal - $unitCents[$key] * $quantity[$key] * $totalCents;
+            $allocated += $unitCents[$key] * $quantity[$key];
+        }
+
+        // 2. Недостающие копейки — позициям с наибольшим остатком (при равных — в порядке позиций).
+        $leftover = $budgetCents - $allocated;
+        $order = array_keys($lines);
+        usort($order, fn ($a, $b) => $remainder[$b] <=> $remainder[$a]);
+
+        do {
+            $progress = false;
+            foreach ($order as $key) {
+                if ($leftover <= 0) {
+                    break;
+                }
+                if ($quantity[$key] <= $leftover && $unitCents[$key] < $baseCents[$key]) {
+                    $unitCents[$key]++;
+                    $leftover -= $quantity[$key];
+                    $progress = true;
+                }
+            }
+        } while ($leftover > 0 && $progress);
+
+        foreach ($lines as $key => $line) {
+            $result[$key] = (float) ($unitCents[$key] / 100);
         }
 
         return $result;

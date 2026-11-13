@@ -74,6 +74,56 @@ class PromoCodeFixedAllocationTest extends TestCase
         $this->assertGreaterThan(999.0, $this->total($lines, $result));
     }
 
+    public function test_face_value_is_given_exactly_without_losing_kopecks(): void
+    {
+        // Заказ 40958: промокод на 12 024 ₽ давал скидку 12 023,96 ₽.
+        $lines = [
+            ['base_unit' => 1999.99, 'quantity' => 1],
+            ['base_unit' => 1999.99, 'quantity' => 1],
+            ['base_unit' => 2000.01, 'quantity' => 1],
+            ['base_unit' => 2010.00, 'quantity' => 1],
+            ['base_unit' => 2010.00, 'quantity' => 1],
+            ['base_unit' => 2010.01, 'quantity' => 1],
+        ];
+        $result = $this->fixed(12024)->allocateFixedDiscount($lines);
+
+        $this->assertSame(12024.0, $this->total($lines, $result));
+        foreach ($lines as $key => $line) {
+            $this->assertLessThanOrEqual($line['base_unit'], $result[$key]);
+        }
+    }
+
+    public function test_leftover_kopecks_also_work_with_mixed_quantities(): void
+    {
+        $lines = [
+            ['base_unit' => 333.33, 'quantity' => 3],
+            ['base_unit' => 100.01, 'quantity' => 7],
+            ['base_unit' => 999.99, 'quantity' => 1],
+        ];
+        $result = $this->fixed(1000)->allocateFixedDiscount($lines);
+
+        $this->assertSame(1000.0, $this->total($lines, $result));
+    }
+
+    public function test_it_never_exceeds_the_face_value_for_any_split(): void
+    {
+        mt_srand(2024);
+        for ($i = 0; $i < 300; $i++) {
+            $lines = [];
+            for ($n = mt_rand(1, 8); $n > 0; $n--) {
+                $lines[] = ['base_unit' => mt_rand(1, 500000) / 100, 'quantity' => mt_rand(1, 4)];
+            }
+            $face = mt_rand(100, 600000) / 100;
+            $result = $this->fixed($face)->allocateFixedDiscount($lines);
+
+            $payable = array_sum(array_map(fn ($l) => round($l['base_unit'] * $l['quantity'], 2), $lines));
+            $this->assertLessThanOrEqual(min($face, $payable) + 0.0001, $this->total($lines, $result));
+            foreach ($lines as $key => $line) {
+                $this->assertLessThanOrEqual($line['base_unit'] + 0.0001, $result[$key]);
+            }
+        }
+    }
+
     public function test_empty_or_zero_lines_give_zero(): void
     {
         $this->assertSame([], $this->fixed(3000)->allocateFixedDiscount([]));
