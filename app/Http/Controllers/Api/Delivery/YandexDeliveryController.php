@@ -50,8 +50,11 @@ class YandexDeliveryController extends Controller
             'latitude_to'      => 'nullable|numeric|between:-90,90',
             'longitude_from'   => 'nullable|numeric|between:-180,180',
             'longitude_to'     => 'nullable|numeric|between:-180,180',
+            'compact'          => 'nullable|boolean',
         ]);
 
+        $compact = (bool) ($validated['compact'] ?? false);
+        unset($validated['compact']);
         $filter = array_filter($validated, fn ($v) => $v !== null);
         // Без города или области Яндекс отдаёт весь список пунктов страны — это десятки МБ.
         $hasBbox = isset($filter['latitude_from'], $filter['latitude_to'], $filter['longitude_from'], $filter['longitude_to']);
@@ -63,6 +66,19 @@ class YandexDeliveryController extends Controller
         }
         if (isset($filter['geo_id'])) $filter['geo_id'] = (int) $filter['geo_id'];
         $points = $this->service->getPickupPoints($filter);
+
+        // Компактный ответ для карты в админке: в большом городе пунктов тысячи, а карте
+        // нужны только id, название, адрес и координаты (расписание и служебные поля — это
+        // основной вес ответа, мегабайты).
+        if ($compact) {
+            $points = $points->map(fn ($point) => [
+                'id'       => $point['id'] ?? null,
+                'name'     => $point['name'] ?? null,
+                'type'     => $point['type'] ?? null,
+                'position' => $point['position'] ?? null,
+                'address'  => ['full_address' => $point['address']['full_address'] ?? ($point['address'] ?? null)],
+            ])->values();
+        }
 
         return response()->json([
             'success' => true,
