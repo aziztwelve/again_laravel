@@ -198,11 +198,23 @@ class PublicOrderController extends Controller
                 'status' => $order->yandexOrder->internal_status,
                 'status_raw' => $order->yandexOrder->status,
                 'tracking_url' => $order->yandexOrder->tracking_url,
-            ] : ($order->cdekOrder ? [
-                'status' => $order->cdekOrder->internal_status,
-                'status_raw' => $order->cdekOrder->status_code,
-                'tracking_url' => $order->cdekOrder->tracking_url,
-            ] : null),
+            ] : ($order->cdekOrder ? $this->cdekTracking($order->cdekOrder) : null),
+        ];
+    }
+
+    /**
+     * Трекинг СДЭК для покупателя. Отклонённая СДЭК заявка (ошибка данных) —
+     * внутренняя проблема магазина: покупателю она показывается как «заказ
+     * оформляется», без технических кодов.
+     */
+    private function cdekTracking(\App\Models\CdekOrder $cdekOrder): array
+    {
+        $rejected = $cdekOrder->internal_status === \App\Models\ShipmentStatus::FAILED;
+
+        return [
+            'status' => $rejected ? \App\Models\ShipmentStatus::NEW : $cdekOrder->internal_status,
+            'status_raw' => $rejected ? null : $cdekOrder->status_code,
+            'tracking_url' => $cdekOrder->tracking_url,
         ];
     }
 }

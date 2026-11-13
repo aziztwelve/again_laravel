@@ -63,7 +63,8 @@ class CdekOrderReadinessTest extends TestCase
             'delivery_type' => 'pickup', 'tariff_code' => 136, 'destination' => ['city_code' => 44],
         ], 'cdek_pickup'));
 
-        $this->assertSame('Не выбран ПВЗ СДЭК.', $error);
+        $this->assertNotNull($error);
+        $this->assertStringContainsString('не выбран пункт выдачи', $error);
     }
 
     public function test_order_without_recipient_phone_is_not_ready(): void

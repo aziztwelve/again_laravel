@@ -102,6 +102,17 @@ php artisan test --filter FreeShippingTest
 схему неполной. Если нужен полный прогон, сначала подготовить отдельную
 тестовую БД и проверить последствия для окружения.
 
+> **2026-11-13:** полный прогон всё же был запущен и оставил `testing` с 99 из 162
+> таблиц (все остальные наборы падали с `Unknown column`/`Table doesn't exist`).
+> `php artisan migrate` на ней не помогает: миграции с нуля не проходят (падает
+> `2025_05_31_100236_add_client_id_to_user_profiles`). Восстановление, не затрагивая
+> рабочую БД: сохранить дамп `testing`, удалить в ней все таблицы, залить схему рабочей
+> БД (`mysqldump --no-data --skip-triggers laravel_renum | mysql testing`) и скопировать
+> данные справочников, которые раньше сеяли миграции: `migrations`, `delivery_methods`,
+> `delivery_targets`, `delivery_zones`, `colors`. Реквизиты берутся из `.env` во временный
+> `.my.cnf` (права 600), после работы файл удаляется. Копии: `/root/backups/testing-db/`.
+> Проверять код на копии проекта (`rsync` без `storage`), а не на рабочем каталоге.
+
 ## Процессы (pm2) и веб
 
 - `pm2`: `laravel-queue`, `laravel-reverb`, `laravel-scheduler`, `nuxt-shop`,

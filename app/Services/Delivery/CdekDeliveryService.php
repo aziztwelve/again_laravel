@@ -9,8 +9,12 @@ use App\Models\Order;
 use App\Models\Shipment;
 use App\Models\ShipmentStatus;
 use App\Services\Delivery\Cdek\CdekClient;
+use App\Services\Delivery\Cdek\CdekParcel;
+use App\Services\Delivery\Cdek\CdekStatus;
 use App\Services\Notifications\CdekDeliveryNotificationService;
 use App\Services\Order\OrderCreationService;
+use App\Services\Order\OrderHistoryService;
+use App\Support\Phone;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -232,6 +236,11 @@ class CdekDeliveryService extends DeliveryService
             throw new InvalidArgumentException('Для курьерской доставки укажите город СДЭК и адрес.');
         }
 
+        $package = $this->package($items, 'quote');
+        // Постамат принимает посылку только по размеру ячеек: проверяем сразу при
+        // выборе, а не после оплаты, когда СДЭК отклоняет заявку.
+        $this->assertParcelFits($deliveryType, $pickupPoint, $package);
+
         $payload = [
             'type' => (int) ($this->settings['order_type'] ?? 1),
             'currency' => 643,
@@ -241,7 +250,7 @@ class CdekDeliveryService extends DeliveryService
                 'code' => (int) $destination['city_code'],
                 'address' => $destination['address'],
             ] : ['code' => (int) ($destination['city_code'] ?? 0)],
-            'packages' => [$this->package($items, 'quote')],
+            'packages' => [$package],
         ];
         if ($isPickup) $payload['delivery_point'] = $pickupPoint;
 
@@ -433,8 +442,12 @@ class CdekDeliveryService extends DeliveryService
         }
 
         $address = $order->loadMissing('address')->address;
-        if (! ($address?->recipient_phone ?? $order->client?->phone)) {
+        $phone = $address?->recipient_phone ?? $order->client?->phone;
+        if (! filled($phone)) {
             return 'Для оформления СДЭК нужен телефон получателя.';
+        }
+        if (! Phone::isValid($phone)) {
+            return 'Телефон получателя указан неверно: «'.$phone.'». СДЭК отклонит такую заявку. Исправьте телефон в заказе (формат +7 XXX XXX-XX-XX) и повторите отправку.';
         }
 
         if (in_array($delivery['delivery_type'] ?? null, ['pickup', 'postamat'], true)) {
@@ -443,6 +456,24 @@ class CdekDeliveryService extends DeliveryService
             }
         } elseif ((int) ($delivery['destination']['city_code'] ?? 0) < 1) {
             return 'Для курьерской доставки СДЭК не хватает города получателя: выберите город и адрес СДЭК в заказе.';
+        }
+
+        return null;
+    }
+
+    /** Причина, по которой посылка заказа не поместится в выбранный постамат, или null. */
+    public function parcelFitError(Order $order): ?string
+    {
+        $delivery = $order->delivery_data ?? [];
+
+        try {
+            $this->assertParcelFits(
+                (string) ($delivery['delivery_type'] ?? ''),
+                $delivery['pvz']['code'] ?? $delivery['pvz_code'] ?? null,
+                $this->package($this->orderItems($order), 'check'),
+            );
+        } catch (InvalidArgumentException $exception) {
+            return $exception->getMessage();
         }
 
         return null;
@@ -457,16 +488,20 @@ class CdekDeliveryService extends DeliveryService
         $tariff = $delivery['tariff_code'];
         $address = $order->loadMissing('address')->address;
         $recipientName = trim(implode(' ', array_filter([$address?->recipient_last_name, $address?->recipient_first_name, $address?->recipient_middle_name]))) ?: 'Покупатель';
-        $recipientPhone = $address?->recipient_phone ?? $order->client?->phone;
+        $recipientPhone = Phone::e164($address?->recipient_phone ?? $order->client?->phone);
         $destination = $delivery['destination'] ?? [];
         $isPickup = in_array($delivery['delivery_type'] ?? null, ['pickup', 'postamat'], true);
+        $items = $this->orderItems($order);
+        $package = $this->package($items, $cdekOrder->external_order_number);
+        // Не отправляем заведомо отклоняемую заявку: причина сразу видна менеджеру.
+        $this->assertParcelFits((string) ($delivery['delivery_type'] ?? ''), $delivery['pvz']['code'] ?? $delivery['pvz_code'] ?? null, $package);
         $payload = [
             'type' => (int) ($this->settings['order_type'] ?? 1),
             'number' => $cdekOrder->external_order_number,
             'tariff_code' => (int) $tariff,
             'recipient' => ['name' => $recipientName, 'phones' => [['number' => $recipientPhone]]],
             'from_location' => $this->senderLocation(),
-            'packages' => [$this->package($this->orderItems($order), $cdekOrder->external_order_number)],
+            'packages' => [$package],
         ];
         if (filled(data_get($this->settings, 'sender.name'))) {
             $payload['sender'] = array_filter([
@@ -474,7 +509,7 @@ class CdekDeliveryService extends DeliveryService
                 'phones' => filled(data_get($this->settings, 'sender.phone')) ? [['number' => data_get($this->settings, 'sender.phone')]] : null,
             ]);
         }
-        $payload = array_replace($payload, $this->orderPriceModifiers($this->orderItems($order)));
+        $payload = array_replace($payload, $this->orderPriceModifiers($items));
         $services = $this->additionalServices();
         if ($services !== []) $payload['services'] = $services;
         if ($isPickup) $payload['delivery_point'] = $delivery['pvz']['code'] ?? $delivery['pvz_code'] ?? null;
@@ -493,12 +528,22 @@ class CdekDeliveryService extends DeliveryService
         $latest = collect($order['statuses'] ?? [])->reject(fn (array $status) => $status['deleted'] ?? false)->sortByDesc('date_time')->first() ?? [];
         $statusCode = (string) ($latest['code'] ?? 'CREATED');
         $previousStatus = $cdekOrder->status_code;
+        $wasRejected = $cdekOrder->creation_state === 'INVALID';
+        $previousError = $cdekOrder->last_error;
         $tracking = ! empty($order['cdek_number']) ? 'https://www.cdek.ru/ru/tracking?order_id='.$order['cdek_number'] : null;
+        $creation = $this->creationOutcome($result['data'], $order, $latest, $statusCode, $cdekOrder);
+
+        if (! CdekStatus::isKnown($statusCode)) {
+            Log::warning('CDEK: unknown order status code, order status is left unchanged', [
+                'order_id' => $cdekOrder->order_id, 'cdek_order_id' => $cdekOrder->id, 'status_code' => $statusCode,
+            ]);
+        }
+
         $cdekOrder->update([
             'cdek_uuid' => $order['uuid'], 'cdek_number' => $order['cdek_number'] ?? null,
-            'creation_state' => 'SUCCESSFUL', 'status_code' => $statusCode,
-            'status_name' => $latest['name'] ?? null, 'internal_status' => $this->internalStatus($statusCode),
-            'tracking_url' => $tracking, 'last_synced_at' => now(), 'last_error' => null,
+            'creation_state' => $creation['state'], 'status_code' => $statusCode,
+            'status_name' => $latest['name'] ?? null, 'internal_status' => CdekStatus::internal($statusCode),
+            'tracking_url' => $tracking, 'last_synced_at' => now(), 'last_error' => $creation['error'],
         ]);
         if ($statusCode !== '') {
             $statusAt = filled($latest['date_time'] ?? null)
@@ -513,6 +558,14 @@ class CdekDeliveryService extends DeliveryService
             ]);
         }
         $this->upsertShipment($cdekOrder->fresh(), $order);
+
+        if ($creation['state'] === 'INVALID') {
+            // Заявка отклонена: посылки нет, поэтому статус заказа не меняем и
+            // клиенту ничего не отправляем — сообщаем менеджеру.
+            $this->reportRejected($cdekOrder->fresh('order'), (string) $creation['error'], $wasRejected && $previousError === $creation['error']);
+            return;
+        }
+
         $this->syncConfiguredOrderStatus($cdekOrder->fresh('order'), $statusCode);
         if ($previousStatus !== $statusCode) {
             try {
@@ -525,6 +578,63 @@ class CdekDeliveryService extends DeliveryService
                     'error' => $exception->getMessage(),
                 ]);
             }
+        }
+    }
+
+    /**
+     * Итог создания заявки по ответу СДЭК.
+     *
+     * POST /v2/orders асинхронный: сразу после него СДЭК отвечает «принято», а
+     * проверку заявки (телефон, габариты, тариф…) завершает позже. Реальный итог
+     * лежит в `requests[].state` и `requests[].errors`, а не в самом факте, что
+     * заказ нашёлся по номеру. Раньше любой найденный заказ помечался
+     * SUCCESSFUL, а ошибки валидации терялись.
+     *
+     * @return array{state:string,error:?string}
+     */
+    private function creationOutcome(array $response, array $order, array $latest, string $statusCode, CdekOrder $cdekOrder): array
+    {
+        $requests = collect($response['requests'] ?? []);
+        $create = $requests->firstWhere('type', 'CREATE') ?? $requests->first() ?? [];
+        $state = strtoupper((string) ($create['state'] ?? ''));
+
+        if ($state === 'INVALID' || CdekStatus::isFailure($statusCode)) {
+            $messages = collect($create['errors'] ?? [])
+                ->map(fn ($error) => trim((string) ($error['message'] ?? $error['code'] ?? '')))
+                ->filter()->unique()->implode('; ');
+
+            return [
+                'state' => 'INVALID',
+                'error' => $messages !== '' ? $messages : 'СДЭК не принял заявку: '.($latest['name'] ?? 'некорректный заказ').'.',
+            ];
+        }
+
+        if ($state === 'SUCCESSFUL' || ! empty($order['cdek_number'])) {
+            return ['state' => 'SUCCESSFUL', 'error' => null];
+        }
+
+        // СДЭК ещё проверяет заявку: оставляем текущее состояние.
+        return ['state' => $cdekOrder->creation_state ?: 'ACCEPTED', 'error' => $cdekOrder->last_error];
+    }
+
+    /** Фиксирует отказ СДЭК в логе и истории заказа (один раз на одну и ту же причину). */
+    private function reportRejected(CdekOrder $cdekOrder, string $error, bool $alreadyReported): void
+    {
+        if ($alreadyReported) return;
+
+        Log::warning('CDEK rejected the order request', [
+            'order_id' => $cdekOrder->order_id, 'cdek_order_id' => $cdekOrder->id, 'error' => $error,
+        ]);
+
+        try {
+            if ($cdekOrder->order) {
+                app(OrderHistoryService::class)->logNote(
+                    $cdekOrder->order,
+                    "СДЭК не принял заявку: {$error} Посылка не отправлена — исправьте данные и создайте заявку заново.",
+                );
+            }
+        } catch (\Throwable $exception) {
+            Log::error('Failed to write CDEK rejection to order history', ['order_id' => $cdekOrder->order_id, 'error' => $exception->getMessage()]);
         }
     }
 
@@ -764,16 +874,50 @@ class CdekDeliveryService extends DeliveryService
         // оплаты на сайте (CreateCdekOrderJob), поэтому с получателя ничего не
         // взимаем: всегда 0. Объявленная ценность задаётся отдельно (cost).
         $items = array_values($items);
-        $measurements = array_map(fn (array $item) => $this->measurement($item), $items);
         $fallback = $this->settings['default_package'] ?? [];
+        $measurements = array_map(fn (array $item) => CdekParcel::measure($item, $fallback), $items);
         $useOrderFallback = ($this->settings['default_weight_scope'] ?? 'item') === 'order'
-            && collect($items)->contains(fn (array $item) => ! filled($item['weight'] ?? null));
-        $weight = $useOrderFallback ? max(1, (int) ($fallback['weight'] ?? 500)) : max(1, (int) collect($measurements)->sum(fn (array $item) => $item['weight'] * $item['quantity']));
-        $length = max(1, (int) collect($measurements)->max('length'));
-        $width = max(1, (int) collect($measurements)->max('width'));
-        $height = max(1, (int) collect($measurements)->sum(fn (array $item) => $item['height'] * $item['quantity']));
+            && collect($items)->contains(fn (array $item) => CdekParcel::grams($item['weight'] ?? null) === null);
+        $weight = $useOrderFallback
+            ? max(1, (int) ($fallback['weight'] ?? 500))
+            : max(1, (int) collect($measurements)->sum(fn (array $item) => $item['weight'] * $item['quantity']));
+        $size = CdekParcel::dimensions($measurements);
 
-        return ['number' => Str::limit($number, 30, ''), 'weight' => $weight, 'length' => $length, 'width' => $width, 'height' => $height, 'items' => array_map(fn (array $item, int $index) => ['name' => Str::limit((string) ($item['name'] ?? 'Товар'), 255, ''), 'ware_key' => (string) ($item['sku'] ?? $item['id'] ?? 'item'), 'payment' => ['value' => 0.0], 'cost' => $this->declaredCost((float) ($item['price'] ?? 0)), 'amount' => $measurements[$index]['quantity'], 'weight' => $measurements[$index]['weight']], $items, array_keys($items))];
+        return [
+            'number' => Str::limit($number, 30, ''), 'weight' => $weight,
+            'length' => $size['length'], 'width' => $size['width'], 'height' => $size['height'],
+            'items' => array_map(fn (array $item, int $index) => [
+                'name' => Str::limit((string) ($item['name'] ?? 'Товар'), 255, ''),
+                'ware_key' => (string) ($item['sku'] ?? $item['id'] ?? 'item'),
+                'payment' => ['value' => 0.0],
+                'cost' => $this->declaredCost((float) ($item['price'] ?? 0)),
+                'amount' => $measurements[$index]['quantity'],
+                'weight' => $measurements[$index]['weight'],
+            ], $items, array_keys($items)),
+        ];
+    }
+
+    /**
+     * Бросает InvalidArgumentException, если посылка не поместится в выбранный
+     * постамат. Если данных о точке нет, решение остаётся за СДЭК.
+     */
+    private function assertParcelFits(string $deliveryType, ?string $pointCode, array $package): void
+    {
+        if ($deliveryType !== 'postamat' || ! filled($pointCode)) return;
+
+        $point = $this->findPoint((string) $pointCode);
+        if (! $point) return;
+
+        $error = CdekParcel::postamatFitError($point, (int) $package['weight'], [
+            'length' => (int) $package['length'], 'width' => (int) $package['width'], 'height' => (int) $package['height'],
+        ]);
+        if ($error) throw new InvalidArgumentException($error);
+    }
+
+    /** Пункт выдачи/постамат по коду; кэш на 10 минут, чтобы не ходить в СДЭК на каждый расчёт. */
+    private function findPoint(string $code): ?array
+    {
+        return Cache::remember("cdek:point:{$code}", now()->addMinutes(10), fn () => $this->pickupPoints(['code' => $code, 'type' => 'ALL'])[0] ?? null);
     }
     private function declaredCost(float $price): float
     {
@@ -804,17 +948,6 @@ class CdekDeliveryService extends DeliveryService
         };
         if ($target && $cdekOrder->order->status !== $target) app(OrderCreationService::class)->updateOrderStatus($cdekOrder->order, $target);
     }
-    private function measurement(array $item): array
-    {
-        $fallback = $this->settings['default_package'] ?? [];
-        return [
-            'weight' => max(1, (int) (($item['weight'] ?? null) ?: ($fallback['weight'] ?? 500))),
-            'length' => max(1, (int) (($item['length'] ?? null) ?: ($fallback['length'] ?? 20))),
-            'width' => max(1, (int) (($item['width'] ?? null) ?: ($fallback['width'] ?? 10))),
-            'height' => max(1, (int) (($item['height'] ?? null) ?: ($fallback['height'] ?? 10))),
-            'quantity' => max(1, (int) ($item['quantity'] ?? 1)),
-        ];
-    }
     private function checkoutItem(array $item): array
     {
         $model = $item['model'] ?? null;
@@ -826,14 +959,13 @@ class CdekDeliveryService extends DeliveryService
             'sku' => $model?->sku ?? $product?->sku,
             'price' => (float) ($item['final_price'] ?? 0),
             'quantity' => (int) ($item['quantity'] ?? 1),
-            'weight' => $model?->weight ?: $product?->weight,
-            'length' => $model?->length ?: $product?->length,
-            'width' => $model?->width ?: $product?->width,
-            'height' => $model?->height ?: $product?->height,
+            'weight' => CdekParcel::firstPositive($model?->weight, $product?->weight),
+            'length' => CdekParcel::firstPositive($model?->length, $product?->length),
+            'width' => CdekParcel::firstPositive($model?->width, $product?->width),
+            'height' => CdekParcel::firstPositive($model?->height, $product?->height),
         ];
     }
-    private function orderItems(Order $order): array { return $order->loadMissing('items.product', 'items.variant')->items->map(fn ($item) => ['id' => $item->id, 'name' => $item->product?->name ?? $item->legacy_name ?? 'Товар', 'sku' => $item->variant?->sku ?? $item->product?->sku ?? $item->id, 'price' => (float) $item->price, 'quantity' => (int) $item->quantity, 'weight' => $item->variant?->weight ?: $item->product?->weight, 'length' => $item->variant?->length ?: $item->product?->length, 'width' => $item->variant?->width ?: $item->product?->width, 'height' => $item->variant?->height ?: $item->product?->height])->all(); }
-    private function internalStatus(string $status): string { return match ($status) { 'DELIVERED' => ShipmentStatus::DELIVERED, 'NOT_DELIVERED', 'RETURNED_TO_SENDER' => ShipmentStatus::RETURNED, 'ACCEPTED', 'CREATED' => ShipmentStatus::NEW, default => ShipmentStatus::IN_TRANSIT }; }
+    private function orderItems(Order $order): array { return $order->loadMissing('items.product', 'items.variant')->items->map(fn ($item) => ['id' => $item->id, 'name' => $item->product?->name ?? $item->legacy_name ?? 'Товар', 'sku' => $item->variant?->sku ?? $item->product?->sku ?? $item->id, 'price' => (float) $item->price, 'quantity' => (int) $item->quantity, 'weight' => CdekParcel::firstPositive($item->variant?->weight, $item->product?->weight), 'length' => CdekParcel::firstPositive($item->variant?->length, $item->product?->length), 'width' => CdekParcel::firstPositive($item->variant?->width, $item->product?->width), 'height' => CdekParcel::firstPositive($item->variant?->height, $item->product?->height)])->all(); }
 
     /**
      * Отправление под заказ. `shipping_address`, `recipient_name` и

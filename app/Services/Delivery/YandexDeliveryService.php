@@ -14,6 +14,7 @@ use App\Services\Delivery\Yandex\CustomerStatusMapper;
 use App\Services\Delivery\Yandex\StatusMapper;
 use App\Services\Delivery\Yandex\YandexDeliveryClient;
 use App\Services\Notifications\YandexDeliveryNotificationService;
+use App\Support\Measure;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -186,11 +187,11 @@ class YandexDeliveryService extends DeliveryService
         return [
             'name' => $item['name'] ?? $model?->name ?? $product?->name ?? 'Товар',
             'article' => (string) ($model?->sku ?? $product?->sku ?? $model?->id ?? ''),
-            'weight' => ($model?->weight ?: $product?->weight) ?: 500,
+            'weight' => Measure::grams(Measure::firstPositive($model?->weight, $product?->weight)) ?? 500,
             'size' => [
-                'length' => $model?->length ?: $product?->length,
-                'width' => $model?->width ?: $product?->width,
-                'height' => $model?->height ?: $product?->height,
+                'length' => Measure::firstPositive($model?->length, $product?->length),
+                'width' => Measure::firstPositive($model?->width, $product?->width),
+                'height' => Measure::firstPositive($model?->height, $product?->height),
             ],
             'quantity' => (int) ($item['quantity'] ?? 1),
             'price' => (float) ($item['final_price'] ?? 0),

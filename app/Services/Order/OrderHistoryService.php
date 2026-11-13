@@ -113,6 +113,12 @@ class OrderHistoryService
         $this->write($order, self::ACTION_UPDATED, $description);
     }
 
+    /** Произвольная пометка в истории заказа (например, отказ службы доставки). */
+    public function logNote(Order $order, string $description): void
+    {
+        $this->write($order, self::ACTION_UPDATED, $description);
+    }
+
     public function logItemAdded(Order $order, OrderItem $item): void
     {
         $name = $item->product?->name ?? "позиция #{$item->id}";

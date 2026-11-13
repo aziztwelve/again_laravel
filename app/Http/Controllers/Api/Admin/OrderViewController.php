@@ -246,12 +246,24 @@ class OrderViewController extends Controller
             'pvz_code' => $order->delivery_data['pvz']['code'] ?? null,
             'creation_state' => 'NEW',
         ]);
-        if ($cdekOrder->cdek_uuid) {
-            app(CdekDeliveryService::class)->sync($cdekOrder);
-            return $this->successResponse('Статус заявки СДЭК обновлён.', ['cdek_order' => $cdekOrder->fresh()]);
-        }
+
+        $service = app(CdekDeliveryService::class);
+
+        // Отклонённую заявку (телефон, габариты…) можно отправить заново, когда
+        // причина устранена: сначала проверяем данные, затем убираем отклонённую
+        // заявку у СДЭК и создаём новую.
         if ($cdekOrder->creation_state === 'INVALID') {
-            return $this->errorResponse('Заявка СДЭК отклонена. Исправьте сохранённую ошибку перед повторной отправкой.', 422, ['cdek_order' => $cdekOrder]);
+            $service->applyDefaultTariff($order);
+            $error = $service->readinessError($order) ?? $service->parcelFitError($order);
+            if ($error) {
+                $cdekOrder->update(['last_error' => $error]);
+                return $this->errorResponse($error, 422, ['cdek_order' => $cdekOrder->fresh()]);
+            }
+            $this->discardRejectedCdekRequest($cdekOrder, $service);
+            $cdekOrder = $cdekOrder->fresh();
+        } elseif ($cdekOrder->cdek_uuid) {
+            $service->sync($cdekOrder);
+            return $this->successResponse('Статус заявки СДЭК обновлён.', ['cdek_order' => $cdekOrder->fresh()]);
         }
         if (in_array($cdekOrder->creation_state, ['QUEUED', 'ACCEPTED'], true) || $cdekOrder->request_uuid) {
             return $this->successResponse('Заявка СДЭК уже отправлена и ожидает обработки.', ['cdek_order' => $cdekOrder]);
@@ -260,8 +272,8 @@ class OrderViewController extends Controller
         // Проверяем данные до постановки в очередь: иначе job падал в воркере,
         // а менеджер после нажатия кнопки не видел ни ошибки, ни изменений
         // (типичный случай — legacy-заказ с пустым delivery_data).
-        app(CdekDeliveryService::class)->applyDefaultTariff($order);
-        if ($error = app(CdekDeliveryService::class)->readinessError($order)) {
+        $service->applyDefaultTariff($order);
+        if ($error = $service->readinessError($order)) {
             $cdekOrder->update(['last_error' => $error]);
             return $this->errorResponse($error, 422, ['cdek_order' => $cdekOrder->fresh()]);
         }
@@ -343,6 +355,28 @@ class OrderViewController extends Controller
         $this->resetCdekOrder($cdekOrder);
 
         return $this->successResponse('Заявка СДЭК удалена.');
+    }
+
+    /**
+     * Убирает отклонённую заявку у СДЭК и сбрасывает локальную запись. Отказ
+     * удаления не мешает повторной отправке: отклонённая заявка у СДЭК не действует.
+     */
+    private function discardRejectedCdekRequest(CdekOrder $cdekOrder, CdekDeliveryService $service): void
+    {
+        if ($cdekOrder->cdek_uuid) {
+            try {
+                $result = $service->cancel($cdekOrder);
+                if (! $result['successful']) {
+                    \Illuminate\Support\Facades\Log::info('CDEK: rejected request was not deleted on the CDEK side', [
+                        'order_id' => $cdekOrder->order_id, 'status' => $result['status'] ?? null,
+                    ]);
+                }
+            } catch (\InvalidArgumentException) {
+                // Заявка у СДЭК не создавалась — удалять нечего.
+            }
+        }
+
+        $this->resetCdekOrder($cdekOrder);
     }
 
     /**

@@ -62,6 +62,8 @@ class ShipmentStatus extends Model
     public const DELIVERED = 'delivered';
     public const CANCELLED = 'cancelled';
     public const RETURNED = 'returned';
+    /** Заявка отклонена службой доставки (посылки нет). */
+    public const FAILED = 'failed';
 
     /** Человекочитаемые названия статусов справочника (см. ShipmentStatusSeeder). */
     public const TITLES = [
@@ -72,6 +74,7 @@ class ShipmentStatus extends Model
         self::DELIVERED => 'Доставлено',
         self::CANCELLED => 'Отменено',
         self::RETURNED => 'Возврат',
+        self::FAILED => 'Ошибка создания',
     ];
 
     /**

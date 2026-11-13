@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\CdekOrder;
 use App\Models\Order;
+use App\Services\Order\OrderHistoryService;
 use App\Services\Delivery\CdekDeliveryService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -14,6 +15,7 @@ use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
 use InvalidArgumentException;
 use RuntimeException;
+use Throwable;
 
 class CreateCdekOrderJob implements ShouldQueue, ShouldBeUnique
 {
@@ -48,13 +50,14 @@ class CreateCdekOrderJob implements ShouldQueue, ShouldBeUnique
             return;
         }
 
-        // Данные заказа неполные (частый случай — legacy-заказы без
-        // delivery_data). Повтор ничего не изменит: сохраняем причину в заявку,
-        // чтобы менеджер увидел её на странице СДЭК, и выходим без падения.
+        // Данные заказа неполные или не подходят службе (legacy-заказы без
+        // delivery_data, неверный телефон, посылка не влезает в постамат).
+        // Повтор ничего не изменит: помечаем заявку ошибочной с причиной, чтобы
+        // менеджер увидел её на странице СДЭК и в истории заказа, и выходим.
         try {
             $result = $service->createExternalOrder($order, $cdekOrder);
         } catch (InvalidArgumentException $exception) {
-            $cdekOrder->update(['last_error' => $exception->getMessage()]);
+            $this->markRejected($cdekOrder, $order, $exception->getMessage());
             return;
         }
 
@@ -69,6 +72,32 @@ class CreateCdekOrderJob implements ShouldQueue, ShouldBeUnique
             'last_error' => ! empty($request['errors']) ? json_encode($request['errors'], JSON_UNESCAPED_UNICODE) : null,
         ]);
         SyncCdekOrderJob::dispatch($cdekOrder->id)->delay(now()->addMinute());
+    }
+
+    /**
+     * Все попытки отправки исчерпаны (СДЭК недоступен, ответ с ошибкой): без
+     * этого заявка навсегда оставалась бы «в очереди на создание».
+     */
+    public function failed(Throwable $exception): void
+    {
+        $cdekOrder = CdekOrder::query()->where('order_id', $this->orderId)->first();
+        $order = Order::query()->find($this->orderId);
+        if (! $cdekOrder || ! $order || $cdekOrder->cdek_uuid || ! in_array($cdekOrder->creation_state, [null, 'NEW', 'QUEUED'], true)) {
+            return;
+        }
+
+        $this->markRejected($cdekOrder, $order, $cdekOrder->last_error ?: 'Не удалось отправить заявку в СДЭК: '.$exception->getMessage());
+    }
+
+    private function markRejected(CdekOrder $cdekOrder, Order $order, string $message): void
+    {
+        $cdekOrder->update(['creation_state' => 'INVALID', 'last_error' => $message]);
+
+        try {
+            app(OrderHistoryService::class)->logNote($order, "Заявка СДЭК не создана: {$message}");
+        } catch (Throwable $historyError) {
+            report($historyError);
+        }
     }
 
     /** Читаемый текст ошибки ответа СДЭК для карточки заявки. */

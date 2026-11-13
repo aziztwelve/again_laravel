@@ -464,7 +464,13 @@ class CreateOrderRequest extends FormRequest
             'recipient.first_name' => 'required|string|max:255',
             'recipient.last_name' => 'required|string|max:255',
             'recipient.middle_name' => 'nullable|string|max:255',
-            'recipient.phone' => 'required|string|max:32',
+            // Неверный телефон отклоняет служба доставки уже после оплаты, поэтому
+            // формат проверяем при оформлении (App\Support\Phone: РФ — 11 цифр, мир — 10–15).
+            'recipient.phone' => ['required', 'string', 'max:32', function (string $attribute, mixed $value, \Closure $fail) {
+                if (! \App\Support\Phone::isValid((string) $value)) {
+                    $fail('Укажите корректный номер телефона получателя, например +7 900 123-45-67.');
+                }
+            }],
 
             // Заметки
             'notes' => 'nullable|string|max:1000',

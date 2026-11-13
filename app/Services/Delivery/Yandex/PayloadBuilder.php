@@ -3,6 +3,7 @@
 namespace App\Services\Delivery\Yandex;
 
 use App\Models\Order;
+use App\Support\Measure;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -47,11 +48,11 @@ class PayloadBuilder
             'name' => $item->legacy_name ?: $item->product?->name ?: 'Товар',
             'article' => $item->variant?->sku ?: $item->product?->sku ?: (string) $item->product_id,
             'price' => $item->price,
-            'weight' => $item->variant?->weight ?: $item->product?->weight,
+            'weight' => Measure::grams(Measure::firstPositive($item->variant?->weight, $item->product?->weight)),
             'size' => [
-                'length' => $item->variant?->length ?: $item->product?->length,
-                'width' => $item->variant?->width ?: $item->product?->width,
-                'height' => $item->variant?->height ?: $item->product?->height,
+                'length' => Measure::firstPositive($item->variant?->length, $item->product?->length),
+                'width' => Measure::firstPositive($item->variant?->width, $item->product?->width),
+                'height' => Measure::firstPositive($item->variant?->height, $item->product?->height),
             ],
         ])->all();
 
