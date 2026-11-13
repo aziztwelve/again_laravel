@@ -64,4 +64,16 @@ async function postMediaWebhook(url, fields, media, mediaType, { timeoutMs = 120
   return body;
 }
 
-module.exports = { fetchMedia, postMediaWebhook, MAX_MEDIA_BYTES };
+// Служебные сообщения WhatsApp (шифрование чата, уведомления, звонки, события групп): это не
+// переписка с клиентом, в диалоге они превращались в пустые заглушки. Намеренно НЕ пропускаем
+// 'ciphertext' (сообщение ещё не расшифровано) и 'unknown': это может быть настоящее сообщение.
+const SYSTEM_MESSAGE_TYPES = new Set([
+  'e2e_notification', 'notification_template', 'notification', 'gp2', 'group_notification',
+  'protocol', 'call_log', 'broadcast_notification', 'debug',
+]);
+
+function isSystemMessage(message) {
+  return Boolean(message) && SYSTEM_MESSAGE_TYPES.has(message.type);
+}
+
+module.exports = { fetchMedia, postMediaWebhook, isSystemMessage, SYSTEM_MESSAGE_TYPES, MAX_MEDIA_BYTES };

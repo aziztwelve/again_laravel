@@ -4,7 +4,7 @@ const { Client, MessageMedia } = require('whatsapp-web.js');
 const QRCode = require('qrcode');
 const axios = require('axios');
 const cors = require('cors');
-const { fetchMedia, postMediaWebhook } = require('./media');
+const { fetchMedia, postMediaWebhook, isSystemMessage } = require('./media');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -167,6 +167,12 @@ function setupClientEvents() {
 
   // Message Event
   client.on('message', async (message) => {
+    // Служебные сообщения WhatsApp (шифрование чата и т.п.) в диалог не пересылаем.
+    if (isSystemMessage(message)) {
+      diag('skip system message:', message.type);
+      return;
+    }
+
     console.log('Message received:', message.body);
 
     try {
@@ -181,6 +187,11 @@ function setupClientEvents() {
 
       // Вложение (фото, голосовое, видео, стикер, файл) скачиваем сразу: позже WhatsApp
       // может его уже не отдать. Подпись к файлу приходит в message.body.
+      // Сообщение без текста и без вложения: пишем его тип, чтобы увидеть, что это было.
+      if (!message.hasMedia && !String(message.body || '').trim()) {
+        diag('message without text and media, type:', message.type);
+      }
+
       const { media, error: mediaError } = await fetchMedia(message);
       if (message.hasMedia) {
         diag('media:', message.type, media ? `downloaded ${media.buffer.length} bytes` : `not downloaded (${mediaError})`);

@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const http = require('node:http');
 const { Readable } = require('node:stream');
-const { fetchMedia, postMediaWebhook } = require('./media');
+const { fetchMedia, postMediaWebhook, isSystemMessage } = require('./media');
 
 function startServer(handler) {
   return new Promise((resolve) => {
@@ -93,4 +93,14 @@ test('postMediaWebhook: ответ Laravel не 2xx — ошибка', async () 
   } finally {
     server.close();
   }
+});
+
+test('isSystemMessage: служебные сообщения пропускаются, настоящие нет', () => {
+  for (const type of ['e2e_notification', 'notification_template', 'gp2', 'call_log', 'protocol']) {
+    assert.strictEqual(isSystemMessage({ type }), true, type);
+  }
+  for (const type of ['chat', 'image', 'video', 'ptt', 'audio', 'document', 'sticker', 'location', 'ciphertext', 'unknown']) {
+    assert.strictEqual(isSystemMessage({ type }), false, type);
+  }
+  assert.strictEqual(isSystemMessage(null), false);
 });
