@@ -81,8 +81,11 @@ class WhatsAppWebhookController extends Controller
                         : '[Сообщение без текста: фото, голосовое, стикер или файл. Откройте его в WhatsApp]';
                 }
 
-                // Ищем или создаём conversation
-                $conversation = Conversation::firstOrCreate(
+                // Ищем или создаём conversation. createOrFirst, а не firstOrCreate: когда новый
+                // собеседник присылает несколько сообщений сразу (например, несколько файлов),
+                // запросы идут параллельно, и второй падал на уникальном ключе
+                // (source, external_id) — сообщение терялось.
+                $conversation = Conversation::createOrFirst(
                     [
                         'source' => 'whatsapp',
                         'external_id' => $phoneNumber,
