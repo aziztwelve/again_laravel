@@ -2,12 +2,16 @@
 
 namespace Tests\Feature\Delivery;
 
+use App\Models\DeliveryServiceSetting;
 use App\Models\Order;
 use App\Models\YandexOrder;
 use App\Services\Delivery\YandexDeliveryService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -166,5 +170,31 @@ class YandexPartnerTrackingTest extends TestCase
 
         $this->assertSame('LO-MANUAL', $order->fresh()->tracking_number);
         $this->assertSame('LO-1077128001', $yandexOrder->fresh()->tracking_number);
+    }
+
+    public function test_backfill_sends_only_tracking_attribute_to_moysklad_and_does_not_queue_full_sync(): void
+    {
+        Queue::fake();
+        Cache::forget('moysklad:customerorder:attributes');
+        DeliveryServiceSetting::updateOrCreate(['service_name' => 'moysklad'], ['token' => 'ms-token', 'enabled' => true]);
+        $this->fakeYandex();
+        Http::fake([
+            'https://api.moysklad.ru/api/remap/1.2/entity/customerorder/metadata/attributes' => Http::response(['rows' => [
+                ['name' => 'Трек номер', 'meta' => ['href' => 'https://ms.test/attr/track', 'type' => 'attributemetadata']],
+            ]]),
+            'https://api.moysklad.ru/api/remap/1.2/entity/customerorder/uuid-pilot' => Http::response([]),
+        ]);
+        [$order, $yandexOrder] = $this->orderWithClaim('claim-1-udp');
+        $order->forceFill(['moysklad_order_uuid' => 'uuid-pilot'])->saveQuietly();
+
+        Artisan::call('yandex:backfill-partner-tracking', ['--order' => $order->order_number, '--write' => true, '--sleep' => 0]);
+
+        $this->assertSame('LO-1077128001', $order->fresh()->tracking_number);
+        Queue::assertNothingPushed();
+        Http::assertSent(function (Request $r) {
+            return $r->method() === 'PUT'
+                && str_ends_with($r->url(), '/entity/customerorder/uuid-pilot')
+                && $r->data() === ['attributes' => [['meta' => ['href' => 'https://ms.test/attr/track', 'type' => 'attributemetadata'], 'value' => 'LO-1077128001']]];
+        });
     }
 }

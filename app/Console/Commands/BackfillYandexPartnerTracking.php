@@ -6,6 +6,7 @@ use App\Models\Order;
 use App\Models\YandexApiLog;
 use App\Models\YandexOrder;
 use App\Services\Delivery\YandexDeliveryService;
+use App\Services\MoySklad\OrderService as MoySkladOrderService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -16,8 +17,9 @@ use Illuminate\Support\Facades\DB;
  *
  * ПО УМОЛЧАНИЮ НИЧЕГО НЕ ПИШЕТ (пробный прогон). Запись — только с --write.
  * Вписанный вручную трек не перезаписывается (правило YandexDeliveryService::applyOrderTracking).
- * Смена трека заказа сама ставит выгрузку в МойСклад (OrderObserver), поэтому запись идёт
- * партиями с паузой.
+ * В МойСклад уходит ТОЛЬКО поле «Трек номер» (OrderService::pushTrackingNumber): полная выгрузка
+ * заказа привела бы статус МойСклад к статусу сайта, поэтому события заказа при записи отключены.
+ * Запись идёт партиями с паузой.
  */
 class BackfillYandexPartnerTracking extends Command
 {
@@ -45,7 +47,8 @@ class BackfillYandexPartnerTracking extends Command
         }
 
         $rows = [];
-        $stats = ['total' => 0, 'will_change_order' => 0, 'will_set_yandex' => 0, 'manual_kept' => 0, 'already_ok' => 0, 'no_partner_id' => 0, 'written' => 0, 'errors' => 0];
+        $stats = ['total' => 0, 'will_change_order' => 0, 'will_set_yandex' => 0, 'manual_kept' => 0, 'already_ok' => 0, 'no_partner_id' => 0, 'written' => 0, 'moysklad' => 0, 'errors' => 0];
+        $moysklad = null;
         $written = 0;
 
         $this->info($write ? 'РЕЖИМ ЗАПИСИ' : 'ПРОБНЫЙ ПРОГОН: ничего не записывается');
@@ -94,14 +97,29 @@ class BackfillYandexPartnerTracking extends Command
             }
 
             try {
-                DB::transaction(function () use ($service, $order, $yandexOrder, $partner) {
-                    $yandexOrder->update(['tracking_number' => $partner]);
-                    $delivery = is_array($order->delivery_data) ? $order->delivery_data : [];
-                    if (($delivery['yandex_tracking_number'] ?? null) !== $partner) {
-                        $order->update(['delivery_data' => array_merge($delivery, ['yandex_tracking_number' => $partner])]);
-                    }
-                    $service->applyOrderTracking($order->fresh(), $partner, $yandexOrder->claim_id, $yandexOrder);
+                // Без событий: смена трека иначе поставит ПОЛНУЮ выгрузку заказа в МойСклад,
+                // а она приводит статус МойСклад к статусу сайта. В МойСклад пишем только поле «Трек номер».
+                Order::withoutEvents(function () use ($order, $yandexOrder, $partner, $orderChange) {
+                    DB::transaction(function () use ($order, $yandexOrder, $partner, $orderChange) {
+                        $yandexOrder->update(['tracking_number' => $partner]);
+                        $delivery = is_array($order->delivery_data) ? $order->delivery_data : [];
+                        $updates = [];
+                        if (($delivery['yandex_tracking_number'] ?? null) !== $partner) {
+                            $updates['delivery_data'] = array_merge($delivery, ['yandex_tracking_number' => $partner]);
+                        }
+                        if ($orderChange) {
+                            $updates['tracking_number'] = $partner;
+                        }
+                        if ($updates !== []) {
+                            $order->update($updates);
+                        }
+                    });
                 });
+                if ($orderChange && filled($order->moysklad_order_uuid)) {
+                    $moysklad ??= new MoySkladOrderService;
+                    $moysklad->pushTrackingNumber($order->fresh(), $partner);
+                    $stats['moysklad']++;
+                }
                 $stats['written']++;
                 $written++;
             } catch (\Throwable $e) {
@@ -126,7 +144,7 @@ class BackfillYandexPartnerTracking extends Command
         $this->line("  уже в нужном виде: {$stats['already_ok']}");
         $this->line("  номер партнёра не найден: {$stats['no_partner_id']}");
         if ($write) {
-            $this->line("  записано: {$stats['written']}, ошибок: {$stats['errors']}");
+            $this->line("  записано в базу сайта: {$stats['written']}, из них поле «Трек номер» обновлено в МойСклад: {$stats['moysklad']}, ошибок: {$stats['errors']}");
         }
 
         return self::SUCCESS;

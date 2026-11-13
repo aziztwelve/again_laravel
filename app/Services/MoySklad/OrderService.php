@@ -80,6 +80,37 @@ class OrderService
         return (int) config('payment.receipt_default_vat', 5);
     }
 
+    /**
+     * Обновить в МойСклад ТОЛЬКО поле «Трек номер» уже выгруженного заказа.
+     * В отличие от pushOrder() не трогает статус, позиции, адрес и остальные поля, поэтому
+     * подходит для массовых правок трека (pushOrder приводит статус МойСклад к статусу сайта).
+     */
+    public function pushTrackingNumber(Order $order, string $value): bool
+    {
+        if (empty($order->moysklad_order_uuid)) {
+            return false;
+        }
+
+        $meta = $this->resolveCustomAttributeMetas()['Трек номер'] ?? null;
+        if (! $meta) {
+            throw new Exception('МойСклад: в заказе покупателя нет поля «Трек номер»');
+        }
+
+        $response = Http::withHeaders([
+            'Authorization'   => 'Bearer ' . $this->token,
+            'Accept-Encoding' => 'gzip',
+            'Content-Type'    => 'application/json',
+        ])->put("{$this->baseURL}/entity/customerorder/{$order->moysklad_order_uuid}", [
+            'attributes' => [['meta' => $meta, 'value' => $value]],
+        ]);
+
+        if (! $response->successful()) {
+            throw new Exception('МойСклад: не удалось обновить «Трек номер». ' . ($response->json('errors.0.error') ?? $response->body()));
+        }
+
+        return true;
+    }
+
     public function pushOrder(Order $order): string
     {
         $order->loadMissing(['items.variant', 'items.product', 'address', 'client', 'deliveryMethod']);
