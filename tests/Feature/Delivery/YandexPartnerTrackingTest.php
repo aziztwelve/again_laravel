@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\Delivery;
 
+use App\Jobs\SyncYandexOrderJob;
+use App\Models\DeliveryMethod;
 use App\Models\DeliveryServiceSetting;
 use App\Models\Order;
 use App\Models\YandexOrder;
@@ -131,20 +133,45 @@ class YandexPartnerTrackingTest extends TestCase
         $this->assertSame('LO-555', $order->fresh()->tracking_number, 'номер партнёра не должен откатываться на ID заявки');
     }
 
-    public function test_new_request_gets_partner_id_right_after_creation(): void
+    public function test_delayed_sync_job_sets_partner_id_when_yandex_has_assigned_it(): void
     {
-        $this->fakeYandex(['request_id' => 'new-claim-udp', 'courier_order_id' => '1099000111'], ['request_id' => 'new-claim-udp']);
+        $this->fakeYandex();
+        [$order, $yandexOrder] = $this->orderWithClaim('claim-1-udp');
+
+        $job = (new SyncYandexOrderJob($yandexOrder->id))->withFakeQueueInteractions();
+        $job->handle(app(YandexDeliveryService::class));
+
+        $this->assertSame('LO-1077128001', $order->fresh()->tracking_number);
+        $job->assertNotReleased();
+    }
+
+    public function test_delayed_sync_job_retries_while_partner_id_is_not_assigned_yet(): void
+    {
+        $this->fakeYandex(['courier_order_id' => null]);
+        [$order, $yandexOrder] = $this->orderWithClaim(null);
+
+        $job = (new SyncYandexOrderJob($yandexOrder->id))->withFakeQueueInteractions();
+        $job->handle(app(YandexDeliveryService::class));
+
+        $job->assertReleased(delay: 90);
+    }
+
+    public function test_creating_request_schedules_delayed_partner_id_check_when_number_is_missing(): void
+    {
+        Queue::fake();
+        $this->fakeYandex(['request_id' => 'new-claim-udp', 'courier_order_id' => null], ['request_id' => 'new-claim-udp']);
+        $method = DeliveryMethod::create(['name' => 'ya-'.Str::uuid(), 'code' => 'yandex_pickup', 'is_active' => true]);
         $order = Order::factory()->create([
+            'payment_status' => 'paid',
+            'delivery_method_id' => $method->id,
             'tracking_number' => null,
             'delivery_data' => ['provider' => 'yandex', 'delivery_type' => 'pickup', 'offer_id' => 'offer-1'],
             'moysklad_order_uuid' => null,
         ]);
 
-        app(YandexDeliveryService::class)->confirmOfferForOrder($order, new YandexOrder);
+        (new \App\Jobs\CreateYandexOrderJob($order->id))->handle(app(YandexDeliveryService::class));
 
-        $this->assertSame('LO-1099000111', $order->fresh()->tracking_number, 'ID заявки не должен попадать в трек');
-        $this->assertSame('new-claim-udp', $order->fresh()->yandexOrder->claim_id);
-        $this->assertSame('https://dostavka.yandex.ru/route/x', $order->fresh()->yandexOrder->tracking_url);
+        Queue::assertPushed(SyncYandexOrderJob::class, fn ($job) => $job->yandexOrderId === $order->fresh()->yandexOrder->id && $job->delay !== null);
     }
 
     public function test_backfill_dry_run_writes_nothing_and_write_updates(): void

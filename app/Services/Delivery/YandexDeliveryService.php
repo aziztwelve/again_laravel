@@ -208,7 +208,7 @@ class YandexDeliveryService extends DeliveryService
         $offerId = $order->delivery_data['offer_id'] ?? null;
         if (! $offerId) return $this->createOrder($order, $yandexOrder);
         $result = $this->confirmOffer($offerId, $order->id);
-        if ($result['successful']) $this->saveRequest($order, $this->withPartnerData($order, $result['data']), $yandexOrder);
+        if ($result['successful']) $this->saveRequest($order, $result['data'], $yandexOrder);
         return $result;
     }
 
@@ -218,7 +218,7 @@ class YandexDeliveryService extends DeliveryService
         $yandexOrder ??= $order->yandexOrder;
         $payload = $this->payloadBuilder->order($order, $this->settings);
         $result = $this->client->request('POST', '/api/b2b/platform/request/create', $payload, $order->id, $yandexOrder?->claim_id, ['send_unix' => 'false']);
-        if ($result['successful']) $this->saveRequest($order, $this->withPartnerData($order, $result['data']), $yandexOrder);
+        if ($result['successful']) $this->saveRequest($order, $result['data'], $yandexOrder);
         return $result;
     }
 
@@ -232,30 +232,6 @@ class YandexDeliveryService extends DeliveryService
         $digits = trim((string) $courierOrderId);
 
         return preg_match('/^\d+$/', $digits) === 1 ? 'LO-'.$digits : null;
-    }
-
-    /**
-     * Ответ на создание заявки содержит только request_id. Сразу запрашиваем полные данные,
-     * чтобы трек заказа с первой записи был номером партнёра (LO-…), а не ID заявки.
-     * Сбой запроса не критичен: номер подставит обычный опрос статусов.
-     */
-    private function withPartnerData(Order $order, array $data): array
-    {
-        $requestId = $data['request_id'] ?? null;
-        if (! $requestId || filled($data['courier_order_id'] ?? null)) {
-            return $data;
-        }
-
-        try {
-            $info = $this->getRequestInfo($requestId, $order->id);
-            if ($info['successful'] && is_array($info['data'] ?? null)) {
-                return array_merge($data, $info['data']);
-            }
-        } catch (\Throwable $exception) {
-            Log::warning('Yandex partner id fetch after create failed', ['order_id' => $order->id, 'error' => $exception->getMessage()]);
-        }
-
-        return $data;
     }
 
     public function getRequestInfo(string $requestId, ?int $orderId = null): array

@@ -64,5 +64,10 @@ class CreateYandexOrderJob implements ShouldQueue
             throw new RuntimeException('Yandex request/create did not return request_id');
         }
         $service->sync($yandexOrder->refresh());
+
+        // Номер партнёра по доставке Яндекс присваивает не сразу (≈30 с): подтягиваем отложенно.
+        if (blank($yandexOrder->fresh()->tracking_number)) {
+            SyncYandexOrderJob::dispatch($yandexOrder->id)->delay(now()->addSeconds(60));
+        }
     }
 }
