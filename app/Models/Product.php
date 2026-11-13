@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Review\Review;
+use App\Support\RichText\DescriptionHtml;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -72,6 +73,15 @@ class Product extends Model implements HasMedia
         'display_order' => 'integer',
         'absorbency_level' => 'integer',
     ];
+
+    /**
+     * Описание всегда сохраняется в нормализованном виде (единый стиль на
+     * витрине и в редакторе), каким бы путём оно ни попало в базу.
+     */
+    public function setDescriptionAttribute(?string $value): void
+    {
+        $this->attributes['description'] = DescriptionHtml::normalize($value);
+    }
 
     protected static function boot()
     {
