@@ -1,9 +1,10 @@
 require('dotenv').config();
 const express = require('express');
-const { Client } = require('whatsapp-web.js');
+const { Client, MessageMedia } = require('whatsapp-web.js');
 const QRCode = require('qrcode');
 const axios = require('axios');
 const cors = require('cors');
+const { fetchMedia, postMediaWebhook } = require('./media');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -25,8 +26,8 @@ if (process.env.NODE_ENV === 'development') {
 }
 
 
-// Middleware
-app.use(express.json());
+// Middleware. Файл для отправки приходит из Laravel в base64 (до 50 МБ), поэтому лимит выше стандартного.
+app.use(express.json({ limit: '70mb' }));
 
 // Переменные состояния
 let qrCode = null;
@@ -178,6 +179,13 @@ function setupClientEvents() {
 
       const sender = await resolveSender(message);
 
+      // Вложение (фото, голосовое, видео, стикер, файл) скачиваем сразу: позже WhatsApp
+      // может его уже не отдать. Подпись к файлу приходит в message.body.
+      const { media, error: mediaError } = await fetchMedia(message);
+      if (message.hasMedia) {
+        diag('media:', message.type, media ? `downloaded ${media.buffer.length} bytes` : `not downloaded (${mediaError})`);
+      }
+
       // Отправляем webhook в Laravel
       const webhookData = {
         phone_number: phoneNumber,
@@ -191,19 +199,28 @@ function setupClientEvents() {
 
       console.log('Sending webhook to Laravel:', webhookData);
 
-      const response = await axios.post(
-        `${process.env.LARAVEL_API_URL || 'http://localhost:8000'}/api/public/whatsapp/webhook`,
-        webhookData,
-        {
+      const webhookUrl = `${process.env.LARAVEL_API_URL || 'http://localhost:8000'}/api/public/whatsapp/webhook`;
+
+      if (media) {
+        const body = await postMediaWebhook(webhookUrl, webhookData, media, message.type);
+        console.log('Laravel webhook response:', body);
+      } else {
+        // Вложение было, но скачать его не удалось: Laravel покажет оператору пометку.
+        if (message.hasMedia) {
+          webhookData.media_type = message.type;
+          webhookData.media_error = mediaError || 'download_failed';
+        }
+
+        const response = await axios.post(webhookUrl, webhookData, {
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
           },
           timeout: 10000,
-        },
-      );
+        });
 
-      console.log('Laravel webhook response:', response.data);
+        console.log('Laravel webhook response:', response.data);
+      }
 
     } catch (error) {
       console.error('Error processing message:', error.message);
@@ -403,6 +420,59 @@ app.post('/send-message', async (req, res) => {
 
   } catch (error) {
     console.error('Error sending message:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Отправить файл (фото, видео, аудио или документ). Файл приходит в base64 из Laravel.
+app.post('/send-media', async (req, res) => {
+  try {
+    const { phone_number, data, mimetype, filename, caption, as_document } = req.body;
+
+    if (!phone_number || !data || !mimetype) {
+      return res.status(400).json({
+        success: false,
+        error: 'phone_number, data и mimetype обязательны',
+      });
+    }
+
+    if (!isReady) {
+      return res.status(400).json({
+        success: false,
+        error: 'WhatsApp не подключен',
+      });
+    }
+
+    // Содержимое файла и подпись в журнал не пишем (персональные данные)
+    console.log(`Sending media to ${phone_number}: ${mimetype}, ${Math.round(String(data).length * 0.75)} bytes`);
+
+    const chat = await client.getChatById(phone_number);
+    if (!chat) {
+      return res.status(400).json({
+        success: false,
+        error: `Chat not found for phone: ${phone_number}`,
+      });
+    }
+
+    const media = new MessageMedia(mimetype, data, filename || undefined);
+    await chat.sendMessage(media, {
+      caption: caption || undefined,
+      sendMediaAsDocument: Boolean(as_document),
+    });
+
+    console.log(`Media sent successfully to ${phone_number}`);
+
+    return res.json({
+      success: true,
+      message: 'Media sent successfully',
+      phone_number: phone_number,
+    });
+
+  } catch (error) {
+    console.error('Error sending media:', error);
     return res.status(500).json({
       success: false,
       error: error.message,

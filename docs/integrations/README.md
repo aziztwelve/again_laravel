@@ -14,7 +14,8 @@
 | yandex-pay.md | Яндекс Пэй | планируется |
 | [cloudpayments.md](cloudpayments.md) | CloudPayments | готово |
 | robokassa.md | Robokassa | планируется |
-| messengers.md | Telegram, MAX, VK, WhatsApp | планируется |
+| [whatsapp.md](whatsapp.md) | WhatsApp (сообщения, фото, голосовые, видео) | готово |
+| messengers.md | Telegram, MAX, VK | планируется |
 | yandex-maps.md | Яндекс.Карты (ключ JS API, геокодер) | планируется |
 
 Состояние боевых и тестовых режимов, список недостающих данных и порядок подключения

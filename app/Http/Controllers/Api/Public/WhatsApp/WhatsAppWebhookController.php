@@ -7,6 +7,7 @@ use App\Models\Conversation;
 use App\Models\Client;
 use App\Models\UserProfile;
 use App\Services\Messaging\ConversationService;
+use App\Services\WhatsApp\WhatsAppMediaStore;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -15,9 +16,12 @@ class WhatsAppWebhookController extends Controller
 {
     protected ConversationService $conversationService;
 
-    public function __construct(ConversationService $conversationService)
+    protected WhatsAppMediaStore $mediaStore;
+
+    public function __construct(ConversationService $conversationService, WhatsAppMediaStore $mediaStore)
     {
         $this->conversationService = $conversationService;
+        $this->mediaStore = $mediaStore;
     }
 
     /**
@@ -40,16 +44,41 @@ class WhatsAppWebhookController extends Controller
                 // человек его скрыл).
                 'sender_phone' => 'nullable|string|max:32',
                 'sender_name' => 'nullable|string|max:255',
+                // Вложение (фото, голосовое, видео, стикер, файл): сервис WhatsApp присылает его
+                // файлом в этом же запросе. media_type — тип сообщения WhatsApp (image, ptt, …);
+                // media_error — вложение было, но скачать его не удалось.
+                'media' => 'nullable|file|max:51200',
+                'media_type' => 'nullable|string|max:32',
+                'media_error' => 'nullable|string|max:120',
             ]);
 
-            Log::info("WhatsAppWebhookController: Webhook received", ['data' => $data]);
+            Log::info("WhatsAppWebhookController: Webhook received", [
+                'data' => \Illuminate\Support\Arr::except($data, ['media']),
+                'has_media' => $request->hasFile('media'),
+            ]);
 
-            return DB::transaction(function () use ($data) {
+            return DB::transaction(function () use ($data, $request) {
                 // external_id = phone_number
                 $phoneNumber = $data['phone_number'];
                 $messageText = trim((string) ($data['message_text'] ?? ''));
-                if ($messageText === '') {
-                    $messageText = '[Сообщение без текста: фото, голосовое, стикер или файл. Откройте его в WhatsApp]';
+
+                // Вложение сохраняем до создания сообщения; при сбое записи сообщение всё равно
+                // придёт, но с пометкой, а не потеряется.
+                $attachments = [];
+                $mediaFailed = ! empty($data['media_error']);
+                if ($request->hasFile('media')) {
+                    try {
+                        $attachments[] = $this->mediaStore->store($request->file('media'), $data['media_type'] ?? null);
+                    } catch (\Throwable $e) {
+                        Log::error('WhatsAppWebhookController: failed to store media', ['error' => $e->getMessage()]);
+                        $mediaFailed = true;
+                    }
+                }
+
+                if ($messageText === '' && $attachments === []) {
+                    $messageText = $mediaFailed
+                        ? '[Не удалось получить вложение из WhatsApp. Откройте его в WhatsApp]'
+                        : '[Сообщение без текста: фото, голосовое, стикер или файл. Откройте его в WhatsApp]';
                 }
 
                 // Ищем или создаём conversation
@@ -69,6 +98,7 @@ class WhatsAppWebhookController extends Controller
                 $messageData = [
                     'direction' => 'incoming',
                     'content' => $messageText,
+                    'attachments' => $attachments,
                     'content_type' => 'text',
                     'status' => 'delivered',
                     'source_data' => [
