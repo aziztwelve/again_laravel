@@ -176,19 +176,46 @@ cd /var/www/html/laravel && php artisan db:seed --class=MarketingChannelSeeder -
 ```
   (`MarketingChannelSeeder` использует `updateOrCreate` по `code` — безопасен.)
 
-### 5. Витрина (nuxt-shop) — пересобирать всегда
-`nuxt-shop` использует npm и `package-lock.json`. Для деплоя использовать
-`npm ci`, а не `npm install`: так зависимости ставятся строго по lockfile и
-`package-lock.json` не меняется на сервере.
+### 5. Витрина (nuxt-shop) — пересобирать всегда, БЕЗ простоя
+
+**Выкладывать ТОЛЬКО скриптом** (он уже входит в этот репозиторий, на сервере лежит в
+`/var/www/html/laravel/scripts/deploy/`), не командой `npm run build` прямо в
+`/var/www/html/nuxt-shop`:
+```bash
+ssh -o BatchMode=yes -o ConnectTimeout=900 root@186.246.14.59 \
+  'bash /var/www/html/laravel/scripts/deploy/nuxt-shop-zero-downtime.sh'
+```
+(сначала `git pull --ff-only` в `/var/www/html/laravel`, чтобы скрипт был свежим; сборка
+идёт несколько минут — запускать в фоне/с `nohup` и ждать строку `ГОТОВО`.)
+
+Зачем так, а не сборкой на месте:
+- **Нет простоя.** Сборка идёт в отдельной копии `/var/www/html/nuxt-shop-build`, сайт всё
+  это время работает на старой версии; затем подменяется `.output` и `pm2 reload`
+  перезагружает два процесса по очереди. Сборка на месте стирает файлы, которые
+  работающий сайт ещё отдаёт, и затрудняет MySQL по памяти (в ноябре 2026 он дважды
+  падал по OOM при сборках).
+- **Файлы прошлых версий сохраняются 7 дней** (`KEEP_DAYS`, архив
+  `/var/www/html/nuxt-shop-chunks`). Имена файлов `public/_nuxt/*` содержат хеш и
+  меняются с каждой сборкой. Вкладка, открытая до выкладки, запрашивает старые имена;
+  если их нет, сайт показывает «Страницы не существует» (случилось 13.11.2026).
+  Скрипт дописывает в новую сборку файлы прошлых версий моложе 7 дней и **останавливается
+  до замены**, если хоть один файл прошлой версии потерялся. **Не удалять
+  `/var/www/html/nuxt-shop-chunks` и не чистить `.output/public/_nuxt` вручную.**
+- Скрипт сам: делает `git pull --ff-only`, проверяет чистоту дерева, чистит кэш nginx
+  `/var/cache/nginx/nuxt/*`, проверяет, что главная и `/catalog` ссылаются только на
+  существующие файлы, удаляет временные папки.
+
+Если изменился `package-lock.json`, скрипт остановится с сообщением: тогда один раз
+выполнить `npm ci` (ниже), затем запустить скрипт снова. `npm ci`, а не `npm install`:
+зависимости ставятся строго по lockfile и `package-lock.json` не меняется на сервере.
 ```bash
 ssh -o BatchMode=yes -o ConnectTimeout=900 root@186.246.14.59 '
 set -euo pipefail
 cd /var/www/html/nuxt-shop
 npm ci --no-audit --no-fund 2>&1 | tail -8
-NODE_OPTIONS=--max-old-space-size=2048 npm run build 2>&1 | tail -6
-pm2 restart nuxt-shop --update-env
 '
 ```
+Откат: `git revert` нужного коммита в `again_front`, push, затем снова скрипт.
 
 ### 6. Дашборд (vue-admin) — пересобирать всегда
 `vue-admin` использует Yarn 1 (`packageManager` в `package.json` и `yarn.lock`).
