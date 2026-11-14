@@ -442,22 +442,53 @@ class OrderUpdateService
             return;
         }
 
+        // Позиции, которые уже были в заказе: их цену не пересчитываем (менеджер мог задать её
+        // вручную, а в старых заказах скидка уже могла закончиться).
+        $previous = $order->items()->get()->keyBy(
+            fn ($existing) => ($existing->product_id ?? 0).'|'.($existing->product_variant_id ?? 0)
+        );
+
         $order->items()->delete();
 
+        $newItemsDiscount = 0.0;
+
         foreach ($valid as $item) {
+            $variantId = $item['product_variant_id'] ?? $item['variant_id'] ?? null;
+            $price = $item['price'];
+            $discount = 0.0;
+
+            $existing = $previous->get(($item['product_id'] ?? 0).'|'.($variantId ?? 0));
+            if ($existing) {
+                // Прежняя позиция: скидку не теряем, пока цена не менялась.
+                if (abs((float) $existing->price - (float) $price) < 0.01) {
+                    $discount = (float) $existing->discount;
+                }
+            } elseif (! empty($item['product_id'])) {
+                // Новая позиция: админка присылает полную цену товара, автоскидку товара (как при
+                // оформлении на сайте) применяем здесь, иначе заказ выходит дороже, чем показывает карточка.
+                [$price, $discount] = $this->autoDiscountForNewItem($order, (int) $item['product_id'], $variantId, $price);
+                $newItemsDiscount += $discount * (int) $item['quantity'];
+            }
+
             $order->items()->create([
                 'product_id' => $item['product_id'] ?? null,
                 // В таблице order_items есть только product_variant_id.
                 // Принимаем оба ключа от фронта на случай legacy-кода.
-                'product_variant_id' => $item['product_variant_id']
-                    ?? $item['variant_id']
-                    ?? null,
+                'product_variant_id' => $variantId,
                 'color_id' => $item['color_id'] ?? null,
                 'legacy_sku' => $item['legacy_sku'] ?? null,
                 'legacy_name' => $item['legacy_name'] ?? null,
                 'quantity' => $item['quantity'],
-                'price' => $item['price'],
+                'price' => $price,
+                'discount' => $discount,
             ]);
+        }
+
+        if ($newItemsDiscount > 0) {
+            // Скидка новых позиций входит в сводные поля заказа (как при создании заказа на сайте).
+            $order->total_items_discount = round((float) $order->total_items_discount + $newItemsDiscount, 2);
+            $order->discount_amount = round((float) $order->discount_amount + $newItemsDiscount, 2);
+            $order->save();
         }
 
         $itemsTotal = $order->items()->where('is_gift', false)->sum(DB::raw('quantity * price'));
@@ -465,6 +496,54 @@ class OrderUpdateService
         $giftCard   = (float) ($order->gift_card_amount ?? 0);
         $total = max(0, $itemsTotal + $delivery - $giftCard);
         $order->update(['total_amount' => $total]);
+    }
+
+    /**
+     * Цена и скидка новой позиции заказа с учётом автоскидки товара.
+     *
+     * Менеджерская цена не трогается: пересчёт идёт, только если админка прислала полную цену товара
+     * (тогда ставим цену со скидкой) либо уже цену со скидкой (тогда только фиксируем размер скидки).
+     *
+     * @return array{0: float|int|string, 1: float} [цена позиции, скидка на единицу]
+     */
+    private function autoDiscountForNewItem(Order $order, int $productId, $variantId, $submittedPrice): array
+    {
+        try {
+            $model = $variantId
+                ? \App\Models\ProductVariant::find($variantId)
+                : \App\Models\Product::find($productId);
+            if (! $model) {
+                return [$submittedPrice, 0.0];
+            }
+
+            $base = (float) $model->price;
+            $customerType = $order->client_id
+                ? \App\Models\Discount::CUSTOMER_TYPE_AUTHORIZED
+                : \App\Models\Discount::CUSTOMER_TYPE_GUEST;
+            // Мутирует модель: price становится ценой после автоскидки, total_discount — размером скидки.
+            $this->orderValidationService->applyDiscountToProduct($model, $customerType);
+
+            $perUnit = (float) ($model->total_discount ?? 0);
+            if ($perUnit < 0.01) {
+                return [$submittedPrice, 0.0];
+            }
+
+            $submitted = (float) $submittedPrice;
+            if (abs($submitted - $base) < 0.01) {
+                return [round((float) $model->price, 2), round($perUnit, 2)];
+            }
+            if (abs($submitted - (float) $model->price) < 0.01) {
+                return [$submittedPrice, round($perUnit, 2)];
+            }
+        } catch (\Throwable $exception) {
+            Log::warning('OrderUpdate: auto discount for a new item failed, price kept as submitted', [
+                'order_id' => $order->id,
+                'product_id' => $productId,
+                'error' => $exception->getMessage(),
+            ]);
+        }
+
+        return [$submittedPrice, 0.0];
     }
 
     /**
