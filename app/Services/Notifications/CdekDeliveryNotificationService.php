@@ -12,6 +12,9 @@ class CdekDeliveryNotificationService
     private const CUSTOMER_STATUSES = [
         'ACCEPTED' => 'handed_over',
         'RECEIVED_AT_SHIPMENT_WAREHOUSE' => 'handed_over',
+        // Посылку принял склад отправителя СДЭК (курьерский забор): настоящий момент «заказ отправлен».
+        // Код ACCEPTED выше в реальных заказах не встречается; запись одна на заказ (см. dispatcher).
+        'READY_FOR_SHIPMENT_IN_SENDER_CITY' => 'handed_over',
         'IN_TRANSIT' => 'courier_in_transit',
         'READY_FOR_PICKUP' => 'ready_for_pickup',
         'ACCEPTED_AT_PICKUP_POINT' => 'ready_for_pickup',
@@ -45,7 +48,7 @@ class CdekDeliveryNotificationService
         foreach ($this->channelResolver->resolve($order->client, $order->email) as $recipient) {
             $data = ['type' => $eventKey, 'order_id' => $order->id, 'cdek_order_id' => $cdekOrder->id, 'status_code' => $statusCode, 'customer_status' => $customerStatus, 'tracking_url' => $cdekOrder->tracking_url, 'subject' => $content['subject'], 'mirror_conversation' => ['source' => $recipient['source'], 'external_id' => $recipient['recipient_id'], 'client_id' => $order->client_id]];
             if ($recipient['channel'] === 'email') $data['html'] = $content['html'];
-            $this->dispatcher->dispatch($eventKey, 'cdek_order', $cdekOrder->id, $recipient, $content['message'], $data);
+            $this->dispatcher->dispatch($eventKey, 'cdek_order', $cdekOrder->id, $recipient, OrderMessageText::forChannel($recipient['channel'], $content['message']), $data);
         }
 
         Log::info('CDEK delivery customer notifications queued', ['order_id' => $order->id, 'cdek_order_id' => $cdekOrder->id, 'status_code' => $statusCode]);

@@ -10,7 +10,7 @@ class YandexDeliveryMessageBuilder
 {
     private const TITLES = [
         'delivery_created' => 'Доставка оформлена',
-        'handed_over' => 'Заказ передан в доставку',
+        'handed_over' => 'Заказ отправлен',
         'in_transit' => 'Заказ в пути',
         'ready_for_pickup' => 'Заказ можно получить',
         'courier_today' => 'Курьер доставит заказ сегодня',
@@ -27,6 +27,10 @@ class YandexDeliveryMessageBuilder
         $order = $yandexOrder->order;
         $delivery = $order->delivery_data ?? [];
         $orderNumber = $order->order_number ?? $order->id;
+        if ($customerStatus === 'handed_over') {
+            return $this->shipped($yandexOrder, $order, $delivery);
+        }
+
         $title = self::TITLES[$customerStatus] ?? 'Статус доставки изменился';
 
         $lines = ["{$title} — заказ №{$orderNumber}"];
@@ -75,6 +79,23 @@ class YandexDeliveryMessageBuilder
             'html' => $this->html($lines, $yandexOrder->tracking_url),
             'subject' => $title.' — заказ №'.$orderNumber,
         ];
+    }
+
+    /** «Заказ отправлен»: номер партнёра и ссылка Яндекса, куда приедет и ожидаемая дата. */
+    private function shipped(YandexOrder $yandexOrder, $order, array $delivery): array
+    {
+        $pickup = $yandexOrder->delivery_type === 'pickup';
+
+        return app(ShippedOrderMessage::class)->build($order, [
+            'carrier' => 'Яндекс Доставка',
+            // Внутренний код заявки (claim_id) покупателю не показываем: нужен только номер для отслеживания.
+            'number' => $yandexOrder->tracking_number,
+            'url' => $yandexOrder->tracking_url,
+            'pickup' => $pickup,
+            'address' => OrderMessageText::address($order, $pickup),
+            'expected_label' => 'Ожидаемая доставка',
+            'expected' => $this->deliveryInterval($delivery),
+        ]);
     }
 
     private function description(string $status, string $deliveryType): ?string

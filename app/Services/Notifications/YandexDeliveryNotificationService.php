@@ -55,7 +55,7 @@ class YandexDeliveryNotificationService
                 'yandex_order',
                 $yandexOrder->id,
                 $recipient,
-                $content['message'],
+                OrderMessageText::forChannel($recipient['channel'], $content['message']),
                 $data,
             );
         }

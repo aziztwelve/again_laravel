@@ -45,6 +45,44 @@ class OrderMessageBuilder
         return implode("\n", $lines);
     }
 
+    /**
+     * Письмо «Оплата получена»: сумма, куда и как доставим, что будет дальше и ссылка на заказ.
+     *
+     * @return array{message:string, html:string, subject:string}
+     */
+    public function buildOrderPaid(Order $order): array
+    {
+        $order->loadMissing(['address', 'client.profile', 'deliveryMethod']);
+        $orderNumber = $order->order_number ?? $order->id;
+
+        $blocks = [[
+            OrderMessageText::greeting($order),
+            "Мы получили оплату заказа №{$orderNumber} на сумму ".OrderMessageText::money((float) $order->total_amount).'. Спасибо!',
+        ]];
+
+        $method = $this->deliveryMethodLine($order);
+        if ($method) {
+            $pickup = OrderMessageText::isPickup($order);
+            $address = OrderMessageText::address($order, $pickup);
+            $blocks[] = array_values(array_filter([
+                'Доставка: '.$method,
+                $address ? ($pickup ? 'Пункт выдачи: ' : 'Адрес доставки: ').$address : null,
+            ]));
+        }
+
+        $blocks[] = ['Что дальше: передадим заказ в доставку и пришлём номер для отслеживания.'];
+
+        if (filled($order->view_token)) {
+            $blocks[] = [['label' => 'Открыть заказ', 'url' => PublicUrl::to('/orders/'.$order->view_token)]];
+        }
+
+        return [
+            'message' => OrderMessageText::plain($blocks),
+            'html' => OrderMessageText::html($blocks),
+            'subject' => "Оплата получена — заказ №{$orderNumber}",
+        ];
+    }
+
     protected function customerLine(Order $order): string
     {
         $profile = $order->client?->profile;

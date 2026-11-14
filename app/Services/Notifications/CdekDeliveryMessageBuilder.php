@@ -8,7 +8,7 @@ use App\Support\PublicUrl;
 class CdekDeliveryMessageBuilder
 {
     private const TITLES = [
-        'handed_over' => 'Заказ передан в доставку',
+        'handed_over' => 'Заказ отправлен',
         'courier_in_transit' => 'Заказ в пути к вам',
         'ready_for_pickup' => 'Заказ можно получить',
         'delivered' => 'Заказ доставлен',
@@ -22,6 +22,10 @@ class CdekDeliveryMessageBuilder
         $cdekOrder->loadMissing('order');
         $order = $cdekOrder->order;
         $orderNumber = $order->order_number ?? $order->id;
+        if ($statusCode === 'handed_over') {
+            return $this->shipped($cdekOrder, $order);
+        }
+
         $title = self::TITLES[$statusCode] ?? 'Статус доставки изменился';
         $lines = ["{$title} - заказ №{$orderNumber}"];
 
@@ -47,5 +51,22 @@ class CdekDeliveryMessageBuilder
             : '<p>'.e($line).'</p>', $lines));
 
         return ['message' => $message, 'html' => '<div style="font-family:Arial,sans-serif;color:#292725;line-height:1.5">'.$html.'</div>', 'subject' => $title.' - заказ №'.$orderNumber];
+    }
+
+    /** «Заказ отправлен»: номер и ссылка СДЭК, куда приедет и срок. */
+    private function shipped(CdekOrder $cdekOrder, $order): array
+    {
+        $pickup = in_array($cdekOrder->delivery_type, ['pickup', 'postamat'], true);
+
+        return app(ShippedOrderMessage::class)->build($order, [
+            'carrier' => 'СДЭК',
+            'number' => $cdekOrder->cdek_number,
+            'url' => $cdekOrder->tracking_url,
+            'pickup' => $pickup,
+            'pickup_noun' => $cdekOrder->delivery_type === 'postamat' ? 'постамат' : 'пункт выдачи',
+            'address' => OrderMessageText::address($order, $pickup),
+            'expected_label' => 'Ориентировочный срок',
+            'expected' => OrderMessageText::period(data_get($order->delivery_data, 'period')),
+        ]);
     }
 }
