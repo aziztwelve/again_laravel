@@ -149,6 +149,23 @@ class Order extends Model
         return $this->hasOne(CdekOrder::class);
     }
 
+    /**
+     * Трек-номер, который видит покупатель (личный кабинет, страница заказа): вписанный в заказ,
+     * а если его нет, номер заявки СДЭК. Номер СДЭК лежит только в cdek_orders, поэтому раньше у всех
+     * заказов СДЭК покупатель видел «Пока не присвоен». В orders.tracking_number его не пишем: смена
+     * этого поля запускает полную выгрузку заказа в МойСклад.
+     */
+    public function customerTrackingNumber(): ?string
+    {
+        if (filled($this->tracking_number)) {
+            return (string) $this->tracking_number;
+        }
+
+        $cdekNumber = $this->cdekOrder?->cdek_number;
+
+        return filled($cdekNumber) ? (string) $cdekNumber : null;
+    }
+
     public function deliveryTarget()
     {
         return $this->belongsTo(DeliveryTarget::class, 'delivery_target_id');

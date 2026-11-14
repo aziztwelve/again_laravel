@@ -193,7 +193,7 @@ class PublicOrderController extends Controller
                 'email' => $order->client?->email ?? $order->email,
             ],
             'items' => $items,
-            'tracking_number' => $order->tracking_number,
+            'tracking_number' => $order->customerTrackingNumber(),
             'delivery_tracking' => $order->yandexOrder ? [
                 'status' => $order->yandexOrder->internal_status,
                 'status_raw' => $order->yandexOrder->status,

@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Http\Resources\OrderHistoryResource;
+use App\Models\CdekOrder;
 use App\Models\Image;
 use App\Models\Order;
 use App\Models\OrderAddress;
@@ -74,5 +75,37 @@ class OrderHistoryResourceTest extends TestCase
         $data = (new OrderHistoryResource($order))->resolve(Request::create('/'));
         $this->assertSame('Москва, ул. Ленина, 21, кв. 2', $data['delivery_address']);
         $this->assertNull($data['delivery_cost']);
+    }
+
+    public function test_cdek_number_and_link_are_shown_when_the_order_has_no_tracking_of_its_own(): void
+    {
+        $order = $this->order();
+        $order->setRelation('cdekOrder', new CdekOrder([
+            'cdek_number' => '10347281436',
+            'tracking_url' => 'https://www.cdek.ru/ru/tracking?order_id=10347281436',
+        ]));
+
+        $data = (new OrderHistoryResource($order))->resolve(Request::create('/'));
+
+        $this->assertSame('10347281436', $data['tracking_number']);
+        $this->assertSame('https://www.cdek.ru/ru/tracking?order_id=10347281436', $data['tracking_url']);
+    }
+
+    public function test_tracking_entered_in_the_order_wins_over_cdek_number(): void
+    {
+        $order = $this->order();
+        $order->tracking_number = 'LO-1077128001';
+        $order->setRelation('cdekOrder', new CdekOrder(['cdek_number' => '10347281436']));
+
+        $data = (new OrderHistoryResource($order))->resolve(Request::create('/'));
+
+        $this->assertSame('LO-1077128001', $data['tracking_number']);
+    }
+
+    public function test_tracking_number_is_null_when_nothing_is_assigned_yet(): void
+    {
+        $data = (new OrderHistoryResource($this->order()))->resolve(Request::create('/'));
+
+        $this->assertNull($data['tracking_number']);
     }
 }

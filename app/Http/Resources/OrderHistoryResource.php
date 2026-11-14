@@ -122,7 +122,7 @@ class OrderHistoryResource extends JsonResource
             'delivery_address' => $addressText ?: null,
             'delivery_method' => $this->deliveryMethod?->name ?? $this->legacy_delivery_method,
             'delivery_target' => $this->deliveryTarget?->name,
-            'tracking_number' => $this->tracking_number,
+            'tracking_number' => $this->customerTrackingNumber(),
             'tracking_url' => $this->yandexOrder?->tracking_url ?? $this->cdekOrder?->tracking_url,
         ];
     }
