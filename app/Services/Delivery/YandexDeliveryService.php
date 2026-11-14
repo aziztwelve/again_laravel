@@ -446,7 +446,10 @@ class YandexDeliveryService extends DeliveryService
         }
         if ($customerStatus !== null && $previousCustomerStatus !== $customerStatus) {
             try {
-                if ($customerStatus !== 'delivery_created') {
+                // Защита: уведомляем только о свежих сменах статуса (см. config/delivery_notifications.php),
+                // иначе при первом опросе все старые заказы получили бы запоздалые сообщения.
+                $statusAt = $state['timestamp_unix'] ?? ($state['timestamp'] ?? null);
+                if ($customerStatus !== 'delivery_created' && \App\Services\Notifications\DeliveryNotificationGuard::allows($statusAt)) {
                     $this->notificationService->notify($yandexOrder->fresh('order'));
                 }
             } catch (\Throwable $exception) {

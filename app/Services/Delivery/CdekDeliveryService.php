@@ -567,7 +567,8 @@ class CdekDeliveryService extends DeliveryService
         }
 
         $this->syncConfiguredOrderStatus($cdekOrder->fresh('order'), $statusCode);
-        if ($previousStatus !== $statusCode) {
+        // Защита: только свежие смены статуса (config/delivery_notifications.php), чтобы не слать запоздалые сообщения.
+        if ($previousStatus !== $statusCode && \App\Services\Notifications\DeliveryNotificationGuard::allows($latest['date_time'] ?? null)) {
             try {
                 $this->notificationService->notify($cdekOrder->fresh('order'), $statusCode);
             } catch (\Throwable $exception) {

@@ -15,6 +15,8 @@ class CdekDeliveryNotificationService
         'IN_TRANSIT' => 'courier_in_transit',
         'READY_FOR_PICKUP' => 'ready_for_pickup',
         'ACCEPTED_AT_PICKUP_POINT' => 'ready_for_pickup',
+        // Настоящий код СДЭК пишется с подчёркиванием: без него «Заказ можно получить» не уходило никогда.
+        'ACCEPTED_AT_PICK_UP_POINT' => 'ready_for_pickup',
         'DELIVERED' => 'delivered',
         'NOT_DELIVERED' => 'delivery_problem',
         'RETURNED_TO_SENDER' => 'returning',
