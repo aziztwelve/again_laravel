@@ -48,7 +48,8 @@ class PromoCodeController extends Controller
         }
 
         // Необязательная сортировка (по умолчанию порядок не меняется).
-        if (in_array($request->get('sort_by'), ['id', 'created_at'], true)) {
+        // code — название промокода (сортировка в списке админки по названию).
+        if (in_array($request->get('sort_by'), ['id', 'created_at', 'code'], true)) {
             $query->orderBy(
                 $request->get('sort_by'),
                 $request->get('sort_order') === 'desc' ? 'desc' : 'asc'
