@@ -203,6 +203,19 @@ class PublicCheckoutController extends Controller
                 }
             }
 
+            // Курьер СДЭК обязан прийти с городом и тарифом СДЭК. Раньше такой заказ принимался
+            // без них (заказ 41378), и модуль СДЭК потом отвечал «не выбран тариф».
+            if (($validated['delivery_data']['provider'] ?? null) !== 'cdek'
+                && DeliveryMethod::query()
+                    ->where('name', $validated['delivery_method']['name'] ?? '')
+                    ->where('code', 'cdek_courier')
+                    ->exists()
+            ) {
+                DB::rollBack();
+
+                return $this->errorResponse('Выберите тариф курьерской доставки СДЭК: укажите город и адрес и выберите вариант доставки.', 422);
+            }
+
             if (($validated['delivery_data']['provider'] ?? null) === 'cdek') {
                 $deliveryMethod = DeliveryMethod::query()
                     ->where('name', $validated['delivery_method']['name'] ?? '')

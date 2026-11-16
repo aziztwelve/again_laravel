@@ -246,6 +246,24 @@ class OrderController extends Controller
                     ->completeDelivery($validated['delivery_data'], $itemsValidation['validated_items']);
             }
 
+            // Курьер СДЭК из админки приходит без данных доставки: город и тариф берём из адреса заказа,
+            // иначе модуль СДЭК не получит ни города, ни тарифа (как у заказа 41348).
+            if (($validated['delivery_data']['provider'] ?? null) !== 'cdek'
+                && \App\Models\DeliveryMethod::query()
+                    ->where('name', $validated['delivery_method']['name'] ?? '')
+                    ->where('code', 'cdek_courier')
+                    ->exists()
+            ) {
+                $courier = app(\App\Services\Delivery\CdekDeliveryService::class)->completeCourierFromAddress(
+                    is_array($validated['delivery_data'] ?? null) ? $validated['delivery_data'] : [],
+                    $validated['delivery_address'] ?? [],
+                    $itemsValidation['validated_items']
+                );
+                if (($courier['provider'] ?? null) === 'cdek') {
+                    $validated['delivery_data'] = $courier;
+                }
+            }
+
             // Для Яндекс.Доставки без цены (пункт выбран на карте) цену тоже считаем на сервере.
             $yandexDelivery = app(\App\Services\Delivery\YandexDeliveryService::class)
                 ->completeDelivery($validated, $itemsValidation['validated_items']);

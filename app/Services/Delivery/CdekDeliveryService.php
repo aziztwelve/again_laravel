@@ -350,6 +350,108 @@ class CdekDeliveryService extends DeliveryService
     }
 
     /**
+     * Код города СДЭК по названию города из адреса заказа.
+     *
+     * В адресе город хранится как «Москва, Россия», «Астана» или «г Рязань, Рязанская обл.».
+     * Точное совпадение с подписью из справочника СДЭК берём всегда; для названия без
+     * региона — первый результат СДЭК; неоднозначное совпадение не угадываем (null).
+     */
+    public function resolveCityCode(?string $city, ?string $country = null): ?int
+    {
+        $city = trim((string) $city);
+        $countryCode = $this->countryCodeFor($country);
+        if ($city === '' || ! $countryCode) {
+            return null;
+        }
+
+        $name = trim(explode(',', $city)[0]);
+        $name = trim(preg_replace('/^(г|гор|п|пгт|пос|с|д|рп|ст-ца)\.?\s+/iu', '', $name));
+        if ($name === '') {
+            return null;
+        }
+
+        try {
+            $found = $this->cities($name, $countryCode);
+        } catch (\Throwable $exception) {
+            Log::warning('CDEK: city lookup failed', ['city' => $city, 'error' => $exception->getMessage()]);
+
+            return null;
+        }
+
+        $label = fn (array $item): string => mb_strtolower(trim(implode(', ', array_slice(
+            array_map('trim', explode(',', (string) ($item['full_name'] ?? ''))),
+            0,
+            -1
+        ))));
+        $wanted = mb_strtolower($city);
+
+        // Витрина хранит город с конечной страной («Москва, Россия»), админка — без неё.
+        foreach ($found as $item) {
+            $full = mb_strtolower(trim((string) ($item['full_name'] ?? '')));
+            if (($label($item) === $wanted || $full === $wanted) && (int) ($item['code'] ?? 0) > 0) {
+                return (int) $item['code'];
+            }
+        }
+
+        if (! str_contains($city, ',')) {
+            $same = array_values(array_filter($found, fn (array $item) => (int) ($item['code'] ?? 0) > 0
+                && mb_strtolower(trim(explode(',', (string) ($item['full_name'] ?? ''))[0])) === mb_strtolower($name)));
+            if ($same !== []) {
+                return (int) $same[0]['code'];
+            }
+        }
+
+        return null;
+    }
+
+    private function countryCodeFor(?string $country): ?string
+    {
+        $country = trim((string) $country);
+        if ($country === '') {
+            return 'RU';
+        }
+        if (preg_match('/^[A-Za-z]{2}$/', $country)) {
+            return strtoupper($country);
+        }
+
+        $code = \App\Models\Country::query()->where('name', $country)->value('code');
+
+        return $code ? strtoupper((string) $code) : null;
+    }
+
+    /**
+     * Данные курьерской доставки СДЭК из адреса заказа (код города + тариф).
+     *
+     * Если город не удалось определить однозначно, данные возвращаются без изменений.
+     * Тариф сохраняется, только если город не поменялся; иначе считается заново
+     * (дешёвый из разрешённых), потому что тариф привязан к городу.
+     *
+     * @param array $items позиции в формате checkout (model/name/final_price/quantity)
+     */
+    public function completeCourierFromAddress(array $delivery, array $address, array $items): array
+    {
+        $street = trim((string) ($address['address'] ?? ''));
+        $cityCode = $this->resolveCityCode($address['city'] ?? null, $address['country'] ?? null);
+        if (! $cityCode || $street === '') {
+            return $delivery;
+        }
+
+        $sameCity = (int) data_get($delivery, 'destination.city_code') === $cityCode;
+        if (! $sameCity) {
+            unset($delivery['tariff_code'], $delivery['tariff_name'], $delivery['delivery_mode'], $delivery['price'], $delivery['period']);
+        }
+
+        $delivery = [
+            ...$delivery,
+            'provider' => 'cdek',
+            'delivery_type' => 'courier',
+            'destination' => ['city_code' => $cityCode, 'address' => $street],
+        ];
+
+        return $this->completeDelivery($delivery, $items);
+    }
+
+    /**
      * Recalculate the client-selected option with product data from the server
      * so delivery cost and the pickup point cannot be forged at checkout.
      */

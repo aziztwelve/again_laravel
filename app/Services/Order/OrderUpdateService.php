@@ -184,6 +184,15 @@ class OrderUpdateService
                 $this->updateOrderItems($order, $data['items']);
             }
 
+            // Курьер СДЭК: после правки города/адреса данные для модуля СДЭК (код города, тариф)
+            // должны соответствовать новому адресу, иначе модуль берёт старый город или не находит его.
+            if ($hasAddress && ! isset($filteredData['delivery_data'])) {
+                $courierData = $this->syncCdekCourierDelivery($order, $filteredData, $data['delivery_address']);
+                if ($courierData !== null) {
+                    $filteredData['delivery_data'] = $courierData;
+                }
+            }
+
             // Кастомные поля заказа («Поля заказа»): часть колонок, часть legacy_meta.
             if (isset($data['custom_fields']) && is_array($data['custom_fields'])) {
                 $this->customFieldsService->update($order, $data['custom_fields']);
@@ -358,6 +367,43 @@ class OrderUpdateService
                 'coordinates' => $coordinates,
             ], fn ($value) => $value !== null),
         ]);
+    }
+
+    /**
+     * Данные доставки для курьера СДЭК по новому адресу заказа или null, если заказ не «СДЭК: Курьерская доставка».
+     */
+    private function syncCdekCourierDelivery(Order $order, array $filteredData, array $address): ?array
+    {
+        $methodId = $filteredData['delivery_method_id'] ?? $order->delivery_method_id;
+        if (DeliveryMethod::query()->whereKey($methodId)->value('code') !== 'cdek_courier') {
+            return null;
+        }
+        if (trim((string) ($address['city'] ?? '')) === '') {
+            return null;
+        }
+
+        try {
+            $items = $order->items()->with('product', 'variant')->get()
+                ->reject(fn ($item) => $item->is_gift)
+                ->map(fn ($item) => [
+                    'model' => $item->variant ?? $item->product,
+                    'name' => $item->product?->name ?? $item->legacy_name ?? 'Товар',
+                    'final_price' => (float) $item->price,
+                    'quantity' => (int) $item->quantity,
+                ])->values()->all();
+
+            $current = is_array($order->delivery_data) ? $order->delivery_data : [];
+
+            return app(\App\Services\Delivery\CdekDeliveryService::class)
+                ->completeCourierFromAddress($current, $address, $items);
+        } catch (\Throwable $exception) {
+            Log::warning('OrderUpdate: CDEK courier data was not refreshed', [
+                'order_id' => $order->id,
+                'error' => $exception->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 
     private function updateDeliveryAddress(Order $order, array $addressData, array $recipientData = []): void
