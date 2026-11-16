@@ -46,8 +46,14 @@ class OrderAuthorizationService
      */
     public function canDelete($user): bool
     {
-        // Только админы могут удалять
-        return !($user instanceof Client);
+        // Клиенты не удаляют заказы никогда.
+        if (! $user instanceof User) {
+            return false;
+        }
+
+        // Удаление — отдельное право orders.delete: есть у супер-администратора
+        // (через роль) и у тех, кому его выдали вручную. Менеджерам по умолчанию недоступно.
+        return $user->hasRole('super-admin') || $user->hasPermission('orders.delete');
     }
 
     /**
