@@ -23,7 +23,9 @@ class PromoCodeController extends Controller
 
     public function index(Request $request)
     {
-        $query = PromoCode::query();
+        // Сегменты нужны списку админки (колонка «Сегмент»). Колонки с префиксом таблицы: в pivot-таблице
+        // promo_code_segment тоже есть id, и без префикса запрос был бы неоднозначным.
+        $query = PromoCode::query()->with('segments:segments.id,segments.name,segments.is_active');
 
         if ($request->filled('code')) {
             $query->where('code', 'like', '%' . $request->code . '%');

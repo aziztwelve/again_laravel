@@ -21,7 +21,8 @@ class PromotionController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $query = Promotion::with(['triggerProducts', 'giftProducts']);
+        // Сегменты нужны списку админки (колонка «Сегмент»).
+        $query = Promotion::with(['triggerProducts', 'giftProducts', 'segments:segments.id,segments.name,segments.is_active']);
 
         // Фильтры
         if ($request->has('is_active')) {
