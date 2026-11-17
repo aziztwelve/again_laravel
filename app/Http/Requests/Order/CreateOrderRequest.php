@@ -32,7 +32,11 @@ class CreateOrderRequest extends FormRequest
             $user = [];
         }
         $authUser = $this->user();
-        $profile = $authUser?->profile ?? null;
+        // Заказ в админке создаёт сотрудник за клиента: его собственные контакты (почта,
+        // телефон, имя) в заказ попадать не должны — иначе чек уходит на почту менеджера
+        // (заказ 41385). Подстановка из профиля нужна только покупателю на витрине.
+        $isStaff = $authUser instanceof User;
+        $profile = $isStaff ? null : ($authUser?->profile ?? null);
         if ($profile) {
             foreach (['first_name', 'last_name', 'middle_name', 'phone'] as $f) {
                 if (empty($user[$f]) && ! empty($profile->{$f})) {
@@ -40,7 +44,7 @@ class CreateOrderRequest extends FormRequest
                 }
             }
         }
-        if ($authUser && empty($user['email']) && ! empty($authUser->email)) {
+        if ($authUser && ! $isStaff && empty($user['email']) && ! empty($authUser->email)) {
             $user['email'] = $authUser->email;
         }
         $this->merge(['user' => $user]);
