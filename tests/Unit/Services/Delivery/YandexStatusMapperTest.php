@@ -28,4 +28,14 @@ class YandexStatusMapperTest extends TestCase
         self::assertSame('delivered', $mapper->toCustomer('delivered'));
         self::assertNull($mapper->toCustomer('unknown_status'));
     }
+
+    public function test_time_change_event_is_neutral_and_not_a_pickup(): void
+    {
+        $mapper = new StatusMapper();
+
+        self::assertTrue($mapper->isNeutral('DELIVERY_TIME_INTERVALS_UPDATED'));
+        self::assertFalse($mapper->isNeutral('DELIVERY_TRANSPORTATION'));
+        self::assertNotSame('picked_up', $mapper->toInternal('DELIVERY_TIME_INTERVALS_UPDATED'));
+        self::assertSame('picked_up', $mapper->toInternal('DELIVERY_TRANSPORTATION'));
+    }
 }

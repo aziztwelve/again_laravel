@@ -26,13 +26,25 @@ class StatusMapper
         'delivery_at_start' => 'picked_up', 'delivery_at_start_sort' => 'picked_up',
         'delivery_transportation' => 'picked_up', 'delivery_transportation_recipient' => 'picked_up',
         'delivery_arrived' => 'picked_up', 'delivery_arrived_pickup_point' => 'picked_up',
-        'delivery_storage_period_extended' => 'picked_up', 'delivery_time_intervals_updated' => 'picked_up',
+        'delivery_storage_period_extended' => 'picked_up',
         'delivery_transmitted_to_recipient' => 'delivered', 'delivery_delivered' => 'delivered', 'finished' => 'delivered',
         'return_preparing' => 'returning', 'return_arrived_delivery' => 'returning', 'return_transmitted_fulfilment' => 'returning',
         'return_ready_for_pickup' => 'returning', 'return_returned' => 'returning', 'delivery_storage_period_expired' => 'returning',
         'cancelled_user' => 'cancelled', 'cancelled_by_delivery' => 'cancelled',
         'validating_error' => 'failed', 'error' => 'failed', 'sorting_center_error' => 'failed',
     ];
+
+    /**
+     * События, которые только уточняют доставку и не говорят о новом этапе:
+     * «Время доставки изменено» раньше считалось забором посылки, и заказ сам
+     * становился «Отгружен» (заказ 41193). Статус заявки при них не меняется.
+     */
+    private const NEUTRAL = ['delivery_time_intervals_updated'];
+
+    public function isNeutral(?string $status): bool
+    {
+        return in_array(strtolower((string) $status), self::NEUTRAL, true);
+    }
 
     public function toInternal(?string $status): string
     {

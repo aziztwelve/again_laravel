@@ -407,11 +407,15 @@ class YandexDeliveryService extends DeliveryService
         $previousStatus = $existing?->status;
         $previousCustomerStatus = $existing?->customer_status;
         $customerStatus = $this->customerStatusMapper->toCustomer($status);
+        // Нейтральное событие (например, «Время доставки изменено») этап заявки не меняет.
+        $internalStatus = $this->statusMapper->isNeutral($status)
+            ? ($existing?->internal_status ?? YandexOrder::where('order_id', $order->id)->value('internal_status') ?? 'created')
+            : $this->statusMapper->toInternal($status);
         $trackingUrl = $data['sharing_url'] ?? $data['tracking_url'] ?? $existing?->tracking_url;
         $partnerTracking = self::partnerTrackingNumber($data['courier_order_id'] ?? null);
         $trackingNumber = $partnerTracking ?? $data['tracking_number'] ?? $data['barcode'] ?? $existing?->tracking_number;
         $yandexOrder = YandexOrder::updateOrCreate(['order_id' => $order->id], [
-            'claim_id' => $requestId, 'status' => $status, 'internal_status' => $this->statusMapper->toInternal($status),
+            'claim_id' => $requestId, 'status' => $status, 'internal_status' => $internalStatus,
             'customer_status' => $customerStatus ?? $previousCustomerStatus,
             'delivery_type' => $delivery['delivery_type'] ?? 'courier', 'tariff_code' => $delivery['tariff_code'] ?? null,
             'price' => $delivery['price'] ?? null, 'offer_id' => $delivery['offer_id'] ?? null,
@@ -439,7 +443,7 @@ class YandexDeliveryService extends DeliveryService
                 'yandex_order_id' => $yandexOrder->id,
                 'source' => 'polling',
                 'raw_status' => $status,
-                'internal_status' => $this->statusMapper->toInternal($status),
+                'internal_status' => $internalStatus,
                 'payload' => $data,
                 'received_at' => now(),
             ]);
