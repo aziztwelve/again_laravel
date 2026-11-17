@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Events\OrderPaid;
 use App\Listeners\CreateYandexOrderAfterPayment;
 use App\Listeners\CreateCdekOrderAfterPayment;
+use App\Listeners\ActivateGiftCardsAfterPayment;
 use App\Listeners\NotifyCustomerOrderPaid;
 use App\Listeners\SyncOrderToMoySkladAfterPayment;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
@@ -23,6 +24,7 @@ class EventServiceProvider extends ServiceProvider
             // CreateCdekOrderAfterPayment::class,
             SyncOrderToMoySkladAfterPayment::class,
             NotifyCustomerOrderPaid::class,
+            ActivateGiftCardsAfterPayment::class,
         ],
     ];
 

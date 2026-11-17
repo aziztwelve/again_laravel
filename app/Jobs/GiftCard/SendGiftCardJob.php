@@ -96,6 +96,25 @@ class SendGiftCardJob implements ShouldQueue
      */
     private function isReadyToSend(GiftCard $giftCard): bool
     {
+        // Аннулированную карту получателю не отправляем.
+        if ($giftCard->status === GiftCard::STATUS_CANCELLED) {
+            Log::info('Gift card is cancelled, not sending', ['id' => $giftCard->id]);
+
+            return false;
+        }
+
+        // Деньги за карту должны быть получены: пока заказ не оплачен, карта получателю не уходит. Новая
+        // отправка ставится при оплате (ActivateGiftCardsAfterPayment) и командой giftcards:send-scheduled.
+        $order = $giftCard->purchaseOrder;
+        if ($order && ! $order->isPaid()) {
+            Log::info('Gift card order is not paid yet, not sending', [
+                'id' => $giftCard->id,
+                'order_id' => $order->id,
+                'payment_status' => $order->payment_status?->value,
+            ]);
+
+            return false;
+        }
 
 
         // Проверяем наличие получателя

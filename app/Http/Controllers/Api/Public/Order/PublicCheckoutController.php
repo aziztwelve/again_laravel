@@ -318,14 +318,19 @@ class PublicCheckoutController extends Controller
                         $nominal = $this->orderCreationService->extractGiftCardNominal($item);
                         if ($nominal) {
                             $giftCardData = $request->input('gift_card_data', []);
-                            $giftCardCreated = $this->giftCardService->createFromOrder(
+                            $this->giftCardService->createFromOrder(
                                 $order,
                                 $giftCardData,
                                 $nominal
                             );
-                            $this->giftCardService->scheduleDelivery($giftCardCreated, $giftCardData);
                         }
                     }
+                }
+
+                // Карта включается и уходит получателю только после оплаты (событие OrderPaid). Если заказ уже
+                // оплачен при создании (например, полностью покрыт другой картой), делаем это сразу.
+                if ($order->fresh()?->isPaid()) {
+                    $this->giftCardService->activatePaidOrderCards($order);
                 }
             }
 

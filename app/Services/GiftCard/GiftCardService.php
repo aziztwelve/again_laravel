@@ -75,7 +75,8 @@ class GiftCardService
 
             DB::commit();
 
-            $this->orderNotificationService->notifyGiftCardIssued($giftCard);
+            // Покупателю («карта оформлена», с кодом) и получателю карта уходит только после оплаты заказа:
+            // см. activatePaidOrderCards(). Раньше сообщения с кодом уходили сразу при создании заказа.
 
 //            Log::info('Gift card created', [
 //                'gift_card_id' => $giftCard->id,
@@ -96,6 +97,46 @@ class GiftCardService
 
             throw $e;
         }
+    }
+
+    /**
+     * Заказ с подарочной картой оплачен: включает карту, сообщает покупателю и ставит доставку получателю.
+     *
+     * До оплаты карта неактивна (по ней нельзя заплатить) и никуда не отправляется. Вызывается при оплате
+     * (OrderPaid) и сразу при создании заказа, если он уже оплачен. Повторный вызов ничего не делает:
+     * карта переводится из inactive в active одним запросом, поэтому два платёжных события подряд не
+     * отправят её дважды. Аннулированные карты не трогаем.
+     *
+     * @return int сколько карт включено
+     */
+    public function activatePaidOrderCards(Order $order): int
+    {
+        $activated = 0;
+
+        $cards = GiftCard::query()
+            ->where('purchase_order_id', $order->id)
+            ->where('status', GiftCard::STATUS_INACTIVE)
+            ->get();
+
+        foreach ($cards as $card) {
+            $claimed = GiftCard::query()
+                ->whereKey($card->id)
+                ->where('status', GiftCard::STATUS_INACTIVE)
+                ->update(['status' => GiftCard::STATUS_ACTIVE]);
+            if (! $claimed) {
+                continue;
+            }
+
+            $card->refresh();
+            $this->orderNotificationService->notifyGiftCardIssued($card);
+            // Немедленная карта уходит сразу, отложенная — в назначенное время (дата уже сохранена в карте).
+            $this->scheduleDelivery($card, ['delivery_type' => $card->scheduled_at ? 'scheduled' : 'immediate']);
+            $activated++;
+
+            Log::info('Gift card activated after payment', ['gift_card_id' => $card->id, 'order_id' => $order->id]);
+        }
+
+        return $activated;
     }
 
     /**

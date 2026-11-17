@@ -10,9 +10,7 @@ use App\Http\Requests\Order\CancelOrderRequest;
 use App\Http\Requests\Order\CreateOrderRequest;
 use App\Http\Requests\Order\UpdateOrderRequest;
 use App\Http\Requests\Order\UpdateOrderStatusRequest;
-use App\Jobs\GiftCard\SendGiftCardJob;
 use App\Models\Client;
-use App\Models\GiftCard\GiftCard;
 use App\Models\Order;
 use App\Models\User;
 use App\Services\GiftCard\GiftCardService;
@@ -27,7 +25,6 @@ use App\Services\Order\OrderUpdateService;
 use App\Services\Order\OrderValidationService;
 use App\Services\PromoCode\PromoCodeValidationService;
 use App\Traits\HelperTrait;
-use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -339,17 +336,21 @@ class OrderController extends Controller
                             $giftCardData = $request->input('gift_card_data', []);
 
                             // Создаём подарочную карту
-                            $giftCardCreated = app(\App\Services\GiftCard\GiftCardService::class)
+                            app(\App\Services\GiftCard\GiftCardService::class)
                                 ->createFromOrder(
                                     $order,
                                     $giftCardData,
                                     $nominal
                                 );
 
-                            $this->scheduleGiftCardDelivery($giftCardCreated, $giftCardData);
-
                         }
                     }
+                }
+
+                // Карта включается и уходит получателю только после оплаты (событие OrderPaid). Если менеджер
+                // создаёт уже оплаченный заказ, делаем это сразу.
+                if ($order->fresh()?->isPaid()) {
+                    app(\App\Services\GiftCard\GiftCardService::class)->activatePaidOrderCards($order);
                 }
             }
 
@@ -400,117 +401,6 @@ class OrderController extends Controller
                     'error_details' => config('app.debug') ? $e->getMessage() : null,
                 ]
             );
-        }
-    }
-
-    private function scheduleGiftCardDelivery(GiftCard $giftCard, array $data): void
-    {
-        // Проверяем, что это электронная карта
-        if ($giftCard->type !== GiftCard::TYPE_ELECTRONIC) {
-            Log::info('Skipping delivery for non-electronic gift card', [
-                'gift_card_id' => $giftCard->id,
-                'type' => $giftCard->type,
-            ]);
-
-            return;
-        }
-
-        // Проверяем статус карты (ВАЖНО!)
-        //        if ($giftCard->status !== GiftCard::STATUS_ACTIVE) {
-        //            Log::warning('Cannot schedule delivery for inactive gift card', [
-        //                'gift_card_id' => $giftCard->id,
-        //                'status' => $giftCard->status,
-        //            ]);
-        //            return;
-        //        }
-
-        $deliveryType = $data['delivery_type'] ?? 'immediate';
-
-        if ($deliveryType === 'immediate') {
-            // Отправляем сразу
-            SendGiftCardJob::dispatch($giftCard->id);
-
-            Log::info('Gift card scheduled for immediate delivery', [
-                'gift_card_id' => $giftCard->id,
-            ]);
-
-            return;
-        }
-
-        // Отложенная отправка
-        if (empty($giftCard->scheduled_at)) {
-            Log::warning('qqqScheduled delivery requested but no scheduled_at date', [
-                'gift_card_id' => $giftCard->id,
-            ]);
-
-            // Отправляем сразу если дата не указана
-            SendGiftCardJob::dispatch($giftCard->id);
-
-            return;
-        }
-
-        try {
-
-            //            $scheduledAt = \Carbon\Carbon::parse($giftCard->scheduled_at);
-            //
-            //            // Проверяем, что дата в будущем
-            //            if ($scheduledAt->isFuture()) {
-            //                SendGiftCardJob::dispatch($giftCard->id)
-            //                    ->delay($scheduledAt);
-            //
-            //                Log::info('Gift card scheduled for delayed delivery', [
-            //                    'gift_card_id' => $giftCard->id,
-            //                    'scheduled_at' => $scheduledAt->toDateTimeString(),
-            //                ]);
-            //            } else {
-            //                // Если дата в прошлом - отправляем сразу
-            //                SendGiftCardJob::dispatch($giftCard->id);
-            //
-            //                Log::warning('Scheduled date is in the past, sending immediately', [
-            //                    'gift_card_id' => $giftCard->id,
-            //                    'scheduled_at' => $scheduledAt->toDateTimeString(),
-            //                ]);
-            //            }
-
-            $tzCard = $giftCard->timezone ?: 'Europe/Moscow';
-
-            $scheduledAt = Carbon::parse($giftCard->scheduled_at); // обычно в app.timezone
-
-            $scheduledAtInCardTz = $scheduledAt->copy()->setTimezone($tzCard);
-
-            $scheduledAtMsk = $tzCard === 'Europe/Moscow'
-                ? $scheduledAtInCardTz
-                : $scheduledAtInCardTz->copy()->setTimezone('Europe/Moscow');
-
-            if ($scheduledAtMsk->copy()->utc()->isFuture()) {
-                SendGiftCardJob::dispatch($giftCard->id)
-                    ->delay($scheduledAtMsk->copy()->utc()); // delay лучше давать UTC
-
-                Log::info('Gift card scheduled (MSK-based)', [
-                    'gift_card_id' => $giftCard->id,
-                    'card_tz' => $tzCard,
-                    'scheduled_at_card_tz' => $scheduledAtInCardTz->toDateTimeString()." ({$tzCard})",
-                    'scheduled_at_msk' => $scheduledAtMsk->toDateTimeString().' (Europe/Moscow)',
-                    'scheduled_at_utc' => $scheduledAtMsk->copy()->utc()->toDateTimeString().' (UTC)',
-                ]);
-            } else {
-                SendGiftCardJob::dispatch($giftCard->id);
-
-                Log::warning('Scheduled date is in the past (MSK-based), sending immediately', [
-                    'gift_card_id' => $giftCard->id,
-                    'scheduled_at_msk' => $scheduledAtMsk->toDateTimeString(),
-                ]);
-            }
-
-        } catch (\Exception $e) {
-            Log::error('Failed to parse scheduled_at, sending immediately', [
-                'gift_card_id' => $giftCard->id,
-                'scheduled_at' => $giftCard->scheduled_at,
-                'error' => $e->getMessage(),
-            ]);
-
-            // В случае ошибки парсинга - отправляем сразу
-            SendGiftCardJob::dispatch($giftCard->id);
         }
     }
 

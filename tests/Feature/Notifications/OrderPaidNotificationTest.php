@@ -165,7 +165,8 @@ class OrderPaidNotificationTest extends TestCase
 
         $this->pay($order);
 
-        Bus::assertNotDispatched(SendNotificationJob::class);
+        // Письма «Оплата получена» нет; покупатель получает сообщения про карту (см. GiftCardPaymentFlowTest).
+        $this->assertDatabaseMissing('notification_dispatches', ['event_key' => 'order_paid', 'entity_id' => $order->id]);
     }
 
     public function test_feature_can_be_switched_off(): void
