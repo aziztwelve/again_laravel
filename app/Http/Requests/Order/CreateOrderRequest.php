@@ -505,9 +505,9 @@ class CreateOrderRequest extends FormRequest
             'user.first_name' => 'required|string|max:255',
             'user.last_name' => 'required|string|max:255',
             'user.phone' => 'nullable|string|max:20',
-            // Email опционален: для гостевого заказа полезен (чек/уведомление),
-            // для авторизованного клиента подтягивается из его аккаунта.
-            'user.email' => 'nullable|email|max:255',
+            // Гость обязан указать email: на него уходит чек и ссылка на заказ. Для вошедшего
+            // клиента он подтягивается из аккаунта, при заказе из админки — из карточки клиента.
+            'user.email' => [$this->isGuestCheckout() ? 'required' : 'nullable', 'email', 'max:255'],
 
             'client_id' => [
                 'nullable',
@@ -586,9 +586,19 @@ class CreateOrderRequest extends FormRequest
 
     }
 
+    /**
+     * Заказ оформляет гость: нет ни вошедшего покупателя, ни сотрудника (админка).
+     * Токен проверяем через sanctum-гард: публичный маршрут без auth-middleware.
+     */
+    private function isGuestCheckout(): bool
+    {
+        return \Illuminate\Support\Facades\Auth::guard('sanctum')->user() === null && $this->user() === null;
+    }
+
     public function messages(): array
     {
         return [
+            'user.email.required' => 'Укажите email — на него отправим чек и ссылку на заказ',
             'delivery_address.required' => 'Адрес доставки обязателен',
             'delivery_address.country.required' => 'Страна обязательна',
             'delivery_address.city.required' => 'Город обязателен',
