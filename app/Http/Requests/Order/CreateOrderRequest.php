@@ -5,19 +5,47 @@ namespace App\Http\Requests\Order;
 use App\Enums\OrderStatus;
 use App\Enums\PaymentStatus;
 use App\Models\User;
+use App\Services\Order\DigitalOrderDetector;
 use Carbon\Carbon;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 class CreateOrderRequest extends FormRequest
 {
+    /** Поля доставки, которые у заказа из одних электронных сертификатов не принимаются. */
+    private const DELIVERY_INPUT_KEYS = [
+        'delivery_address', 'delivery_method', 'delivery_data', 'delivery_type', 'yandex_offer',
+        'pvz_code', 'pvz_address', 'pvz_coordinates', 'tariff_code', 'scheduled_time', 'destination_coordinates',
+    ];
+
+    private ?bool $electronicGiftCardOnly = null;
+
     public function authorize(): bool
     {
         return true;
     }
 
+    /**
+     * В заказе только электронные подарочные сертификаты: везти нечего, адрес и доставка не нужны.
+     * Карта уходит на почту после оплаты. Пластиковая карта или обычный товар в корзине — обычные правила.
+     */
+    public function isElectronicGiftCardOnly(): bool
+    {
+        return $this->electronicGiftCardOnly ??= app(DigitalOrderDetector::class)
+            ->isElectronicGiftCardOnly($this->input('items'), $this->input('gift_card_data'));
+    }
+
     protected function prepareForValidation(): void
     {
+        // Старая сборка витрины или прямой запрос может прислать адрес и тариф доставки вместе с сертификатом:
+        // отбрасываем их, иначе к сертификату прибавилась бы стоимость доставки.
+        if ($this->isElectronicGiftCardOnly()) {
+            $source = $this->getInputSource();
+            foreach (self::DELIVERY_INPUT_KEYS as $key) {
+                $source->remove($key);
+            }
+        }
+
         $this->applyDefaultDeliveryDate();
 
         // Fallback 1: если авторизованный клиент не прислал part полей (старая
@@ -279,6 +307,10 @@ class CreateOrderRequest extends FormRequest
     private function applyDefaultDeliveryDate(): void
     {
         if (! $this->routeIs('public.orders.store')) {
+            return;
+        }
+
+        if ($this->isElectronicGiftCardOnly()) {
             return;
         }
 
@@ -580,6 +612,14 @@ class CreateOrderRequest extends FormRequest
                 $rules['gift_card_data.scheduled_time'] = 'required|date_format:H:i';
                 $rules['gift_card_data.timezone'] = 'required|string|max:50';
             }
+        }
+
+        // Электронная карта ничего не везёт: адрес не нужен (его поля мы выше отбросили из запроса).
+        if ($this->isElectronicGiftCardOnly()) {
+            $rules['delivery_address'] = 'nullable|array';
+            $rules['delivery_address.country'] = 'nullable|string|max:255';
+            $rules['delivery_address.city'] = 'nullable|string|max:255';
+            $rules['delivery_address.address'] = 'nullable|string|max:1000';
         }
 
         return $rules;

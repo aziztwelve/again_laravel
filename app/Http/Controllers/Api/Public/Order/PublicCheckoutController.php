@@ -291,14 +291,18 @@ class PublicCheckoutController extends Controller
             // выкупа берётся из финальных цен позиций (order_items.price), т.е.
             // уже со всеми скидками. Если сумма ниже порога правила — доставка
             // остаётся платной. См. docs/tasks/free-shipping.md
-            $this->freeShippingService->applyToOrder(
-                $order->refresh()->load('items'),
-                [
-                    'country_id' => $validated['delivery_address']['country_id'] ?? null,
-                    'region_id' => $validated['delivery_address']['region_id'] ?? null,
-                    'city_id' => $validated['delivery_address']['city_id'] ?? null,
-                ]
-            );
+            // Заказ из одних электронных сертификатов ничего не везёт: правило доставки к нему не применяется.
+            $order->refresh()->load('items');
+            if (! $request->isElectronicGiftCardOnly()) {
+                $this->freeShippingService->applyToOrder(
+                    $order,
+                    [
+                        'country_id' => $validated['delivery_address']['country_id'] ?? null,
+                        'region_id' => $validated['delivery_address']['region_id'] ?? null,
+                        'city_id' => $validated['delivery_address']['city_id'] ?? null,
+                    ]
+                );
+            }
 
             // 8. Подарочная карта как способ оплаты
             if ($giftCard) {
