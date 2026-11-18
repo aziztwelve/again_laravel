@@ -23,6 +23,8 @@ class YandexPackageTrackingTest extends TestCase
 
     private function fakeYandex(array $info = [], ?array $create = null): void
     {
+        // Остальные тесты проверяют сам номер грузоместа: ограничение по дате создания заказа снято.
+        config(['services.yandex_delivery.package_tracking_from' => null]);
         config([
             'services.yandex_delivery.enabled' => true,
             'services.yandex_delivery.mode' => 'sandbox',
@@ -45,9 +47,10 @@ class YandexPackageTrackingTest extends TestCase
         Http::fake($fake);
     }
 
-    private function orderWithClaim(?string $tracking, string $claim = 'claim-1-udp'): array
+    private function orderWithClaim(?string $tracking, string $claim = 'claim-1-udp', mixed $createdAt = null): array
     {
         $order = Order::factory()->create([
+            'created_at' => $createdAt ?? now(),
             'tracking_number' => $tracking,
             'delivery_data' => ['provider' => 'yandex', 'delivery_type' => 'pickup', 'offer_id' => 'offer-1'],
             'moysklad_order_uuid' => null,
@@ -111,6 +114,7 @@ class YandexPackageTrackingTest extends TestCase
 
     public function test_without_package_number_blank_track_falls_back_to_claim_id_and_package_number_is_not_overwritten_later(): void
     {
+        config(['services.yandex_delivery.package_tracking_from' => null]);
         config([
             'services.yandex_delivery.enabled' => true,
             'services.yandex_delivery.mode' => 'sandbox',
@@ -228,8 +232,82 @@ class YandexPackageTrackingTest extends TestCase
         $this->assertNull(YandexDeliveryService::packageTrackingNumber([]));
     }
 
+    public function test_new_order_gets_package_number_when_cutoff_is_set(): void
+    {
+        $this->fakeYandex();
+        config(['services.yandex_delivery.package_tracking_from' => '2026-11-18 15:20:00']);
+        [$order, $yandexOrder] = $this->orderWithClaim('claim-1-udp', 'claim-1-udp', '2026-11-18 15:30:00');
+
+        app(YandexDeliveryService::class)->sync($yandexOrder);
+
+        $this->assertSame('YD6AED8E1D8C7557A3A', $order->fresh()->tracking_number);
+    }
+
+    public function test_old_order_keeps_the_partner_id_scheme_when_cutoff_is_set(): void
+    {
+        $this->fakeYandex();
+        config(['services.yandex_delivery.package_tracking_from' => '2026-11-18 15:20:00']);
+        [$order, $yandexOrder] = $this->orderWithClaim('claim-1-udp', 'claim-1-udp', '2026-11-18 15:10:00');
+
+        app(YandexDeliveryService::class)->sync($yandexOrder);
+
+        $this->assertSame('LO-1077128001', $order->fresh()->tracking_number, 'старый заказ остаётся на номере партнёра');
+        $this->assertSame('LO-1077128001', $yandexOrder->fresh()->tracking_number);
+        $this->assertSame('LO-1077128001', $order->fresh()->delivery_data['yandex_tracking_number']);
+    }
+
+    public function test_poll_does_not_replace_partner_id_of_an_old_order_and_does_not_touch_moysklad(): void
+    {
+        Queue::fake();
+        Cache::forget('moysklad:customerorder:attributes');
+        DeliveryServiceSetting::updateOrCreate(['service_name' => 'moysklad'], ['token' => 'ms-token', 'enabled' => true]);
+        $this->fakeYandex();
+        config(['services.yandex_delivery.package_tracking_from' => '2026-11-18 15:20:00']);
+        Http::fake(['https://api.moysklad.ru/*' => Http::response([])]);
+        [$order, $yandexOrder] = $this->orderWithClaim('LO-1077128001', 'claim-old-udp', '2026-11-10 10:00:00');
+        $order->forceFill(['moysklad_order_uuid' => 'uuid-old'])->saveQuietly();
+        $yandexOrder->update(['tracking_number' => 'LO-1077128001']);
+
+        app(YandexDeliveryService::class)->sync($yandexOrder->fresh());
+        app(YandexDeliveryService::class)->sync($yandexOrder->fresh());
+
+        $this->assertSame('LO-1077128001', $order->fresh()->tracking_number);
+        $this->assertSame('LO-1077128001', $yandexOrder->fresh()->tracking_number);
+        Http::assertNotSent(fn (Request $r) => str_contains($r->url(), 'api.moysklad.ru'));
+    }
+
+    public function test_order_created_exactly_at_the_cutoff_is_new(): void
+    {
+        $this->fakeYandex();
+        config(['services.yandex_delivery.package_tracking_from' => '2026-11-18 15:20:00']);
+        [$order, $yandexOrder] = $this->orderWithClaim('claim-1-udp', 'claim-edge-udp', '2026-11-18 15:20:00');
+
+        app(YandexDeliveryService::class)->sync($yandexOrder);
+
+        $this->assertSame('YD6AED8E1D8C7557A3A', $order->fresh()->tracking_number);
+    }
+
+    public function test_default_cutoff_is_set_so_that_existing_orders_are_not_switched_by_a_deploy(): void
+    {
+        $this->assertNotEmpty(config('services.yandex_delivery.package_tracking_from'));
+    }
+
+    public function test_backfill_write_is_refused_while_the_cutoff_is_set_but_dry_run_works(): void
+    {
+        $this->fakeYandex();
+        config(['services.yandex_delivery.package_tracking_from' => '2026-11-18 15:20:00']);
+        [$order, $yandexOrder] = $this->orderWithClaim('LO-1077128001', 'claim-old-udp', '2026-11-10 10:00:00');
+
+        $this->assertSame(1, Artisan::call('yandex:backfill-package-tracking', ['--order' => $order->order_number, '--write' => true, '--sleep' => 0]));
+        $this->assertSame('LO-1077128001', $order->fresh()->tracking_number);
+
+        $this->assertSame(0, Artisan::call('yandex:backfill-package-tracking', ['--order' => $order->order_number]));
+        $this->assertSame('LO-1077128001', $order->fresh()->tracking_number);
+    }
+
     public function test_backfill_replaces_partner_id_track_and_uses_saved_response_before_asking_yandex(): void
     {
+        config(['services.yandex_delivery.package_tracking_from' => null]);
         Http::fake(); // любой запрос к Яндексу в этом тесте — ошибка
         [$order, $yandexOrder] = $this->orderWithClaim('LO-1077128001');
         \App\Models\YandexApiLog::create([

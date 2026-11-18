@@ -67,6 +67,9 @@ return [
         'geocoder_key' => env('YANDEX_DELIVERY_GEOCODER_KEY'),
         // Буфер к сроку из оффера Яндекс.Доставки, который показываем покупателю.
         'delivery_date_offset_days' => (int) env('YANDEX_DELIVERY_DATE_OFFSET_DAYS', 2),
+        // Трек = номер грузоместа (YD…) только у заказов, созданных с этого момента (время приложения, Europe/Moscow).
+        // Заказы раньше остаются на номере партнёра LO-…. Пустое значение — для всех заказов (после замены старых).
+        'package_tracking_from' => env('YANDEX_PACKAGE_TRACKING_FROM', '2026-11-18 15:20:00'),
         'base_url' => [
             'sandbox' => 'https://b2b.taxi.tst.yandex.net',
             'production' => 'https://b2b-authproxy.taxi.yandex.net',

@@ -39,6 +39,15 @@ class BackfillYandexPackageTracking extends Command
         $write = (bool) $this->option('write');
         $service = new YandexDeliveryService;
 
+        // Пока номер грузоместа включён только для новых заказов, замена старых заставила бы опрос статусов
+        // возвращать им LO-… и спорить с этой командой. Сначала нужно снять ограничение по дате.
+        if ($write && filled(config('services.yandex_delivery.package_tracking_from'))) {
+            $this->error('Замена старых заказов выключена: services.yandex_delivery.package_tracking_from = '
+                .config('services.yandex_delivery.package_tracking_from').'. Сначала снимите ограничение (пустое значение).');
+
+            return self::FAILURE;
+        }
+
         $query = YandexOrder::query()->whereNotNull('claim_id')->where('claim_id', '!=', '')->orderBy('id');
         if ($this->option('order')) {
             $query->whereHas('order', fn ($q) => $q->where('order_number', (string) $this->option('order')));
