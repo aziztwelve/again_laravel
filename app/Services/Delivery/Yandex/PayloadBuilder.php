@@ -10,6 +10,9 @@ use InvalidArgumentException;
 /** Builds requests for Yandex Delivery Platform API (Delivery across Russia). */
 class PayloadBuilder
 {
+    /** Начало штрихкода места, который мы сами отправляем в заявке. Яндекс подменяет его своим номером YD…. */
+    public const PLACE_BARCODE_PREFIX = 'place-';
+
     public function offers(array $settings, string $deliveryType, array $items, ?string $pvzId, ?array $destination, array $recipient = [], ?string $operatorRequestId = null): array
     {
         $stationId = $settings['platform_station_id'] ?? null;
@@ -17,7 +20,7 @@ class PayloadBuilder
             throw new InvalidArgumentException('Не настроен склад отгрузки Яндекс.Доставки.');
         }
 
-        $placeBarcode = 'place-'.substr(md5(json_encode($items)), 0, 12);
+        $placeBarcode = self::PLACE_BARCODE_PREFIX.substr(md5(json_encode($items)), 0, 12);
         $payload = [
             'info' => array_filter([
                 'operator_request_id' => $operatorRequestId ?? 'checkout-'.Str::uuid(),

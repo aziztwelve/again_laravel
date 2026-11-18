@@ -11,19 +11,20 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Разовая замена ID заявки Яндекс.Доставки (…-udp) на номер партнёра по доставке (LO-…)
- * в уже созданных заказах. Номер берётся из courier_order_id: сначала из сохранённых ответов
- * Яндекса (yandex_api_logs), если их нет (логи чистятся через 30 дней) — запросом request/info.
+ * Разовая замена трека заказов Яндекс.Доставки на номер грузоместа (YD…): и ID заявки (…-udp),
+ * и номер партнёра (LO-…), который ставили с 13.11.2026. Номер берётся из request.places[0].barcode:
+ * сначала из сохранённых ответов Яндекса (yandex_api_logs), если их нет (логи чистятся через 30 дней) —
+ * запросом request/info. Берётся одно, первое место: у заказа один трек.
  *
  * ПО УМОЛЧАНИЮ НИЧЕГО НЕ ПИШЕТ (пробный прогон). Запись — только с --write.
- * Вписанный вручную трек не перезаписывается (правило YandexDeliveryService::applyOrderTracking).
+ * Вписанный вручную трек не перезаписывается (правило YandexDeliveryService::isSystemSetTrack).
  * В МойСклад уходит ТОЛЬКО поле «Трек номер» (OrderService::pushTrackingNumber): полная выгрузка
  * заказа привела бы статус МойСклад к статусу сайта, поэтому события заказа при записи отключены.
  * Запись идёт партиями с паузой.
  */
-class BackfillYandexPartnerTracking extends Command
+class BackfillYandexPackageTracking extends Command
 {
-    protected $signature = 'yandex:backfill-partner-tracking
+    protected $signature = 'yandex:backfill-package-tracking
         {--write : Записать изменения (без флага — только пробный прогон)}
         {--order= : Только этот номер заказа}
         {--limit= : Обработать не больше N заявок}
@@ -31,7 +32,7 @@ class BackfillYandexPartnerTracking extends Command
         {--sleep=3 : Пауза между партиями, секунд}
         {--no-fetch : Не запрашивать Яндекс, брать номера только из сохранённых ответов}';
 
-    protected $description = 'Replace Yandex claim ids in order tracking with the partner id (LO-<courier_order_id>)';
+    protected $description = 'Replace Yandex order tracking (claim id or LO-… partner id) with the Yandex package number (YD…)';
 
     public function handle(): int
     {
@@ -47,7 +48,7 @@ class BackfillYandexPartnerTracking extends Command
         }
 
         $rows = [];
-        $stats = ['total' => 0, 'will_change_order' => 0, 'will_set_yandex' => 0, 'manual_kept' => 0, 'already_ok' => 0, 'no_partner_id' => 0, 'written' => 0, 'moysklad' => 0, 'errors' => 0];
+        $stats = ['total' => 0, 'will_change_order' => 0, 'will_set_yandex' => 0, 'manual_kept' => 0, 'already_ok' => 0, 'no_package' => 0, 'written' => 0, 'moysklad' => 0, 'errors' => 0];
         $moysklad = null;
         $written = 0;
 
@@ -60,22 +61,20 @@ class BackfillYandexPartnerTracking extends Command
             }
             $stats['total']++;
 
-            [$courierId, $source] = $this->courierOrderId($service, $yandexOrder);
-            $partner = YandexDeliveryService::partnerTrackingNumber($courierId);
-            if ($partner === null) {
-                $stats['no_partner_id']++;
-                $rows[] = [$order->order_number, $order->status->value ?? (string) $order->status, $order->tracking_number, '— нет номера партнёра —', $source];
+            [$package, $source] = $this->packageNumber($service, $yandexOrder);
+            if ($package === null) {
+                $stats['no_package']++;
+                $rows[] = [$order->order_number, $order->status->value ?? (string) $order->status, $order->tracking_number, '— нет номера грузоместа —', $source];
                 continue;
             }
 
             $current = $order->tracking_number;
-            $systemSet = blank($current) || $current === $yandexOrder->claim_id || $current === $yandexOrder->tracking_number;
-            $orderChange = $current !== $partner && $systemSet;
-            $yandexChange = $yandexOrder->tracking_number !== $partner;
+            $orderChange = $current !== $package && YandexDeliveryService::isSystemSetTrack($current, $yandexOrder->claim_id, $yandexOrder);
+            $yandexChange = $yandexOrder->tracking_number !== $package;
 
             if ($orderChange) {
                 $stats['will_change_order']++;
-            } elseif ($current !== $partner) {
+            } elseif ($current !== $package) {
                 $stats['manual_kept']++;
             } else {
                 $stats['already_ok']++;
@@ -88,7 +87,7 @@ class BackfillYandexPartnerTracking extends Command
                 $order->order_number,
                 $order->status->value ?? (string) $order->status,
                 $current,
-                $orderChange ? $partner : ($current === $partner ? '(уже так)' : '(вписано вручную, не трогаем)'),
+                $orderChange ? $package : ($current === $package ? '(уже так)' : '(вписано вручную, не трогаем)'),
                 $source,
             ];
 
@@ -99,16 +98,16 @@ class BackfillYandexPartnerTracking extends Command
             try {
                 // Без событий: смена трека иначе поставит ПОЛНУЮ выгрузку заказа в МойСклад,
                 // а она приводит статус МойСклад к статусу сайта. В МойСклад пишем только поле «Трек номер».
-                Order::withoutEvents(function () use ($order, $yandexOrder, $partner, $orderChange) {
-                    DB::transaction(function () use ($order, $yandexOrder, $partner, $orderChange) {
-                        $yandexOrder->update(['tracking_number' => $partner]);
+                Order::withoutEvents(function () use ($order, $yandexOrder, $package, $orderChange) {
+                    DB::transaction(function () use ($order, $yandexOrder, $package, $orderChange) {
+                        $yandexOrder->update(['tracking_number' => $package]);
                         $delivery = is_array($order->delivery_data) ? $order->delivery_data : [];
                         $updates = [];
-                        if (($delivery['yandex_tracking_number'] ?? null) !== $partner) {
-                            $updates['delivery_data'] = array_merge($delivery, ['yandex_tracking_number' => $partner]);
+                        if (($delivery['yandex_tracking_number'] ?? null) !== $package) {
+                            $updates['delivery_data'] = array_merge($delivery, ['yandex_tracking_number' => $package]);
                         }
                         if ($orderChange) {
-                            $updates['tracking_number'] = $partner;
+                            $updates['tracking_number'] = $package;
                         }
                         if ($updates !== []) {
                             $order->update($updates);
@@ -117,7 +116,7 @@ class BackfillYandexPartnerTracking extends Command
                 });
                 if ($orderChange && filled($order->moysklad_order_uuid)) {
                     $moysklad ??= new MoySkladOrderService;
-                    $moysklad->pushTrackingNumber($order->fresh(), $partner);
+                    $moysklad->pushTrackingNumber($order->fresh(), $package);
                     $stats['moysklad']++;
                 }
                 $stats['written']++;
@@ -142,7 +141,7 @@ class BackfillYandexPartnerTracking extends Command
         $this->line("  «Трек-номер Яндекс.Доставки» будет заполнен/обновлён: {$stats['will_set_yandex']}");
         $this->line("  вписано вручную, не трогаем: {$stats['manual_kept']}");
         $this->line("  уже в нужном виде: {$stats['already_ok']}");
-        $this->line("  номер партнёра не найден: {$stats['no_partner_id']}");
+        $this->line("  номер грузоместа не найден: {$stats['no_package']}");
         if ($write) {
             $this->line("  записано в базу сайта: {$stats['written']}, из них поле «Трек номер» обновлено в МойСклад: {$stats['moysklad']}, ошибок: {$stats['errors']}");
         }
@@ -150,18 +149,23 @@ class BackfillYandexPartnerTracking extends Command
         return self::SUCCESS;
     }
 
-    /** @return array{0: ?string, 1: string} [courier_order_id, источник] */
-    private function courierOrderId(YandexDeliveryService $service, YandexOrder $yandexOrder): array
+    /** @return array{0: ?string, 1: string} [номер грузоместа, источник] */
+    private function packageNumber(YandexDeliveryService $service, YandexOrder $yandexOrder): array
     {
-        $log = YandexApiLog::query()
+        // Последний ответ может быть пустым (сбой опроса): берём ближайший, где номер есть.
+        $logs = YandexApiLog::query()
             ->where('claim_id', $yandexOrder->claim_id)
             ->where('method', '/api/b2b/platform/request/info')
             ->where('status_code', 200)
+            ->where('response_body', 'like', '%"barcode"%')
             ->orderByDesc('id')
-            ->first(['response_body']);
-        $id = data_get($log?->response_body, 'courier_order_id');
-        if (filled($id)) {
-            return [(string) $id, 'сохранённый ответ'];
+            ->limit(5)
+            ->get(['response_body']);
+        foreach ($logs as $log) {
+            $number = YandexDeliveryService::packageTrackingNumber($log->response_body);
+            if ($number !== null) {
+                return [$number, 'сохранённый ответ'];
+            }
         }
 
         if ($this->option('no-fetch')) {
@@ -171,11 +175,11 @@ class BackfillYandexPartnerTracking extends Command
         usleep(400000);
         try {
             $result = $service->getRequestInfo($yandexOrder->claim_id, $yandexOrder->order_id);
-            $id = $result['successful'] ? data_get($result['data'], 'courier_order_id') : null;
+            $number = $result['successful'] ? YandexDeliveryService::packageTrackingNumber($result['data']) : null;
         } catch (\Throwable) {
-            $id = null;
+            $number = null;
         }
 
-        return filled($id) ? [(string) $id, 'запрос к Яндексу'] : [null, 'Яндекс не вернул'];
+        return $number !== null ? [$number, 'запрос к Яндексу'] : [null, 'Яндекс не вернул'];
     }
 }

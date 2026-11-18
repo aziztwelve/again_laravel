@@ -223,15 +223,35 @@ class YandexDeliveryService extends DeliveryService
     }
 
     /**
-     * Номер партнёра по доставке: в кабинете Яндекса «ID у партнёра по доставке» (LO-…).
-     * API отдаёт его числом в поле courier_order_id (в ответе на создание заявки его нет,
-     * он приходит в request/info сразу после создания).
+     * Трек заказа = номер грузоместа Яндекса (YD…). Яндекс отдаёт его в ответе request/info
+     * в поле request.places[].barcode. Берём только первое место: у заказа один трек.
+     * Штрихкод места, который отправляем мы сами (place-…, см. PayloadBuilder), и пустой или
+     * ошибочный ответ номером не считаются.
      */
-    public static function partnerTrackingNumber(mixed $courierOrderId): ?string
+    public static function packageTrackingNumber(mixed $requestInfo): ?string
     {
-        $digits = trim((string) $courierOrderId);
+        $barcode = data_get($requestInfo, 'request.places.0.barcode');
+        $barcode = is_string($barcode) || is_int($barcode) ? trim((string) $barcode) : '';
 
-        return preg_match('/^\d+$/', $digits) === 1 ? 'LO-'.$digits : null;
+        if ($barcode === '' || str_starts_with($barcode, Yandex\PayloadBuilder::PLACE_BARCODE_PREFIX)) {
+            return null;
+        }
+
+        return $barcode;
+    }
+
+    /**
+     * Трек заказа поставила система, а не менеджер: пустой, ID заявки, ранее сохранённый номер Яндекса
+     * или номер партнёра LO-<цифры> (его ставили с 13.11.2026 до перехода на номер грузоместа).
+     * Всё остальное считается вписанным вручную и не перезаписывается.
+     */
+    public static function isSystemSetTrack(?string $current, ?string $requestId, ?YandexOrder $existing = null): bool
+    {
+        return blank($current)
+            || $current === $requestId
+            || $current === $existing?->claim_id
+            || (filled($existing?->tracking_number) && $current === $existing->tracking_number)
+            || preg_match('/^LO-\d+$/', (string) $current) === 1;
     }
 
     public function getRequestInfo(string $requestId, ?int $orderId = null): array
@@ -353,28 +373,24 @@ class YandexDeliveryService extends DeliveryService
     public function printLabel(Shipment $shipment): string { return ''; }
 
     /**
-     * Трек заказа = номер партнёра по доставке (LO-…). Вручную вписанный трек не перезаписываем:
-     * меняем только пустой, равный ID заявки или ранее подставленный нами номер партнёра.
-     * Пока номера партнёра нет (редкий сбой запроса), в пустой трек ставим ID заявки.
+     * Трек заказа = номер грузоместа Яндекса (YD…). Вручную вписанный трек не перезаписываем:
+     * меняем только трек, который поставила система (см. isSystemSetTrack).
+     * Пока номера грузоместа нет, в пустой трек ставим ID заявки; позже его заменит номер грузоместа.
      */
-    public function applyOrderTracking(Order $order, ?string $partnerTracking, ?string $requestId, ?YandexOrder $existing = null): void
+    public function applyOrderTracking(Order $order, ?string $packageTracking, ?string $requestId, ?YandexOrder $existing = null): void
     {
         $current = $order->tracking_number;
-        $systemSet = blank($current)
-            || $current === $requestId
-            || $current === $existing?->claim_id
-            || (filled($existing?->tracking_number) && $current === $existing->tracking_number);
 
-        if ($partnerTracking !== null) {
-            if ($current !== $partnerTracking && $systemSet) {
-                $this->setOrderTracking($order, $partnerTracking);
+        if ($packageTracking !== null) {
+            if ($current !== $packageTracking && self::isSystemSetTrack($current, $requestId, $existing)) {
+                $this->setOrderTracking($order, $packageTracking);
             }
 
             return;
         }
 
         if ($requestId && $current !== $requestId && (blank($current) || $current === $existing?->claim_id)) {
-            // пока номера партнёра нет: пустой трек (или трек, равный прежнему ID заявки) = ID заявки
+            // пока номера грузоместа нет: пустой трек (или трек, равный прежнему ID заявки) = ID заявки
             $this->setOrderTracking($order, $requestId);
         }
     }
@@ -412,8 +428,8 @@ class YandexDeliveryService extends DeliveryService
             ? ($existing?->internal_status ?? YandexOrder::where('order_id', $order->id)->value('internal_status') ?? 'created')
             : $this->statusMapper->toInternal($status);
         $trackingUrl = $data['sharing_url'] ?? $data['tracking_url'] ?? $existing?->tracking_url;
-        $partnerTracking = self::partnerTrackingNumber($data['courier_order_id'] ?? null);
-        $trackingNumber = $partnerTracking ?? $data['tracking_number'] ?? $data['barcode'] ?? $existing?->tracking_number;
+        $packageTracking = self::packageTrackingNumber($data);
+        $trackingNumber = $packageTracking ?? $data['tracking_number'] ?? $data['barcode'] ?? $existing?->tracking_number;
         $yandexOrder = YandexOrder::updateOrCreate(['order_id' => $order->id], [
             'claim_id' => $requestId, 'status' => $status, 'internal_status' => $internalStatus,
             'customer_status' => $customerStatus ?? $previousCustomerStatus,
@@ -437,7 +453,7 @@ class YandexDeliveryService extends DeliveryService
         if ($order->delivery_data !== $updatedDelivery) {
             $order->update(['delivery_data' => $updatedDelivery]);
         }
-        $this->applyOrderTracking($order, $partnerTracking, $requestId, $existing);
+        $this->applyOrderTracking($order, $packageTracking, $requestId, $existing);
         if ($previousStatus !== $status) {
             YandexStatusEvent::create([
                 'yandex_order_id' => $yandexOrder->id,
