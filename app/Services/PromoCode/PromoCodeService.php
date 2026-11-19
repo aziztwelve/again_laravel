@@ -44,6 +44,17 @@ class PromoCodeService
         // покупатель сайта — нет.
         $isManager = $request->user('sanctum') instanceof \App\Models\User;
         $hiddenForManager = $isManager && $promoCode->customer_type === PromoCode::CUSTOMER_TYPE_HIDDEN;
+
+        // Промокод, привязанный к сегменту, доступен только клиентам из активного сегмента. Менеджер
+        // (предпросмотр и ручное добавление в заказ) ограничение не проходит.
+        if (! $isManager && ! $promoCode->isOpenToClientBySegments($client?->id)) {
+            return ['error' => response()->json([
+                'message' => $client
+                    ? 'Этот промокод недоступен для вашего аккаунта'
+                    : 'Этот промокод доступен только зарегистрированным клиентам. Войдите в аккаунт или используйте публичный промокод.',
+                'code' => $client ? 'PROMO_NOT_FOR_CLIENT' : 'PROMO_REQUIRES_AUTH',
+            ], 400)];
+        }
         if (! $hiddenForManager && ! $promoCode->isAvailableForCustomerType($customerType)) {
             return ['error' => response()->json([
                 'message' => $client
@@ -419,12 +430,14 @@ class PromoCodeService
      */
     private function resolveClient(Request $request, ?int $clientId)
     {
-        if ($clientId) {
-            return Client::find($clientId);
-        }
-
         // Маршрут публичный: токен читаем явно. Нет токена — гость.
         $user = $request->user('sanctum');
+
+        // Клиента из параметра client_id берём только у менеджера (предпросмотр в админке). Покупатель или
+        // гость подставить чужой номер не может: иначе промокод сегмента проверялся бы за другого человека.
+        if ($clientId && $user instanceof \App\Models\User) {
+            return Client::find($clientId);
+        }
 
         if ($user instanceof Client) {
             return $user;

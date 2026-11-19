@@ -243,6 +243,8 @@ class CustomerTypeAudienceTest extends TestCase
                 'first_name' => 'Тест',
                 'last_name' => 'Покупатель',
                 'phone' => '+79990000000',
+                // Гость обязан указать email (иначе заказ отклоняется ещё до проверки промокода).
+                'email' => 'audience-guest@example.com',
             ],
             'recipient' => [
                 'first_name' => 'Тест',

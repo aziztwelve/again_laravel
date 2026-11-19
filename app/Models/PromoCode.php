@@ -164,6 +164,10 @@ class PromoCode extends Model
                 return false;
             }
 
+            if (! $this->isOpenToClientBySegments($clientId)) {
+                return false;
+            }
+
             // Если промокод привязан к конкретным клиентам
             if ($this->clients()->exists()) {
                 $exists = $this->clients()->where('client_id', $clientId)->exists();
@@ -372,6 +376,41 @@ class PromoCode extends Model
         return $this->belongsToMany(Segment::class, 'promo_code_segment')
             ->withPivot('auto_apply')
             ->withTimestamps();
+    }
+
+    /**
+     * Промокод с сегментами доступен только клиенту из активного сегмента (так же, как у акций).
+     * Без сегментов ограничения нет. Гость в сегмент попасть не может. Признак «Ко всем клиентам»
+     * сегмент не перекрывает.
+     */
+    public function isOpenToClientBySegments(?int $clientId): bool
+    {
+        if (! $this->segments()->exists()) {
+            return true;
+        }
+
+        if ($clientId === null) {
+            return false;
+        }
+
+        return $this->segments()
+            ->where('segments.is_active', true)
+            ->whereHas('clients', fn ($clients) => $clients->where('clients.id', $clientId))
+            ->exists();
+    }
+
+    /** Та же проверка для выборок: промокоды без сегментов или с сегментом, где клиент состоит. */
+    public function scopeOpenToClientBySegments($query, ?int $clientId)
+    {
+        return $query->where(function ($query) use ($clientId) {
+            $query->whereDoesntHave('segments');
+            if ($clientId !== null) {
+                $query->orWhereHas('segments', function ($segments) use ($clientId) {
+                    $segments->where('segments.is_active', true)
+                        ->whereHas('clients', fn ($clients) => $clients->where('clients.id', $clientId));
+                });
+            }
+        });
     }
 
     /**

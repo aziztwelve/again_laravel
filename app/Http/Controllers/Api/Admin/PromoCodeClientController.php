@@ -82,8 +82,15 @@ class PromoCodeClientController extends Controller
 
         $clientId = $validated['client_id'];
 
-        // Получаем активные промокоды, доступные для клиента
-        $query = PromoCode::where('is_active', true)
+        // Покупатель видит только свои промокоды: чужой client_id подставить нельзя. Менеджер выбирает любого клиента.
+        $caller = $request->user('sanctum');
+        if ($caller instanceof \App\Models\Client) {
+            $clientId = $caller->id;
+        }
+
+        // Получаем активные промокоды, доступные для клиента. Промокод сегмента виден только его участникам.
+        $query = PromoCode::openToClientBySegments((int) $clientId)
+            ->where('is_active', true)
             // Скрытые промокоды (личные, UGC, разовые) в профиле клиентам не показываем
             ->where(function ($q) {
                 $q->whereNull('customer_type')

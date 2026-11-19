@@ -211,6 +211,8 @@ class PromotionStackingTest extends TestCase
                 'first_name' => 'Тест',
                 'last_name' => 'Покупатель',
                 'phone' => '+79990000000',
+                // Гость обязан указать email.
+                'email' => 'stacking-guest@example.com',
             ],
             'recipient' => [
                 'first_name' => 'Тест',

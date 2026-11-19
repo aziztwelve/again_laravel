@@ -157,6 +157,28 @@ class PromoCodeValidationService
             ];
         }
 
+        // Промокод, привязанный к сегменту, доступен только клиентам из этого сегмента — даже если у него
+        // включено «Ко всем клиентам». Менеджер ($allowHidden — только админские вызовы) может добавить
+        // такой промокод в заказ вручную.
+        if (! $allowHidden && ! $promoCode->isOpenToClientBySegments($client?->id)) {
+            Log::info('Promo code is limited to a segment', [
+                'code' => $promoCode->code,
+                'client_id' => $client?->id,
+            ]);
+
+            return $client === null
+                ? [
+                    'success' => false,
+                    'message' => 'Этот промокод доступен только зарегистрированным клиентам. Войдите в аккаунт или используйте публичный промокод.',
+                    'code' => 'PROMO_REQUIRES_AUTH',
+                ]
+                : [
+                    'success' => false,
+                    'message' => 'Этот промокод недоступен для вашего аккаунта',
+                    'code' => 'PROMO_NOT_FOR_CLIENT',
+                ];
+        }
+
         // Если промокод доступен всем клиентам — разрешаем и гостям тоже.
         if ($promoCode->applies_to_all_clients) {
             return ['success' => true];
