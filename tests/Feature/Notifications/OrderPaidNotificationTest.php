@@ -84,7 +84,7 @@ class OrderPaidNotificationTest extends TestCase
         Bus::assertDispatched(SendNotificationJob::class, 1);
         $sent = $this->sent();
         $number = $order->order_number;
-        $this->assertSame("Оплата получена — заказ №{$number}", $sent['data']['subject']);
+        $this->assertSame("AGAIN | Заказ {$number} оплачен", $sent['data']['subject']);
         $this->assertSame('order_paid', $sent['data']['type']);
         $this->assertStringContainsString('Здравствуйте, Анна!', $sent['message']);
         $this->assertStringContainsString("Мы получили оплату заказа №{$number} на сумму 7 580 ₽. Спасибо!", $sent['message']);
@@ -93,7 +93,16 @@ class OrderPaidNotificationTest extends TestCase
         $this->assertStringContainsString('пришлём номер для отслеживания', $sent['message']);
         $this->assertStringContainsString('Открыть заказ: ', $sent['message']);
         $this->assertStringContainsString('/orders/'.$order->view_token, $sent['message']);
-        $this->assertStringContainsString('>Открыть заказ</a>', $sent['data']['html']);
+        // Письмо на почту — новое: кнопка «Посмотреть заказ» со ссылкой на заказ, контакты поддержки, логотип и подвал.
+        $html = $sent['data']['html'];
+        $this->assertStringContainsString('>Посмотреть заказ</a>', $html);
+        $this->assertStringContainsString('/orders/'.$order->view_token, $html);
+        $this->assertStringContainsString('Здравствуйте, Анна!', $html);
+        $this->assertStringContainsString('Ваш заказ успешно оплачен и уже готовится к отправке.', $html);
+        $this->assertStringContainsString('1–2 рабочих дня', $html);
+        $this->assertStringContainsString('help@again8.ru', $html);
+        $this->assertStringContainsString('https://wa.me/79991178888', $html);
+        $this->assertStringContainsString('/img/email/logo.png', $html);
         $this->assertDatabaseHas('notification_dispatches', ['event_key' => 'order_paid', 'entity_id' => $order->id, 'channel' => 'email']);
     }
 

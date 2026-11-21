@@ -14,6 +14,8 @@ class EmailBranding
     /** Метка рекламного письма: адресам, отписавшимся от рекламы, такое письмо не отправляется. */
     public const MARKETING_MARKER = '<!--again:marketing-->';
 
+    public const SUPPORT_EMAIL = 'help@again8.ru';
+
     public const TELEGRAM_URL = 'https://t.me/again8help_bot';
 
     public const MAX_URL = 'https://max.ru/id4707052811_1_bot';

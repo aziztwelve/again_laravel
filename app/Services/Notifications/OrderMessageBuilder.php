@@ -125,10 +125,16 @@ class OrderMessageBuilder
             $blocks[] = [['label' => 'Открыть заказ', 'url' => PublicUrl::to('/orders/'.$order->view_token)]];
         }
 
+        // Текст для мессенджеров прежний; письмо на почту — новое (шапка с логотипом, кнопка «Посмотреть заказ»).
+        $body = view('emails.order-paid', [
+            'greeting' => OrderMessageText::greeting($order),
+            'orderUrl' => filled($order->view_token) ? PublicUrl::to('/orders/'.$order->view_token) : null,
+        ])->render();
+
         return [
             'message' => OrderMessageText::plain($blocks),
-            'html' => OrderMessageText::html($blocks),
-            'subject' => "Оплата получена — заказ №{$orderNumber}",
+            'html' => view('emails.shell', ['title' => "Заказ {$orderNumber} оплачен", 'body' => $body])->render(),
+            'subject' => "AGAIN | Заказ {$orderNumber} оплачен",
         ];
     }
 
