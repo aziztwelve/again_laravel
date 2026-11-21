@@ -50,7 +50,7 @@ class CdekDeliveryMessageBuilder
             ? '<p><a href="'.e($cdekOrder->tracking_url).'" style="display:inline-block;padding:12px 18px;background:#292725;color:#fff;text-decoration:none">Отследить доставку</a></p>'
             : '<p>'.e($line).'</p>', $lines));
 
-        return ['message' => $message, 'html' => '<div style="font-family:Arial,sans-serif;color:#292725;line-height:1.5">'.$html.'</div>', 'subject' => $title.' - заказ №'.$orderNumber];
+        return ['message' => $message, 'html' => view('emails.shell', ['title' => 'AGAIN', 'body' => $html])->render(), 'subject' => $title.' - заказ №'.$orderNumber];
     }
 
     /** «Заказ отправлен»: номер и ссылка СДЭК, куда приедет и срок. */

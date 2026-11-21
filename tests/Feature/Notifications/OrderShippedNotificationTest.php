@@ -99,7 +99,7 @@ class OrderShippedNotificationTest extends TestCase
 
         $number = $c->order->order_number;
         $sent = $this->sent();
-        $this->assertSame("Заказ №{$number} отправлен — номер для отслеживания 10346131475", $sent['data']['subject']);
+        $this->assertSame("AGAIN | Заказ {$number} отправлен", $sent['data']['subject']);
         $this->assertSame('cdek_delivery.handed_over', $sent['data']['type']);
         $this->assertStringContainsString('Здравствуйте, Анна!', $sent['message']);
         $this->assertStringContainsString("Ваш заказ №{$number} отправлен.", $sent['message']);
@@ -110,7 +110,15 @@ class OrderShippedNotificationTest extends TestCase
         $this->assertStringContainsString('Ориентировочный срок: 4–5 дней', $sent['message']);
         $this->assertStringContainsString('Когда заказ придёт в пункт выдачи', $sent['message']);
         $this->assertStringContainsString('href="https://www.cdek.ru/ru/tracking?order_id=10346131475"', $sent['data']['html']);
-        $this->assertStringContainsString('>Отследить доставку</a>', $sent['data']['html']);
+        $html = $sent['data']['html'];
+        $this->assertStringContainsString('>Отследить заказ</a>', $html);
+        $this->assertStringContainsString('Ваш заказ уже в пути!', $html);
+        $this->assertStringContainsString('Здравствуйте, Анна!', $html);
+        $this->assertStringContainsString('Номер отправления:', $html);
+        $this->assertStringContainsString('>10346131475</a>', $html);
+        $this->assertStringContainsString('>Войти в личный кабинет</a>', $html);
+        $this->assertStringContainsString('/profile/history', $html);
+        $this->assertStringContainsString('/img/email/logo.png', $html);
     }
 
     public function test_postamat_and_courier_variants_of_the_text(): void
@@ -177,7 +185,7 @@ class OrderShippedNotificationTest extends TestCase
         $content = app(YandexDeliveryMessageBuilder::class)->build($y, 'handed_over');
 
         $number = $y->order->order_number;
-        $this->assertSame("Заказ №{$number} отправлен — номер для отслеживания YA68DA61EE6B6F9BEFD", $content['subject']);
+        $this->assertSame("AGAIN | Заказ {$number} отправлен", $content['subject']);
         $this->assertStringContainsString('Здравствуйте, Олег!', $content['message']);
         $this->assertStringContainsString('Служба доставки: Яндекс Доставка', $content['message']);
         $this->assertStringContainsString('Номер для отслеживания: YA68DA61EE6B6F9BEFD', $content['message']);
@@ -193,7 +201,8 @@ class OrderShippedNotificationTest extends TestCase
 
         $content = app(YandexDeliveryMessageBuilder::class)->build($y, 'handed_over');
 
-        $this->assertSame('Заказ №'.$y->order->order_number.' отправлен', $content['subject']);
+        $this->assertSame('AGAIN | Заказ '.$y->order->order_number.' отправлен', $content['subject']);
+        $this->assertStringNotContainsString('Номер отправления', $content['html']);
         $this->assertStringNotContainsString('Номер для отслеживания', $content['message']);
         $this->assertStringNotContainsString($y->claim_id, $content['message']);
         $this->assertStringContainsString('Отследить доставку: https://dostavka.yandex.ru/route/abc123', $content['message']);

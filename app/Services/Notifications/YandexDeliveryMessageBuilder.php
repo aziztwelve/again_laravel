@@ -171,6 +171,6 @@ class YandexDeliveryMessageBuilder
             return '<p>'.e($line).'</p>';
         }, $lines);
 
-        return '<div style="font-family:Arial,sans-serif;color:#292725;line-height:1.5">'.implode('', $paragraphs).'</div>';
+        return view('emails.shell', ['title' => 'AGAIN', 'body' => implode('', $paragraphs)])->render();
     }
 }

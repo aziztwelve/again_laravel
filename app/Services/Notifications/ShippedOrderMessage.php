@@ -3,6 +3,7 @@
 namespace App\Services\Notifications;
 
 use App\Models\Order;
+use App\Support\PublicUrl;
 
 /**
  * Письмо «Заказ отправлен»: одинаковый текст для СДЭК и Яндекс.Доставки, с номером и
@@ -42,10 +43,19 @@ class ShippedOrderMessage
             ? 'Когда заказ придёт в '.($shipment['pickup_noun'] ?? 'пункт выдачи').', пришлём ещё одно сообщение: после него его можно забирать.'
             : 'Курьер свяжется с вами перед доставкой.'];
 
+        // Тексты для мессенджеров прежние; письмо на почту — новое (логотип, кнопки «Отследить заказ» и «Войти в личный кабинет»).
+        $body = view('emails.order-shipped', [
+            'greeting' => OrderMessageText::greeting($order),
+            'trackUrl' => $url,
+            'number' => $number,
+            'carrier' => $shipment['carrier'] ?? null,
+            'cabinetUrl' => PublicUrl::to('/profile/history'),
+        ])->render();
+
         return [
             'message' => OrderMessageText::plain($blocks),
-            'html' => OrderMessageText::html($blocks),
-            'subject' => "Заказ №{$orderNumber} отправлен".($number ? " — номер для отслеживания {$number}" : ''),
+            'html' => view('emails.shell', ['title' => "Заказ {$orderNumber} отправлен", 'body' => $body])->render(),
+            'subject' => "AGAIN | Заказ {$orderNumber} отправлен",
         ];
     }
 }
