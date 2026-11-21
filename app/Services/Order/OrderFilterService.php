@@ -424,7 +424,10 @@ class OrderFilterService
     private function applyTokenMatch(Builder $q, string $token): void
     {
         $like = '%' . addcslashes($token, '%_\\') . '%';
-        $phoneNeedles = strlen($this->normalizePhone($token)) >= 4 ? $this->phoneNeedles($token) : [];
+        // Слово с буквами или «@» (почта, ник, «Stasia1304») телефоном не считаем: иначе его цифры
+        // находили бы все телефоны, где они встречаются.
+        $phoneLike = ! preg_match('/[\p{L}@]/u', $token);
+        $phoneNeedles = $phoneLike && strlen($this->normalizePhone($token)) >= 4 ? $this->phoneNeedles($token) : [];
 
         // Данные клиента: email и профиль
         $q->orWhereHas('client', function ($clientQuery) use ($like, $phoneNeedles) {

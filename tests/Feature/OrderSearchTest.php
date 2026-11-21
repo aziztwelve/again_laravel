@@ -103,4 +103,24 @@ class OrderSearchTest extends TestCase
         $this->assertSame([$o->id], $this->found('+7 999 123', [$o->id, $other->id]));
         $this->assertSame([$o->id], $this->found('89991234567', [$o->id, $other->id]));
     }
+
+    public function test_word_with_letters_and_digits_is_not_treated_as_a_phone(): void
+    {
+        $match = $this->order(['recipient_phone' => '+79990000001'], ['email' => 'stasia1304@example.com']);
+        // Телефон содержит «1304», но это другой человек: по почте/нику он находиться не должен.
+        $junk = $this->order(['recipient_phone' => '+79213045888']);
+        $scope = [$match->id, $junk->id];
+
+        $this->assertSame([$match->id], $this->found('stasia1304@example.com', $scope));
+        $this->assertSame([$match->id], $this->found('stasia1304', $scope));
+    }
+
+    public function test_plain_digits_still_find_a_phone(): void
+    {
+        $junk = $this->order(['recipient_phone' => '+79990000001']);
+        $phone = $this->order(['recipient_phone' => '+79213045888']);
+        $scope = [$junk->id, $phone->id];
+
+        $this->assertSame([$phone->id], $this->found('1304', $scope));
+    }
 }

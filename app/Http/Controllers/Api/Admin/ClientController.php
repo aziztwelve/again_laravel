@@ -27,7 +27,11 @@ class ClientController extends Controller
                 // Нормализованная версия для поиска по телефону:
                 // оставляем только цифры, чтобы строки вида "+7 (912) 345-67-89"
                 // совпадали с тем, что хранится в БД ("+79123456789", "89123456789", и т.п.).
-                $digits = preg_replace('/\D+/', '', (string) $search);
+                // Телефонный поиск по цифрам — только если запрос похож на телефон (нет букв и «@»):
+                // иначе «Stasia1304@gmail.com» искался бы как «1304» по всем телефонам.
+                $digits = preg_match('/[\p{L}@]/u', (string) $search)
+                    ? ''
+                    : preg_replace('/\D+/', '', (string) $search);
 
                 $query->where(function ($q) use ($search, $digits) {
                     $q->whereHas('profile', function ($q) use ($search, $digits) {
