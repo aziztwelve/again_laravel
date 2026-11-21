@@ -135,7 +135,8 @@ class OrderMessageText
             }
         }
 
-        return '<div style="font-family:Arial,sans-serif;color:#292725;line-height:1.5">'.$out.'</div>';
+        // Шапка с логотипом и подвал одинаковые во всех письмах (emails.shell).
+        return view('emails.shell', ['title' => 'AGAIN', 'body' => $out])->render();
     }
 
     /** Telegram разбирает текст как HTML: служебные символы нужно экранировать. */

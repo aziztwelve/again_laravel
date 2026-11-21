@@ -18,6 +18,9 @@ class EventServiceProvider extends ServiceProvider
      * закомментированным, чтобы его можно было безопасно вернуть.
      */
     protected $listen = [
+        \Illuminate\Mail\Events\MessageSending::class => [
+            \App\Listeners\PrepareOutgoingEmail::class,
+        ],
         OrderPaid::class => [
             // @deprecated Временно отключено: заявки доставки создаются вручную из админки.
             // CreateYandexOrderAfterPayment::class,

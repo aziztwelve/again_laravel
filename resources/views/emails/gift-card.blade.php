@@ -10,6 +10,7 @@
     <tr>
         <td align="center" style="padding:20px">
             <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%">
+                <tr><td>@include('emails.partials.logo')</td></tr>
                 <tr>
                     <td style="font-size:16px">
                         <h2 style="margin:0 0 16px;font-size:22px;line-height:1.3">{{ $subject }}</h2>

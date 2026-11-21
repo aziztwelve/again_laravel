@@ -82,6 +82,8 @@ class GiftCardEmailTest extends TestCase
         $without = $builder->buildEmailHtml($this->card(['nominal' => 2500]));
 
         $this->assertStringContainsString('src="'.url('/storage/gift-certificates/2000.jpg').'"', $with);
-        $this->assertStringNotContainsString('<img', $without);
+        // Логотип AGAIN в шапке есть всегда; картинки сертификата у номинала без изображения быть не должно.
+        $this->assertStringNotContainsString('alt="Подарочный сертификат', $without);
+        $this->assertStringNotContainsString('gift-certificates/', $without);
     }
 }

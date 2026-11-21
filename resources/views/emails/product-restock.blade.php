@@ -30,12 +30,11 @@
     $font = "'Open Sans',Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif";
 @endphp
 <body style="margin:0;padding:0;background:#ffffff;color:#2B2B2B;">
+{!! \App\Support\EmailBranding::MARKETING_MARKER !!}
 <div style="margin:0 auto;max-width:600px;background:#ffffff;padding:32px 20px;font-family:{{ $font }};">
 
     {{-- Шапка: логотип Again по центру --}}
-    <div style="text-align:center;padding:8px 0 32px 0;">
-        <span style="font-size:30px;font-weight:700;letter-spacing:2px;color:#2B2B2B;">AGAIN</span>
-    </div>
+    @include('emails.partials.logo')
 
     {{-- Заголовок «УЖЕ В НАЛИЧИИ» --}}
     <div style="text-align:center;padding-bottom:20px;">

@@ -9,6 +9,8 @@
 <div style="margin:0">
     <div style="background-color:#fff;border:1px solid #f3f2f2;margin-bottom:30px;margin-left:auto;margin-right:auto;max-width:500px">
 
+        @include('emails.partials.logo')
+
         {{-- Шапка: AGAIN | Заказ № X --}}
         <div style="background-color:#f5f5f5;box-sizing:border-box;padding:40px 0;padding-left:20px;padding-right:20px">
             <table style="margin-left:auto;margin-right:auto;max-width:580px;width:100%" cellspacing="0" cellpadding="0">

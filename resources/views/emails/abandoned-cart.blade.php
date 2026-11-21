@@ -1,13 +1,14 @@
 <!doctype html>
 <html lang="ru">
 <body style="margin:0;padding:0;background:#f4f2ef;font-family:Arial,Helvetica,sans-serif;color:#292725">
+{!! \App\Support\EmailBranding::MARKETING_MARKER !!}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f2ef">
     <tr>
         <td align="center" style="padding:24px 12px">
             <table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:640px;background:#ffffff">
                 <tr>
-                    <td align="center" style="padding:26px 32px;border-bottom:1px solid #e8e5e1;font-size:22px;line-height:26px;font-weight:700;letter-spacing:2px">
-                        AGAIN
+                    <td align="center" style="padding:0 32px;border-bottom:1px solid #e8e5e1">
+                        @include('emails.partials.logo')
                     </td>
                 </tr>
                 <tr>

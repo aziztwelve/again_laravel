@@ -12,7 +12,9 @@
     </style>
 </head>
 <body>
+{!! \App\Support\EmailBranding::MARKETING_MARKER !!}
 <div class="container">
+    @include('emails.partials.logo')
     <h2>Спасибо за заявку!</h2>
     <p>Вы оставили заявку в предложении «{{ $banner->name }}» и получаете специальный промокод:</p>
 

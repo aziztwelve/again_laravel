@@ -26,7 +26,7 @@ class OrderNotificationService
             'order_id' => $order->id,
             'view_token' => $order->view_token,
             'subject' => 'Заказ № '.($order->order_number ?? $order->id),
-        ]);
+        ], emailContent: fn () => $this->orderMessageBuilder->buildOrderCreatedEmail($order));
     }
 
     /**
@@ -127,20 +127,31 @@ class OrderNotificationService
         ]);
     }
 
-    protected function dispatchToCustomerChannels(Order $order, ?Client $client, string $message, array $data): void
+    /**
+     * @param  (callable():array{subject:string, html:string})|null  $emailContent  отдельный текст для почты:
+     *                                                                              остальные каналы получают $message
+     */
+    protected function dispatchToCustomerChannels(Order $order, ?Client $client, string $message, array $data, ?callable $emailContent = null): void
     {
         $giftCardId = $data['gift_card_id'] ?? null;
         $entityType = $giftCardId ? 'gift_card' : 'order';
         $entityId = (int) ($giftCardId ?: $order->id);
 
         foreach ($this->customerChannelResolver->resolve($client, $order->email) as $recipient) {
+            $channelData = $data;
+            if ($emailContent !== null && $recipient['channel'] === 'email') {
+                $email = $emailContent();
+                $channelData['subject'] = $email['subject'];
+                $channelData['html'] = $email['html'];
+            }
+
             $this->transactionalNotificationDispatcher->dispatch(
                 $data['type'],
                 $entityType,
                 $entityId,
                 $recipient,
                 $message,
-                array_merge($data, [
+                array_merge($channelData, [
                     'mirror_conversation' => [
                         'source' => $recipient['source'],
                         'external_id' => $recipient['recipient_id'],

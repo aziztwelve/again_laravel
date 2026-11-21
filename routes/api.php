@@ -300,6 +300,14 @@ Route::prefix('/public')->group(function () {
         ->post('/orders', [PublicCheckoutController::class, 'store'])
         ->name('public.orders.store');
 
+    // Отписка от рекламных писем по подписанной ссылке из подвала письма.
+    Route::middleware(['signed', 'throttle:30,1'])->group(function () {
+        Route::get('/email/unsubscribe', [\App\Http\Controllers\Api\Public\EmailUnsubscribeController::class, 'show'])
+            ->name('email.unsubscribe');
+        Route::post('/email/unsubscribe', [\App\Http\Controllers\Api\Public\EmailUnsubscribeController::class, 'confirm'])
+            ->name('email.unsubscribe.confirm');
+    });
+
     Route::middleware('throttle:10,1')
         ->post('/orders/{viewToken}/cloudpayments/intent', [CloudPaymentsController::class, 'intent'])
         ->where('viewToken', '[a-f0-9]{32}')

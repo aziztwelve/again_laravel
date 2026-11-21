@@ -43,36 +43,7 @@ class EmailNotificationChannel extends BaseNotificationChannel
             $htmlContent = nl2br(htmlspecialchars($message, ENT_QUOTES, 'UTF-8'));
         }
 
-        $footer = $this->footerHtml();
-
-        return "
-            <html>
-            <body style='font-family: Arial, sans-serif; color: #333;'>
-                <div style='max-width: 600px; margin: 0 auto;'>
-                    {$htmlContent}
-
-                    {$footer}
-                </div>
-            </body>
-            </html>
-        ";
+        // Шапка с логотипом и подвал одинаковые во всех письмах (emails.shell).
+        return view('emails.shell', ['title' => 'AGAIN', 'body' => $htmlContent])->render();
     }
-
-    private function footerHtml(): string
-    {
-        $address = e((string) config('mail.from.address'));
-        $subject = rawurlencode('Отписка от рассылки AGAIN');
-
-        return "
-            <div style='margin-top: 30px; padding: 20px; background: #292725; color: #ffffff; font-size: 12px; line-height: 18px;'>
-                © ".now()->year." AGAIN<br>
-                Вы получили это письмо, потому что зарегистрировались на сайте AGAIN или запросили это уведомление.<br><br>
-                Это сообщение отправлено вам от:<br>
-                AGAIN | {$address}<br><br>
-                <a href='mailto:{$address}?subject={$subject}' style='color: #ffffff; text-decoration: underline;'>Отписаться от рассылки</a>
-            </div>
-        ";
-    }
-
-
 }

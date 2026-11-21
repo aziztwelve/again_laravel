@@ -46,6 +46,55 @@ class OrderMessageBuilder
     }
 
     /**
+     * Письмо «Заказ оформлен» (на почту): состав заказа, итог, доставка и кнопка «Перейти к оплате» со
+     * ссылкой на страницу заказа. Остальные каналы получают прежний текст (buildOrderCreated).
+     *
+     * @return array{subject:string, html:string}
+     */
+    public function buildOrderCreatedEmail(Order $order): array
+    {
+        $order->loadMissing(['address', 'client.profile', 'deliveryMethod', 'items.product', 'items.variant', 'items.color']);
+        $orderNumber = $order->order_number ?? $order->id;
+
+        $name = trim((string) ($order->client?->profile?->first_name ?: $order->address?->recipient_first_name));
+        $headline = $name !== ''
+            ? "{$name}, вы выбрали комфорт. А мы уже готовим ваш заказ!"
+            : 'Вы выбрали комфорт. А мы уже готовим ваш заказ!';
+
+        // «Название модели — размер — цвет — количество»
+        $items = [];
+        foreach ($order->items as $item) {
+            $parts = array_values(array_filter([
+                $item->legacy_name ?: $item->product?->name ?: 'Товар',
+                $item->variant?->name,
+                $item->color?->name,
+            ], fn ($part) => filled($part)));
+            $parts[] = ((int) ($item->quantity ?? 1)).' шт';
+            $items[] = implode(' — ', $parts);
+        }
+
+        $method = $this->deliveryMethodLine($order);
+        $pickup = OrderMessageText::isPickup($order);
+        $address = OrderMessageText::address($order, $pickup);
+        $delivery = $address ?: $method;
+
+        $body = view('emails.order-created', [
+            'headline' => $headline,
+            'orderNumber' => $orderNumber,
+            'items' => $items,
+            'total' => OrderMessageText::money((float) $order->total_amount),
+            'delivery' => $delivery,
+            'payUrl' => filled($order->view_token) ? PublicUrl::to('/orders/'.$order->view_token) : null,
+            'isPaid' => $order->isPaid(),
+        ])->render();
+
+        return [
+            'subject' => "AGAIN | Заказ {$orderNumber} принят!",
+            'html' => view('emails.shell', ['title' => "Заказ {$orderNumber} принят", 'body' => $body])->render(),
+        ];
+    }
+
+    /**
      * Письмо «Оплата получена»: сумма, куда и как доставим, что будет дальше и ссылка на заказ.
      *
      * @return array{message:string, html:string, subject:string}
