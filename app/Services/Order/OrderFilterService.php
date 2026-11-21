@@ -611,7 +611,13 @@ class OrderFilterService
                 ->orderBy('id', $dir);
         }
 
-        return $query->orderBy($sortBy, $sortOrder);
+        // Одинаковые значения (суммы, даты) упорядочиваем по номеру, иначе заказы «прыгают» между страницами.
+        $query->orderBy($sortBy, $sortOrder);
+        if ($sortBy !== 'id') {
+            $query->orderBy('id', $sortOrder);
+        }
+
+        return $query;
     }
 
     /**
