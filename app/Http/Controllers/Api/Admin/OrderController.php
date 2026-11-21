@@ -1041,6 +1041,14 @@ class OrderController extends Controller
             ->except($exclude)
             ->toArray();
 
+        // Поля с cast 'array' копируем как данные: готовая JSON-строка из getRawOriginal() кодировалась
+        // бы второй раз, и код пункта выдачи в копии становился нечитаемым (заказы 40439, 41040).
+        foreach (['delivery_data', 'legacy_meta'] as $jsonField) {
+            if (array_key_exists($jsonField, $raw)) {
+                $raw[$jsonField] = $order->{$jsonField};
+            }
+        }
+
         $raw['status']         = 'new';
         $raw['payment_status'] = 'pending';
         $raw['view_token']     = $viewToken;
@@ -1097,7 +1105,26 @@ class OrderController extends Controller
                 'id'           => $newOrder->id,
                 'order_number' => $newOrder->order_number,
             ],
+            // Копия переносит данные доставки как есть. Если в исходном заказе не был выбран пункт выдачи
+            // (старые заказы), заявку в службу доставки по копии создать не получится (заказ 41706).
+            'warning' => $this->pickupPointWarning($newOrder),
         ]);
+    }
+
+    /** Предупреждение менеджеру, если у заказа с доставкой в пункт выдачи не выбран сам пункт; иначе null. */
+    private function pickupPointWarning(Order $order): ?string
+    {
+        $code = (string) $order->loadMissing('deliveryMethod')->deliveryMethod?->code;
+        if (! in_array($code, ['cdek_pickup', 'cdek_postamat', 'yandex_pickup'], true)) {
+            return null;
+        }
+
+        $delivery = is_array($order->delivery_data) ? $order->delivery_data : [];
+        if (filled($delivery['pvz']['code'] ?? $delivery['pvz_code'] ?? $delivery['pvz']['id'] ?? null)) {
+            return null;
+        }
+
+        return 'В копии не выбран пункт выдачи: в исходном заказе его не было. Откройте блок «Доставка» → «Редактировать» → «Выбрать на карте», выберите пункт и сохраните, иначе заявку в службу доставки создать не получится.';
     }
 
     /**
