@@ -267,9 +267,9 @@ class ClientController extends Controller
                     'first_name' => $validated['first_name'],
                     'last_name' => $validated['last_name'],
                     'middle_name' => $validated['middle_name'] ?? null,
-                    'phone' => $validated['phone'],
-                    'address' => $validated['address'],
-                    'birthday' => $validated['birthday'] ? Carbon::parse($validated['birthday'])->format('Y-m-d') : null,
+                    'phone' => $validated['phone'] ?? null,
+                    'address' => $validated['address'] ?? null,
+                    'birthday' => ! empty($validated['birthday']) ? Carbon::parse($validated['birthday'])->format('Y-m-d') : null,
                 ];
 
                 foreach ([
@@ -286,7 +286,9 @@ class ClientController extends Controller
                     }
                 }
 
-                $client->profile()->update($profileData);
+                // У клиента может не быть профиля (создан только по email: форма, регистрация). update() по
+                // несуществующей строке не менял ничего, а менеджер видел «успешно сохранено».
+                $client->profile()->updateOrCreate([], $profileData);
 
                 // Обновляем поля самого клиента (email + флаги согласий/подписок + RFM/группа)
                 $clientData = [
