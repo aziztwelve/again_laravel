@@ -124,6 +124,16 @@ class CdekClient
             $responseForLog = array_is_list($data) && count($data) > self::LOG_LIST_LIMIT
                 ? ['truncated' => true, 'items_count' => count($data)]
                 : $this->maskSensitive($data);
+            // Опрос статуса посылки (GET /v2/orders/{uuid}) идёт для каждой посылки «в пути» каждые 10 минут:
+            // ~40 тысяч записей в сутки по 6 КБ переполнили диск. Для успешного опроса пишем только статус,
+            // подробности статусов хранятся в cdek_status_events; ошибки по-прежнему логируются целиком.
+            if ($successful && $httpMethod === 'GET' && preg_match('#/v2/orders/[0-9a-f-]{36}/?$#i', $url)) {
+                $responseForLog = array_filter([
+                    'compact' => true,
+                    'status' => data_get($data, 'entity.statuses.0.code'),
+                    'state' => data_get($data, 'requests.0.state'),
+                ], fn ($value) => $value !== null);
+            }
             CdekApiLog::create([
                 'cdek_order_id' => $cdekOrderId, 'direction' => 'request', 'method' => $method, 'http_method' => $httpMethod,
                 'url' => $url, 'request_body' => $this->maskSensitive($requestBody), 'response_body' => $responseForLog,
