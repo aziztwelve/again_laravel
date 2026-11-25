@@ -423,7 +423,8 @@ class PochtaDeliveryService extends DeliveryService
             'mail_type' => $product['mail_type'],
             'mail_category' => $payload['mail-category'],
             'delivery_mode' => ($product['courier'] ?? false) ? 'courier' : 'office',
-            'price' => round($kopecks / 100, 2),
+            // Целые рубли, округление вверх: карточка тарифа и строка «Доставка» в итогах показывают одно число.
+            'price' => (float) ceil($kopecks / 100),
             'currency' => 'RUB',
             'period' => ['min' => $min, 'max' => $max],
         ];

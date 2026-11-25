@@ -87,8 +87,8 @@ class PochtaCheckoutOrderTest extends TestCase
         $this->assertSame('pochta', $order->delivery_data['provider']);
         $this->assertSame('office', $order->delivery_data['delivery_type']);
         $this->assertSame('101000', $order->delivery_data['pvz']['code']);
-        $this->assertSame(437.98, (float) $order->delivery_data['price']);
-        $this->assertSame(437.98, (float) $order->delivery_cost);
+        $this->assertSame(438.0, (float) $order->delivery_data['price']);
+        $this->assertSame(438.0, (float) $order->delivery_cost);
         $this->assertSame('101000', (string) $order->address->postal_code);
     }
 

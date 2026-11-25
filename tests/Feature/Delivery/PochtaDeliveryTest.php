@@ -48,7 +48,7 @@ class PochtaDeliveryTest extends TestCase
 
         $this->assertCount(1, $tariffs);
         $this->assertSame('ONLINE_PARCEL', $tariffs[0]['tariff_code']);
-        $this->assertSame(437.98, $tariffs[0]['price']);
+        $this->assertSame(438.0, $tariffs[0]['price']);
         $this->assertSame(['min' => 7, 'max' => 7], $tariffs[0]['period']);
 
         Http::assertSent(function (Request $request) {
@@ -93,7 +93,7 @@ class PochtaDeliveryTest extends TestCase
 
         $tariffs = app(PochtaDeliveryService::class)->calculateTariffs('russian_post_courier', ['city' => 'Москва', 'address' => 'Тверская 7'], $this->items());
 
-        $this->assertSame(530.7, $tariffs[0]['price']);
+        $this->assertSame(531.0, $tariffs[0]['price']);
         Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/1.0/tariff')
             && $request['index-to'] === '125009' && $request['courier'] === true && $request['mail-type'] === 'ONLINE_COURIER');
     }
@@ -208,7 +208,7 @@ class PochtaDeliveryTest extends TestCase
 
         $this->assertSame('pochta', $delivery['provider']);
         $this->assertSame('office', $delivery['delivery_type']);
-        $this->assertSame(437.98, $delivery['price']);
+        $this->assertSame(438.0, $delivery['price']);
         $this->assertSame('RU', $delivery['destination']['country_code']);
         $this->assertSame('101000', $delivery['pvz']['code']);
     }
