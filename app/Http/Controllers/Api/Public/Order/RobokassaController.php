@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Api\Public\Order;
 
 use App\Http\Controllers\Controller;
+use App\Models\Client;
 use App\Models\Order;
 use App\Services\Payment\RobokassaService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
@@ -17,6 +19,21 @@ use RuntimeException;
  */
 class RobokassaController extends Controller
 {
+    /**
+     * Какие дополнительные способы оплаты показать в чекауте текущему покупателю.
+     * Маршрут публичный: Bearer-токен необязателен (гость получает false, пока
+     * способ ограничен списком email).
+     */
+    public function checkoutOptions(RobokassaService $service): JsonResponse
+    {
+        $user = Auth::guard('sanctum')->user();
+
+        return response()->json([
+            'success' => true,
+            'robokassa' => $service->isOfferedTo($user instanceof Client ? $user : null),
+        ]);
+    }
+
     /** Поля формы оплаты для заказа по viewToken. Сумму считает сервер. */
     public function intent(string $viewToken, RobokassaService $service): JsonResponse
     {
@@ -25,7 +42,7 @@ class RobokassaController extends Controller
         }
 
         $order = Order::query()->with(['client'])->where('view_token', $viewToken)->first();
-        if (! $order || ! $service->supports($order->payment_method) || ! $order->canBePaid()) {
+        if (! $order || ! $service->supports($order->payment_method) || ! $service->isAllowedForOrder($order) || ! $order->canBePaid()) {
             return response()->json(['success' => false, 'message' => 'Для этого заказа недоступна онлайн-оплата.'], 422);
         }
 

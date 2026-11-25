@@ -170,6 +170,40 @@ class RobokassaFlowTest extends TestCase
         $this->getJson("/api/public/orders/{$order->view_token}")->assertJsonPath('order.robokassa_available', false);
     }
 
+    public function test_checkout_options_follow_the_email_allowlist(): void
+    {
+        // Без ограничения способ предлагается всем, включая гостя.
+        $this->getJson('/api/public/checkout/payment-options')->assertOk()->assertJsonPath('robokassa', true);
+
+        config(['payment.providers.robokassa.allowed_emails' => ['allowed@example.com']]);
+
+        $this->getJson('/api/public/checkout/payment-options')->assertOk()->assertJsonPath('robokassa', false);
+
+        $other = \App\Models\Client::factory()->create(['email' => 'other@example.com']);
+        \Laravel\Sanctum\Sanctum::actingAs($other);
+        $this->getJson('/api/public/checkout/payment-options')->assertOk()->assertJsonPath('robokassa', false);
+
+        $allowed = \App\Models\Client::factory()->create(['email' => 'Allowed@Example.com']);
+        \Laravel\Sanctum\Sanctum::actingAs($allowed);
+        $this->getJson('/api/public/checkout/payment-options')->assertOk()->assertJsonPath('robokassa', true);
+    }
+
+    public function test_foreign_order_cannot_start_payment_or_see_the_button_on_closed_test(): void
+    {
+        config(['payment.providers.robokassa.allowed_emails' => ['allowed@example.com']]);
+
+        $order = $this->pendingOrder('robokassa');
+        $order->update(['email' => 'other@example.com']);
+
+        $this->getJson("/api/public/orders/{$order->view_token}")->assertJsonPath('order.robokassa_available', false);
+        $this->postJson("/api/public/orders/{$order->view_token}/robokassa/intent")->assertStatus(422);
+        $this->assertSame(0, Payment::query()->where('order_id', $order->id)->count());
+
+        $order->update(['email' => 'allowed@example.com']);
+        $this->getJson("/api/public/orders/{$order->view_token}")->assertJsonPath('order.robokassa_available', true);
+        $this->postJson("/api/public/orders/{$order->view_token}/robokassa/intent")->assertOk();
+    }
+
     /** @return array{0: Order, 1: Payment} */
     private function orderWithPayment(): array
     {

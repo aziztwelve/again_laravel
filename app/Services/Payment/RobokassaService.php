@@ -3,6 +3,7 @@
 namespace App\Services\Payment;
 
 use App\Enums\PaymentStatus;
+use App\Models\Client;
 use App\Models\Order;
 use App\Models\Payment;
 use Illuminate\Support\Facades\DB;
@@ -51,7 +52,45 @@ class RobokassaService
     /** Нужно ли показывать кнопку «Оплатить онлайн» для заказа на странице заказа. */
     public function isAvailableForOrder(Order $order): bool
     {
-        return $this->supports($order->payment_method) && $this->isAvailable() && $order->canBePaid();
+        return $this->supports($order->payment_method)
+            && $this->isAvailable()
+            && $this->isAllowedForOrder($order)
+            && $order->canBePaid();
+    }
+
+    /**
+     * Email клиентов, которым способ доступен на закрытом тесте (в нижнем регистре).
+     * Пустой список — ограничения нет.
+     *
+     * @return array<int, string>
+     */
+    public function allowedEmails(): array
+    {
+        return array_values(array_filter(array_map(
+            fn ($email) => mb_strtolower(trim((string) $email)),
+            (array) config('payment.providers.robokassa.allowed_emails', []),
+        )));
+    }
+
+    public function isAllowedForEmail(?string $email): bool
+    {
+        $allowed = $this->allowedEmails();
+        if ($allowed === []) {
+            return true;
+        }
+
+        return $email !== null && in_array(mb_strtolower(trim($email)), $allowed, true);
+    }
+
+    public function isAllowedForOrder(Order $order): bool
+    {
+        return $this->isAllowedForEmail($order->email ?? $order->client?->email);
+    }
+
+    /** Показывать ли способ в чекауте этому покупателю (гость = null). */
+    public function isOfferedTo(?Client $client): bool
+    {
+        return $this->isAvailable() && $this->isAllowedForEmail($client?->email);
     }
 
     /**

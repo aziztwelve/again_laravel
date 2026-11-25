@@ -328,6 +328,10 @@ Route::prefix('/public')->group(function () {
         ->post('/orders/{viewToken}/cloudpayments/intent', [CloudPaymentsController::class, 'intent'])
         ->where('viewToken', '[a-f0-9]{32}')
         ->name('public.orders.cloudpayments.intent');
+    // Какие дополнительные способы оплаты показать в чекауте (Bearer необязателен).
+    Route::middleware('throttle:60,1')
+        ->get('/checkout/payment-options', [RobokassaController::class, 'checkoutOptions'])
+        ->name('public.checkout.payment-options');
     Route::middleware('throttle:10,1')
         ->post('/orders/{viewToken}/robokassa/intent', [RobokassaController::class, 'intent'])
         ->where('viewToken', '[a-f0-9]{32}')

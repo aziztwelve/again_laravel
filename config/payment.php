@@ -57,6 +57,9 @@ return [
         'robokassa' => [
             'class' => \App\Services\Payment\RobokassaProvider::class,
             'enabled' => (bool) env('ROBOKASSA_ENABLED', false),
+            // Закрытый тест: пока список не пуст, способ оплаты доступен только клиентам
+            // с этими email (через запятую). Пустой список — доступен всем.
+            'allowed_emails' => array_values(array_filter(array_map('trim', explode(',', (string) env('ROBOKASSA_ALLOWED_EMAILS', ''))))),
             'merchant_login' => env('ROBOKASSA_LOGIN'),
             'password1' => env('ROBOKASSA_PASSWORD1'),
             'password2' => env('ROBOKASSA_PASSWORD2'),

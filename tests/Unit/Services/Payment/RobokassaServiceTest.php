@@ -193,6 +193,55 @@ class RobokassaServiceTest extends TestCase
         $this->assertFalse($this->service->isAvailable());
     }
 
+    public function test_without_allowlist_every_client_and_guest_is_offered_the_method(): void
+    {
+        config(['payment.providers.robokassa.allowed_emails' => []]);
+
+        $this->assertTrue($this->service->isOfferedTo(null));
+        $this->assertTrue($this->service->isOfferedTo($this->client('any@example.com')));
+        $this->assertTrue($this->service->isAllowedForEmail(null));
+    }
+
+    public function test_allowlist_limits_the_method_to_listed_emails_case_insensitively(): void
+    {
+        config(['payment.providers.robokassa.allowed_emails' => [' AzizTwelve@Gmail.com ']]);
+
+        $this->assertTrue($this->service->isOfferedTo($this->client('aziztwelve@gmail.com')));
+        $this->assertFalse($this->service->isOfferedTo($this->client('other@example.com')));
+        $this->assertFalse($this->service->isOfferedTo($this->client(null)));
+        // гость (не вошёл) при закрытом тесте не видит способ
+        $this->assertFalse($this->service->isOfferedTo(null));
+    }
+
+    public function test_method_is_never_offered_while_integration_is_unavailable(): void
+    {
+        config(['payment.providers.robokassa.allowed_emails' => [], 'payment.providers.robokassa.enabled' => false]);
+
+        $this->assertFalse($this->service->isOfferedTo(null));
+    }
+
+    public function test_order_is_allowed_by_order_email_or_client_email(): void
+    {
+        config(['payment.providers.robokassa.allowed_emails' => ['aziztwelve@gmail.com']]);
+
+        [$own] = $this->orderAndPayment(100, 1);
+        $own->email = 'aziztwelve@gmail.com';
+        [$foreign] = $this->orderAndPayment(100, 2);
+        $foreign->email = 'other@example.com';
+
+        $this->assertTrue($this->service->isAllowedForOrder($own));
+        $this->assertFalse($this->service->isAllowedForOrder($foreign));
+    }
+
+    /** Клиент без обращения к БД (Model::fill() ходит в схему таблицы). */
+    private function client(?string $email): \App\Models\Client
+    {
+        $client = new \App\Models\Client();
+        $client->setRawAttributes(['email' => $email]);
+
+        return $client;
+    }
+
     /**
      * Несохранённые модели: проверяем чистую логику подписи и чека.
      *
