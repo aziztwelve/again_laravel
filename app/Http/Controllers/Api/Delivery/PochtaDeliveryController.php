@@ -17,6 +17,10 @@ class PochtaDeliveryController
     /** GET /api/public/delivery/pochta/offices?city=...[&latitude=..&longitude=..] */
     public function offices(Request $request): JsonResponse
     {
+        if (! PochtaDeliveryService::visibleTo($request->user('sanctum'))) {
+            return response()->json(['success' => false, 'message' => 'Доставка Почтой России пока недоступна.'], 403);
+        }
+
         $data = $request->validate([
             'city' => 'required|string|min:2|max:255',
             'latitude' => 'nullable|numeric|between:-90,90',
@@ -39,6 +43,10 @@ class PochtaDeliveryController
     /** POST /api/public/delivery/pochta/calculate */
     public function calculate(Request $request): JsonResponse
     {
+        if (! PochtaDeliveryService::visibleTo($request->user('sanctum'))) {
+            return response()->json(['success' => false, 'message' => 'Доставка Почтой России пока недоступна.'], 403);
+        }
+
         $data = $request->validate([
             'delivery_method_code' => 'required|string|in:russian_post_office,russian_post_courier,international_pickup,international_courier',
             'destination' => 'required|array',

@@ -47,6 +47,21 @@ class PochtaDeliveryService extends DeliveryService
         $this->client = new PochtaClient($this->settings);
     }
 
+    /**
+     * Доступны ли способы Почты России покупателю. Пока интеграция не открыта всем
+     * (services.pochta.public), их видят только тестировщики из services.pochta.testers.
+     */
+    public static function visibleTo(?object $user): bool
+    {
+        if (config('services.pochta.public')) {
+            return true;
+        }
+
+        $email = mb_strtolower(trim((string) ($user->email ?? '')));
+
+        return $email !== '' && in_array($email, array_map('mb_strtolower', (array) config('services.pochta.testers', [])), true);
+    }
+
     public function enabled(): bool
     {
         return $this->client->configured();

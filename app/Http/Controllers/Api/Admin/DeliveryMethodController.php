@@ -129,6 +129,12 @@ class DeliveryMethodController extends Controller
             $query->where('is_active', true);
         }
 
+        // Публичный список для витрины: способы Почты России показываем только тем, кому они открыты.
+        // Админка (другие маршруты) видит все способы: с ними связаны старые заказы.
+        if ($request->is('api/public/*') && ! \App\Services\Delivery\PochtaDeliveryService::visibleTo($request->user('sanctum'))) {
+            $query->whereNotIn('code', \App\Services\Delivery\PochtaDeliveryService::METHOD_CODES);
+        }
+
         $delivery_methods = $query->get();
 
         return response()->json([

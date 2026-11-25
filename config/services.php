@@ -124,6 +124,10 @@ return [
         // Вес и габариты, если у товара они не заполнены (г и см).
         'default_package' => ['weight' => 80, 'length' => 26, 'width' => 21, 'height' => 4],
         'tariff_cache_minutes' => 10,
+        // Пока способы Почты России не открыты всем (POCHTA_PUBLIC=false), их видят только покупатели
+        // с email из POCHTA_TESTER_EMAILS (через запятую). Покупатель должен быть авторизован.
+        'public' => (bool) env('POCHTA_PUBLIC', false),
+        'testers' => array_values(array_filter(array_map('trim', explode(',', (string) env('POCHTA_TESTER_EMAILS', ''))))),
         'methods' => [
             'russian_post_office' => [
                 'delivery_type' => 'office',

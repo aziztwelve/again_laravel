@@ -22,6 +22,7 @@ class PochtaDeliveryTest extends TestCase
         Cache::flush();
         config([
             'services.pochta.enabled' => true,
+            'services.pochta.public' => true,
             'services.pochta.token' => 'test-token',
             'services.pochta.login' => 'user@example.com',
             'services.pochta.password' => 'secret',

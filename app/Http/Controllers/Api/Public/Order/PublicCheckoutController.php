@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Public\Order;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Order\CreateOrderRequest;
 use App\Models\Client;
+use App\Services\Payment\RobokassaService;
 use App\Models\DeliveryMethod;
 use App\Models\Order;
 use App\Models\Product;
@@ -63,6 +64,13 @@ class PublicCheckoutController extends Controller
                 'Этот endpoint предназначен для покупателей. Используйте /api/orders.',
                 403
             );
+        }
+
+        // Robokassa на закрытом тесте доступна только клиентам из списка email
+        // (ROBOKASSA_ALLOWED_EMAILS): остальным заказ с этим способом не создаём.
+        if ($request->input('payment_method') === RobokassaService::PAYMENT_METHOD
+            && ! app(RobokassaService::class)->isOfferedTo($authUser instanceof Client ? $authUser : null)) {
+            return $this->errorResponse('Этот способ оплаты сейчас недоступен. Выберите другой.', 422);
         }
 
         // Один ключ создаётся витриной на всё время оформления. Если ответ
@@ -247,6 +255,12 @@ class PublicCheckoutController extends Controller
                 ->whereIn('code', \App\Services\Delivery\PochtaDeliveryService::METHOD_CODES)
                 ->value('code');
             if ($pochtaMethodCode) {
+                if (! \App\Services\Delivery\PochtaDeliveryService::visibleTo($request->user('sanctum'))) {
+                    DB::rollBack();
+
+                    return $this->errorResponse('Доставка Почтой России пока недоступна. Выберите другой способ доставки.', 422);
+                }
+
                 if (($validated['delivery_data']['provider'] ?? null) !== 'pochta') {
                     DB::rollBack();
 
