@@ -131,6 +131,28 @@ class PochtaDeliveryService extends DeliveryService
     }
 
     /**
+     * Адрес назначения с почтовым индексом для способов по России: индекс выбранного отделения
+     * или найденный по адресу (нормализация Почты). Международные способы остаются как есть.
+     *
+     * @throws InvalidArgumentException отделение не выбрано или адрес не распознан
+     * @throws RuntimeException API Почты недоступен
+     */
+    public function resolveDestination(string $methodCode, array $destination): array
+    {
+        $method = $this->settings['methods'][$methodCode] ?? null;
+        if (! $method || ($method['international'] ?? false)) {
+            return $destination;
+        }
+        if (! $this->enabled()) {
+            throw new RuntimeException('Интеграция Почты России не настроена.');
+        }
+
+        $destination['index'] = $this->domesticIndex($method, $destination);
+
+        return $destination;
+    }
+
+    /**
      * Проверка выбранной доставки при создании заказа: цену, срок и вид доставки берём не из запроса,
      * а из свежего расчёта, иначе покупатель мог бы подменить цену. Позиции — validated_items
      * публичного чекаута (final_price уже после скидок на позицию).
@@ -148,6 +170,9 @@ class PochtaDeliveryService extends DeliveryService
         if (! $method || $mailType === '') {
             throw new InvalidArgumentException('Выберите актуальный вариант доставки Почтой России.');
         }
+
+        // Индекс по адресу нужен не только для цены: его получит менеджер при отправке заказа.
+        $destination = $this->resolveDestination($methodCode, $destination);
 
         $tariff = collect($this->calculateTariffs($methodCode, $destination, array_map(fn (array $item) => $this->checkoutItem($item), $items)))
             ->firstWhere('tariff_code', $mailType);

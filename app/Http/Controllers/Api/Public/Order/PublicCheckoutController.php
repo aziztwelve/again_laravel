@@ -259,6 +259,12 @@ class PublicCheckoutController extends Controller
                         $itemsValidation['validated_items'],
                         $pochtaMethodCode,
                     );
+
+                    // Индекс отделения или найденный по адресу — в адрес заказа, он нужен при отправке.
+                    $postalCode = $validated['delivery_data']['destination']['index'] ?? null;
+                    if ($postalCode && blank($validated['delivery_address']['postal_code'] ?? null)) {
+                        $validated['delivery_address']['postal_code'] = (string) $postalCode;
+                    }
                 } catch (\InvalidArgumentException $exception) {
                     DB::rollBack();
 
