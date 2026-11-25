@@ -13,7 +13,7 @@
 | yandex-delivery.md | Яндекс.Доставка | планируется |
 | yandex-pay.md | Яндекс Пэй | планируется |
 | [cloudpayments.md](cloudpayments.md) | CloudPayments | готово |
-| robokassa.md | Robokassa | планируется |
+| [robokassa.md](robokassa.md) | Robokassa (SberPay, иностранная карта, Подели) | код написан, не залит |
 | [whatsapp.md](whatsapp.md) | WhatsApp (сообщения, фото, голосовые, видео) | готово |
 | messengers.md | Telegram, MAX, VK | планируется |
 | yandex-maps.md | Яндекс.Карты (ключ JS API, геокодер) | планируется |

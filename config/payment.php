@@ -50,15 +50,25 @@ return [
             'receipt_vat' => (int) env('CLOUDPAYMENTS_RECEIPT_VAT', 5),
         ],
 
+        // Robokassa: SberPay, иностранные карты, рассрочка Подели (способ
+        // выбирает покупатель на странице Robokassa). См. docs/integrations/robokassa.md.
+        // Пароли живут только в .env сервера. В тестовом режиме (IsTest=1)
+        // Robokassa подписывает запросы отдельными тестовыми паролями.
         'robokassa' => [
             'class' => \App\Services\Payment\RobokassaProvider::class,
+            'enabled' => (bool) env('ROBOKASSA_ENABLED', false),
             'merchant_login' => env('ROBOKASSA_LOGIN'),
             'password1' => env('ROBOKASSA_PASSWORD1'),
             'password2' => env('ROBOKASSA_PASSWORD2'),
-            'is_test' => env('ROBOKASSA_TEST_MODE', false),
-            'payment_url' => env('ROBOKASSA_PAYMENT_URL', 'https://auth.robokassa.ru/Merchant/Index'),
-            'status_url' => env('ROBOKASSA_STATUS_URL', 'https://auth.robokassa.ru/Merchant/WebService/Service.asmx/OpState'),
-            'refund_url' => env('ROBOKASSA_REFUND_URL', 'https://auth.robokassa.ru/Merchant/WebService/Service.asmx/RefundPayment'),
+            'test_password1' => env('ROBOKASSA_TEST_PASSWORD1'),
+            'test_password2' => env('ROBOKASSA_TEST_PASSWORD2'),
+            'is_test' => (bool) env('ROBOKASSA_TEST_MODE', false),
+            // Алгоритм подписи — как в «Технических настройках» магазина.
+            'hash_algo' => env('ROBOKASSA_HASH_ALGO', 'md5'),
+            'payment_url' => env('ROBOKASSA_PAYMENT_URL', 'https://auth.robokassa.ru/Merchant/Index.aspx'),
+            // Чек 54-ФЗ передаём в Robokassa; ставка НДС (%) для позиций без своей.
+            'send_receipt' => (bool) env('ROBOKASSA_SEND_RECEIPT', true),
+            'receipt_vat' => (int) env('ROBOKASSA_RECEIPT_VAT', 5),
         ],
     ],
 

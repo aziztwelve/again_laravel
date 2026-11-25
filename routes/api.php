@@ -32,6 +32,7 @@ use App\Http\Controllers\Api\Admin\OrderController;
 use App\Http\Controllers\Api\Public\Order\PublicCheckoutController;
 use App\Http\Controllers\Api\Public\Order\CloudPaymentsController;
 use App\Http\Controllers\Api\Public\Order\YandexPayController;
+use App\Http\Controllers\Api\Public\Order\RobokassaController;
 use App\Http\Controllers\Api\Public\Order\PublicOrderController;
 use App\Http\Controllers\Api\Admin\OrderStatsController;
 use App\Http\Controllers\Api\Admin\OrderViewController;
@@ -115,6 +116,14 @@ Route::post('/webhooks/cloudpayments/fail', [CloudPaymentsController::class, 'fa
     ->name('api.webhooks.cloudpayments.fail');
 Route::post('/webhooks/cloudpayments/refund', [CloudPaymentsController::class, 'refund'])
     ->name('api.webhooks.cloudpayments.refund');
+// Robokassa: Result — серверное уведомление (подпись Пароль #2), Success/Fail —
+// редиректы покупателя (метод POST по настройке магазина, GET допускаем).
+Route::post('/webhooks/robokassa/result', [RobokassaController::class, 'result'])
+    ->name('api.webhooks.robokassa.result');
+Route::match(['get', 'post'], '/webhooks/robokassa/success', [RobokassaController::class, 'success'])
+    ->name('api.webhooks.robokassa.success');
+Route::match(['get', 'post'], '/webhooks/robokassa/fail', [RobokassaController::class, 'fail'])
+    ->name('api.webhooks.robokassa.fail');
 
 // auth user
 Route::middleware('guest')->group(function () {
@@ -312,6 +321,10 @@ Route::prefix('/public')->group(function () {
         ->post('/orders/{viewToken}/cloudpayments/intent', [CloudPaymentsController::class, 'intent'])
         ->where('viewToken', '[a-f0-9]{32}')
         ->name('public.orders.cloudpayments.intent');
+    Route::middleware('throttle:10,1')
+        ->post('/orders/{viewToken}/robokassa/intent', [RobokassaController::class, 'intent'])
+        ->where('viewToken', '[a-f0-9]{32}')
+        ->name('public.orders.robokassa.intent');
     Route::middleware('throttle:10,1')
         ->post('/orders/{viewToken}/yandex-pay/intent', [YandexPayController::class, 'intent'])
         ->where('viewToken', '[a-f0-9]{32}')

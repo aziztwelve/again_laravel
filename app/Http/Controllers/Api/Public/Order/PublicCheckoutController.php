@@ -258,7 +258,7 @@ class PublicCheckoutController extends Controller
             // 5. Позиции
             // New public online orders use the configured reservation period.
             if (array_key_exists($order->payment_method ?? '', CloudPaymentsController::WIDGET_METHODS)
-                || in_array($order->payment_method, ['yandex_pay', 'yandex_pay_split'], true)) {
+                || in_array($order->payment_method, ['yandex_pay', 'yandex_pay_split', 'robokassa'], true)) {
                 $order->update(['reservation_expires_at' => now()->addHours((int) config('abandoned_order.reservation_hours', 2))]);
             }
 

@@ -303,6 +303,7 @@ class OrderHistoryService
                 'sberpay' => 'SberPay, рассрочка, иностранная карта',
                 'yandex_pay' => 'Яндекс Пэй и Сплит',
                 'yandex_pay_split' => 'Яндекс Сплит',
+                'robokassa' => 'Оплата SberPay, иностранная карта, Рассрочка Подели',
                 'cash_on_delivery' => 'Наличными или картой при получении',
                 'pickup_payment' => 'Оплата в точке самовывоза',
                 'podeli' => 'Подели',

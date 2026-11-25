@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Public\Order;
 
 use App\Http\Controllers\Controller;
 use App\Models\Order;
+use App\Services\Payment\RobokassaService;
 use App\Services\Payment\YandexPayService;
 use Illuminate\Http\JsonResponse;
 
@@ -170,6 +171,9 @@ class PublicOrderController extends Controller
             // Публичные параметры Web SDK: merchant_id, env, сумма и методы.
             // Merchant API key остаётся на сервере и во фронт не уходит.
             'yandex_pay' => app(YandexPayService::class)->publicConfig($order),
+            // Robokassa (SberPay, иностранная карта, Подели): кнопка ведёт на
+            // страницу оплаты Robokassa. Пароли и подпись во фронт не уходят.
+            'robokassa_available' => app(RobokassaService::class)->isAvailableForOrder($order),
             'total_amount' => (float) $order->total_amount,
             // discount_amount уже = total_items_discount + total_promo_discount
             // (см. OrderDiscountService::recalculate), складывать компоненты
