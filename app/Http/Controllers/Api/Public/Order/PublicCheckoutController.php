@@ -240,6 +240,36 @@ class PublicCheckoutController extends Controller
                 }
             }
 
+            // Почта России: тариф и цена проверяются свежим расчётом, из запроса берутся только
+            // выбранный вид отправления, отделение и адрес. Без выбранного тарифа заказ не принимаем.
+            $pochtaMethodCode = DeliveryMethod::query()
+                ->where('name', $validated['delivery_method']['name'] ?? '')
+                ->whereIn('code', \App\Services\Delivery\PochtaDeliveryService::METHOD_CODES)
+                ->value('code');
+            if ($pochtaMethodCode) {
+                if (($validated['delivery_data']['provider'] ?? null) !== 'pochta') {
+                    DB::rollBack();
+
+                    return $this->errorResponse('Выберите вариант доставки Почтой России: укажите адрес и выберите тариф.', 422);
+                }
+
+                try {
+                    $validated['delivery_data'] = app(\App\Services\Delivery\PochtaDeliveryService::class)->revalidateCheckout(
+                        $validated['delivery_data'],
+                        $itemsValidation['validated_items'],
+                        $pochtaMethodCode,
+                    );
+                } catch (\InvalidArgumentException $exception) {
+                    DB::rollBack();
+
+                    return $this->errorResponse($exception->getMessage(), 422);
+                } catch (\RuntimeException $exception) {
+                    DB::rollBack();
+
+                    return $this->errorResponse($exception->getMessage(), 503);
+                }
+            }
+
             // Яндекс.Доставка без цены в запросе: цену считаем на сервере, иначе
             // доставка получилась бы бесплатной из-за отсутствия цены.
             $yandexDelivery = app(\App\Services\Delivery\YandexDeliveryService::class)

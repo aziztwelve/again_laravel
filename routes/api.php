@@ -84,6 +84,7 @@ use App\Http\Controllers\Api\Auth\RegisteredUserController;
 use App\Http\Controllers\Api\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\DeliveryController;
 use App\Http\Controllers\Api\Delivery\CdekDeliveryController;
+use App\Http\Controllers\Api\Delivery\PochtaDeliveryController;
 use App\Http\Controllers\Api\Delivery\YandexDeliveryController;
 use App\Http\Controllers\WebhookController;
 use App\Http\Controllers\Api\PromoCodeController;
@@ -278,6 +279,12 @@ Route::prefix('/public')->group(function () {
             Route::get('/cities', [CdekDeliveryController::class, 'cities']);
             Route::get('/pvz', [CdekDeliveryController::class, 'pickupPoints']);
             Route::post('/calculate', [CdekDeliveryController::class, 'calculate']);
+        });
+
+        // Почта России (API «Отправка»): поиск отделений и расчёт для чекаута.
+        Route::prefix('pochta')->name('pochta.')->group(function () {
+            Route::get('/offices', [PochtaDeliveryController::class, 'offices'])->middleware('throttle:60,1')->name('offices');
+            Route::post('/calculate', [PochtaDeliveryController::class, 'calculate'])->middleware('throttle:60,1')->name('calculate');
         });
 
         // Бесплатная доставка: оценка правил для показанных покупателю

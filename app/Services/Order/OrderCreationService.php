@@ -320,6 +320,24 @@ class OrderCreationService
             ], fn ($value) => $value !== null);
         }
 
+        // Почта России: данные уже проверены PochtaDeliveryService::revalidateCheckout().
+        if (($data['provider'] ?? null) === 'pochta') {
+            return array_filter([
+                'provider' => 'pochta',
+                'delivery_type' => $data['delivery_type'] ?? null,
+                'tariff_code' => $data['tariff_code'] ?? null,
+                'tariff_name' => $data['tariff_name'] ?? null,
+                'mail_type' => $data['mail_type'] ?? null,
+                'mail_category' => $data['mail_category'] ?? null,
+                'delivery_mode' => $data['delivery_mode'] ?? null,
+                'price' => $data['price'] ?? null,
+                'currency' => $data['currency'] ?? 'RUB',
+                'period' => $data['period'] ?? null,
+                'destination' => $data['destination'] ?? null,
+                'pvz' => $data['pvz'] ?? null,
+            ], fn ($value) => $value !== null);
+        }
+
         $offerId = $orderData['yandex_offer'] ?? $data['offer_id'] ?? null;
         $deliveryType = $orderData['delivery_type'] ?? $data['delivery_type'] ?? null;
         $pvzId = $orderData['pvz_code'] ?? $data['pvz']['id'] ?? null;

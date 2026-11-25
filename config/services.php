@@ -110,6 +110,53 @@ return [
         ],
     ],
 
+    // Почта России: API «Отправка» (otpravka.pochta.ru). Секреты — только в .env сервера.
+    // Для каждого способа доставки перечислены виды отправлений, которые видит покупатель:
+    // `mail_type` — «Вид РПО» из справочника API, `declared` — с объявленной ценностью (только по России).
+    'pochta' => [
+        'enabled' => env('POCHTA_ENABLED', false),
+        'base_url' => env('POCHTA_BASE_URL', 'https://otpravka-api.pochta.ru'),
+        'token' => env('POCHTA_TOKEN'),
+        'login' => env('POCHTA_LOGIN'),
+        'password' => env('POCHTA_PASSWORD'),
+        // Индекс места приёма. Пусто — API берёт точку сдачи из профиля клиента.
+        'index_from' => env('POCHTA_INDEX_FROM'),
+        // Вес и габариты, если у товара они не заполнены (г и см).
+        'default_package' => ['weight' => 80, 'length' => 26, 'width' => 21, 'height' => 4],
+        'tariff_cache_minutes' => 10,
+        'methods' => [
+            'russian_post_office' => [
+                'delivery_type' => 'office',
+                'international' => false,
+                'products' => [
+                    ['mail_type' => 'ONLINE_PARCEL', 'name' => 'Посылка онлайн', 'declared' => true],
+                ],
+            ],
+            'russian_post_courier' => [
+                'delivery_type' => 'courier',
+                'international' => false,
+                'products' => [
+                    ['mail_type' => 'ONLINE_COURIER', 'name' => 'Курьер онлайн', 'declared' => true, 'courier' => true],
+                ],
+            ],
+            'international_pickup' => [
+                'delivery_type' => 'international_pickup',
+                'international' => true,
+                'products' => [
+                    ['mail_type' => 'SMALL_PACKET', 'name' => 'Мелкий пакет', 'category' => 'ORDERED', 'max_mass' => 2000],
+                    ['mail_type' => 'POSTAL_PARCEL', 'name' => 'Посылка', 'category' => 'ORDINARY'],
+                ],
+            ],
+            'international_courier' => [
+                'delivery_type' => 'international_courier',
+                'international' => true,
+                'products' => [
+                    ['mail_type' => 'EMS', 'name' => 'EMS', 'category' => 'ORDINARY'],
+                ],
+            ],
+        ],
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Публичные имена ботов/сообществ для deeplink-привязки чата

@@ -248,7 +248,7 @@ class CreateOrderRequest extends FormRequest
         }
 
         $code = \App\Models\DeliveryMethod::query()->where('name', $name)->value('code');
-        if (! in_array($code, ['cdek_pickup', 'cdek_postamat', 'yandex_pickup'], true)) {
+        if (! in_array($code, ['cdek_pickup', 'cdek_postamat', 'yandex_pickup', 'russian_post_office'], true)) {
             return;
         }
 

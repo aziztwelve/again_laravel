@@ -20,6 +20,7 @@ class DeliveryMethodSeeder extends Seeder
         $cdek = \App\Services\Delivery\CdekDeliveryService::class;
         $yandex = \App\Services\Delivery\YandexDeliveryService::class;
         $generic = \App\Services\Delivery\DeliveryService::class;
+        $pochta = \App\Services\Delivery\PochtaDeliveryService::class;
 
         $methods = [
             // СДЭК
@@ -64,16 +65,16 @@ class DeliveryMethodSeeder extends Seeder
             // Почта России
             [
                 'code' => 'russian_post_office',
-                'name' => 'Доставка в отделение Почты России или почтомат',
-                'description' => 'Получение в отделении Почты России или в почтомате',
-                'provider_class' => $generic,
+                'name' => 'Почта РФ: в отделение',
+                'description' => 'Получение в отделении Почты России',
+                'provider_class' => $pochta,
                 'settings' => ['kind' => 'pickup', 'company' => 'pochta'],
             ],
             [
                 'code' => 'russian_post_courier',
-                'name' => 'Доставка курьером Почты России',
+                'name' => 'Почта РФ: Курьер',
                 'description' => 'Курьерская доставка Почтой России',
-                'provider_class' => $generic,
+                'provider_class' => $pochta,
                 'settings' => ['kind' => 'courier', 'company' => 'pochta'],
             ],
             [
@@ -92,16 +93,16 @@ class DeliveryMethodSeeder extends Seeder
             ],
             [
                 'code' => 'international_pickup',
-                'name' => 'Доставка международных отправлений в ПВЗ',
-                'description' => 'Международная доставка в пункт выдачи',
-                'provider_class' => $generic,
+                'name' => 'Почта РФ: международная в пвз',
+                'description' => 'Международная доставка Почтой России в пункт выдачи',
+                'provider_class' => $pochta,
                 'settings' => ['kind' => 'pickup', 'company' => 'pochta', 'international' => true],
             ],
             [
                 'code' => 'international_courier',
-                'name' => 'Доставка международных отправлений курьером',
-                'description' => 'Международная курьерская доставка',
-                'provider_class' => $generic,
+                'name' => 'Почта РФ: международная курьер',
+                'description' => 'Международная курьерская доставка Почтой России',
+                'provider_class' => $pochta,
                 'settings' => ['kind' => 'courier', 'company' => 'pochta', 'international' => true],
             ],
 
