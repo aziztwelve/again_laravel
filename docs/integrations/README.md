@@ -12,6 +12,7 @@
 | [cdek.md](cdek.md) | СДЭК (ПВЗ, расчёт, заявки, треки) | готово |
 | yandex-delivery.md | Яндекс.Доставка | планируется |
 | yandex-pay.md | Яндекс Пэй | планируется |
+| [pochta.md](pochta.md) | Почта России (расчёт и отделения в чекауте; отправления и трекинг — позже) | этап 1 готов |
 | [cloudpayments.md](cloudpayments.md) | CloudPayments | готово |
 | [robokassa.md](robokassa.md) | Robokassa (SberPay, иностранная карта, Подели) | код написан, не залит |
 | [whatsapp.md](whatsapp.md) | WhatsApp (сообщения, фото, голосовые, видео) | готово |
