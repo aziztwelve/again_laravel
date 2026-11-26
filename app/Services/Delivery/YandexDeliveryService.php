@@ -403,7 +403,7 @@ class YandexDeliveryService extends DeliveryService
     /**
      * Трек заказа = номер грузоместа Яндекса (YD…). Вручную вписанный трек не перезаписываем:
      * меняем только трек, который поставила система (см. isSystemSetTrack).
-     * Пока номера грузоместа нет, в пустой трек ставим ID заявки; позже его заменит номер грузоместа.
+     * Пока номера грузоместа нет, трек пустой (ID заявки ставится только заказам на прежней схеме LO-…).
      */
     public function applyOrderTracking(Order $order, ?string $ownTracking, ?string $requestId, ?YandexOrder $existing = null): void
     {
@@ -419,8 +419,15 @@ class YandexDeliveryService extends DeliveryService
             return;
         }
 
+        // Заказы с номером грузоместа (YD…): пока Яндекс его не присвоил (10–20 минут после создания заявки),
+        // трек остаётся пустым. ID заявки («…-udp») в трек не ставим: покупатель и менеджеры видели его как «трек
+        // старого формата» (заказ 41900). Заказы на прежней схеме (LO-…) работают как раньше.
+        if ($replacesPartnerTrack) {
+            return;
+        }
+
         if ($requestId && $current !== $requestId && (blank($current) || $current === $existing?->claim_id)) {
-            // пока номера грузоместа нет: пустой трек (или трек, равный прежнему ID заявки) = ID заявки
+            // пока номера партнёра нет: пустой трек (или трек, равный прежнему ID заявки) = ID заявки
             $this->setOrderTracking($order, $requestId);
         }
     }

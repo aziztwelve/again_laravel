@@ -20,7 +20,8 @@ class SyncYandexOrderJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $tries = 6;
+    /** Попыток с интервалом 90 с: около 25 минут. Яндекс присваивает номер через 10–20 минут после создания заявки. */
+    public int $tries = 17;
 
     public function __construct(public int $yandexOrderId)
     {
@@ -35,8 +36,21 @@ class SyncYandexOrderJob implements ShouldQueue
 
         $service->sync($yandexOrder);
 
-        if (blank($yandexOrder->fresh()->tracking_number) && $this->attempts() < $this->tries) {
+        if (! $this->hasTrack($yandexOrder->fresh('order')) && $this->attempts() < $this->tries) {
             $this->release(90);
         }
+    }
+
+    /** Номер для заказа уже есть: у заказов с номером грузоместа это трек заказа, отличный от ID заявки. */
+    private function hasTrack(YandexOrder $yandexOrder): bool
+    {
+        $order = $yandexOrder->order;
+        if ($order && YandexDeliveryService::usesPackageTracking($order)) {
+            $track = (string) $order->tracking_number;
+
+            return $track !== '' && $track !== $yandexOrder->claim_id;
+        }
+
+        return filled($yandexOrder->tracking_number);
     }
 }

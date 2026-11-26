@@ -112,7 +112,7 @@ class YandexPackageTrackingTest extends TestCase
         $this->assertEquals($updatedAt, $order->fresh()->updated_at);
     }
 
-    public function test_without_package_number_blank_track_falls_back_to_claim_id_and_package_number_is_not_overwritten_later(): void
+    public function test_without_package_number_track_stays_blank_and_package_number_is_not_overwritten_later(): void
     {
         config(['services.yandex_delivery.package_tracking_from' => null]);
         config([
@@ -130,13 +130,13 @@ class YandexPackageTrackingTest extends TestCase
         $service = app(YandexDeliveryService::class);
 
         $service->sync($yandexOrder);
-        $this->assertSame('claim-1-udp', $order->fresh()->tracking_number);
+        $this->assertNull($order->fresh()->tracking_number, 'ID заявки (…-udp) в трек не ставится, пока нет номера грузоместа');
 
         $service->sync($yandexOrder->fresh());
         $this->assertSame('YD555', $order->fresh()->tracking_number);
 
         $service->sync($yandexOrder->fresh());
-        $this->assertSame('YD555', $order->fresh()->tracking_number, 'номер грузоместа не должен откатываться на ID заявки');
+        $this->assertSame('YD555', $order->fresh()->tracking_number, 'номер грузоместа не должен откатываться');
     }
 
     public function test_delayed_sync_job_sets_package_number_when_yandex_has_assigned_it(): void
@@ -160,6 +160,28 @@ class YandexPackageTrackingTest extends TestCase
         $job->handle(app(YandexDeliveryService::class));
 
         $job->assertReleased(delay: 90);
+    }
+
+    public function test_job_keeps_retrying_for_about_25_minutes_and_stops_once_the_number_arrives(): void
+    {
+        $this->assertSame(17, (new SyncYandexOrderJob(1))->tries);
+
+        // Первый ответ Яндекса без номера грузоместа, второй — уже с ним.
+        $info = ['request_id' => 'claim-1-udp', 'state' => ['status' => 'CREATED']];
+        Http::fake(['https://yandex.test/api/b2b/platform/request/info*' => Http::sequence()
+            ->push($info + ['request' => ['places' => []]])
+            ->push($info + ['request' => ['places' => [['barcode' => 'YD6AED8E1D8C7557A3A']]]])]);
+        $this->fakeYandex();
+        [$order, $yandexOrder] = $this->orderWithClaim('claim-1-udp');
+        $job = (new SyncYandexOrderJob($yandexOrder->id))->withFakeQueueInteractions();
+        $job->handle(app(YandexDeliveryService::class));
+        // Трек всё ещё равен ID заявки — номера нет, задача повторяется.
+        $job->assertReleased(delay: 90);
+
+        $done = (new SyncYandexOrderJob($yandexOrder->id))->withFakeQueueInteractions();
+        $done->handle(app(YandexDeliveryService::class));
+        $done->assertNotReleased();
+        $this->assertSame('YD6AED8E1D8C7557A3A', $order->fresh()->tracking_number);
     }
 
     public function test_creating_request_schedules_delayed_package_number_check_when_number_is_missing(): void
@@ -197,7 +219,7 @@ class YandexPackageTrackingTest extends TestCase
 
         app(YandexDeliveryService::class)->sync($yandexOrder);
 
-        $this->assertSame('claim-1-udp', $order->fresh()->tracking_number, 'LO-… больше не ставится');
+        $this->assertNull($order->fresh()->tracking_number, 'LO-… не ставится, ID заявки тоже: трек пустой до номера грузоместа');
     }
 
     public function test_our_own_place_barcode_is_not_used_as_track(): void
@@ -207,7 +229,7 @@ class YandexPackageTrackingTest extends TestCase
 
         app(YandexDeliveryService::class)->sync($yandexOrder);
 
-        $this->assertSame('claim-1-udp', $order->fresh()->tracking_number);
+        $this->assertNull($order->fresh()->tracking_number);
     }
 
     public function test_with_several_places_only_the_first_is_the_track(): void
