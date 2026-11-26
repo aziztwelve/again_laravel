@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\CdekOrder;
 use App\Models\Order;
+use App\Models\OrderPayment;
+use App\Models\Payment;
 use App\Jobs\CreateCdekOrderJob;
 use App\Services\Delivery\CdekDeliveryService;
 use App\Services\Order\OrderAuthorizationService;
@@ -119,7 +121,7 @@ class OrderViewController extends Controller
             'summary' => $summary,
             'client_stats' => $clientStats,
             'history' => $this->formatHistory($order),
-            'payments' => $order->payments,
+            'payments' => $this->formatPayments($order),
             'tasks' => $this->formatTasks($order),
             'custom_fields' => $this->orderCustomFieldsService->forOrder($order),
             'viewed_products' => [],  // TODO: трекинг просмотров клиента
@@ -580,5 +582,59 @@ class OrderViewController extends Controller
             'message' => $message,
             ...$extra,
         ], $status);
+    }
+
+    /**
+     * Список для виджета «Платежи»: попытки оплаты платёжных систем (таблица `payments`)
+     * и перенесённые записи старых заказов (таблица `order_payments`) в одном формате.
+     * Служебные данные провайдера (provider_data) наружу не отдаём.
+     */
+    private function formatPayments(Order $order): array
+    {
+        $gateway = Payment::query()
+            ->where('order_id', $order->id)
+            ->orderByDesc('id')
+            ->get()
+            ->map(fn (Payment $payment) => [
+                'id' => 'gateway-' . $payment->id,
+                'provider' => $payment->provider,
+                'provider_label' => $payment->provider_label,
+                'status' => $payment->status,
+                'status_label' => $payment->status_label,
+                'refund_label' => $payment->refund_label,
+                'amount' => $payment->amount,
+                'error_message' => $payment->error_message,
+                'provider_payment_id' => $payment->provider_payment_id,
+                'created_at' => $payment->created_at,
+            ]);
+
+        $legacy = $order->payments->map(function (OrderPayment $payment) {
+            // В перенесённых записях «оплачен» называется paid.
+            $status = $payment->status === 'paid' ? OrderPayment::STATUS_COMPLETED : $payment->status;
+
+            return [
+                'id' => 'legacy-' . $payment->id,
+                'provider' => $payment->payment_provider,
+                'provider_label' => match ($payment->payment_provider) {
+                    'cloudpayments', 'cloudpayment' => 'CloudPayments',
+                    default => $payment->payment_provider ?: $payment->payment_method,
+                },
+                'status' => $status,
+                'status_label' => match ($status) {
+                    OrderPayment::STATUS_COMPLETED => 'Оплачен',
+                    OrderPayment::STATUS_PENDING => 'Ожидает оплаты',
+                    OrderPayment::STATUS_FAILED => 'Не прошёл',
+                    OrderPayment::STATUS_REFUNDED => 'Возвращён',
+                    default => $status,
+                },
+                'refund_label' => null,
+                'amount' => $payment->amount,
+                'error_message' => null,
+                'provider_payment_id' => $payment->payment_id,
+                'created_at' => $payment->processed_at ?? $payment->created_at,
+            ];
+        });
+
+        return $gateway->concat($legacy->all())->values()->all();
     }
 }
