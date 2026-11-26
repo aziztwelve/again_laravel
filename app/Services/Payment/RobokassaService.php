@@ -7,6 +7,7 @@ use App\Models\Client;
 use App\Models\Order;
 use App\Models\Payment;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -339,6 +340,145 @@ class RobokassaService
         }
 
         return $payment;
+    }
+
+    /**
+     * Возврат оплаты через API возвратов Robokassa (JWT, подпись Password3).
+     * Выполняется полный возврат; если чек был передан — вместе с чеком возврата прихода (54-ФЗ).
+     *
+     * @return array{request_id: string, label: string|null}
+     *
+     * @throws RuntimeException возврат невозможен или отклонён (текст можно показывать менеджеру)
+     */
+    public function refund(Payment $payment, ?float $amount = null): array
+    {
+        $password3 = (string) config('payment.providers.robokassa.password3');
+        if ($password3 === '') {
+            throw new RuntimeException('Возврат Robokassa не настроен: сгенерируйте Password3 в кабинете Robokassa и впишите его в ROBOKASSA_PASSWORD3.');
+        }
+
+        if ($payment->provider !== self::PROVIDER || ! $payment->isCompleted()) {
+            throw new RuntimeException('Вернуть можно только оплаченный платёж Robokassa.');
+        }
+
+        $existing = data_get($payment->provider_data, 'refund.request_id');
+        if ($existing) {
+            return ['request_id' => (string) $existing, 'label' => data_get($payment->provider_data, 'refund.label')];
+        }
+
+        if ($amount !== null && round($amount, 2) < round((float) $payment->amount, 2)) {
+            throw new RuntimeException('Частичный возврат Robokassa из админки не поддерживается — сделайте его в кабинете Robokassa.');
+        }
+
+        $invId = (int) data_get($payment->provider_data, 'InvId', 0) ?: self::invoiceId((int) $payment->id);
+        $payload = ['OpKey' => $this->opKey($invId)];
+
+        $items = $this->refundItems($payment);
+        if ($items !== null) {
+            $payload['InvoiceItems'] = $items;
+        }
+
+        $response = Http::withBody(json_encode($this->jwt($payload, $password3)), 'application/json')
+            ->timeout(30)
+            ->post((string) config('payment.providers.robokassa.refund_url'));
+
+        $json = $response->json() ?? [];
+        if (! ($json['success'] ?? false)) {
+            $message = (string) ($json['message'] ?? ('HTTP ' . $response->status()));
+            Log::warning('Robokassa refund rejected', ['payment_id' => $payment->id, 'message' => $message, 'http' => $response->status()]);
+
+            throw new RuntimeException(match ($message) {
+                'NotEnoughOperationFunds' => 'Robokassa: недостаточно средств на балансе магазина для возврата.',
+                default => 'Robokassa отклонила возврат: ' . $message,
+            });
+        }
+
+        $requestId = (string) ($json['requestId'] ?? '');
+        $label = $requestId !== '' ? $this->refundLabel($requestId) : null;
+
+        $payment->update([
+            'status' => Payment::STATUS_REFUNDED,
+            'provider_data' => array_merge($payment->provider_data ?? [], [
+                'refund' => ['request_id' => $requestId, 'label' => $label, 'at' => now()->toIso8601String()],
+            ]),
+        ]);
+
+        Log::info('Robokassa refund created', ['payment_id' => $payment->id, 'request_id' => $requestId, 'label' => $label]);
+
+        return ['request_id' => $requestId, 'label' => $label];
+    }
+
+    /** OpKey операции из OpStateExt (подпись — Пароль #2). Только для оплаченных счетов. */
+    private function opKey(int $invId): string
+    {
+        $login = (string) config('payment.providers.robokassa.merchant_login');
+        $response = Http::timeout(20)->get((string) config('payment.providers.robokassa.op_state_ext_url'), [
+            'MerchantLogin' => $login,
+            'InvoiceID' => $invId,
+            'Signature' => $this->hash("{$login}:{$invId}:" . $this->password2()),
+        ]);
+
+        $xml = $response->body();
+        $paid = preg_match('~<State>\s*<Code>(\d+)</Code>~', $xml, $state) && (int) $state[1] === 100;
+
+        if (! $response->successful() || ! $paid || ! preg_match('~<OpKey>([^<]+)</OpKey>~', $xml, $key)) {
+            throw new RuntimeException('Robokassa не подтвердила оплату этого счёта — возврат невозможен.');
+        }
+
+        return trim($key[1]);
+    }
+
+    /**
+     * Позиции для чека возврата прихода — те же, что ушли в чеке оплаты (Cost — цена за единицу).
+     * null — чек при оплате не передавался, возвращаются только деньги.
+     *
+     * @return array<int, array<string, mixed>>|null
+     */
+    private function refundItems(Payment $payment): ?array
+    {
+        if (! config('payment.providers.robokassa.send_receipt')) {
+            return null;
+        }
+
+        $order = $payment->order()->first();
+        $receipt = $order ? $this->buildReceipt($order, (float) $payment->amount) : null;
+
+        if ($receipt === null || isset($receipt['payments'])) {
+            // Чек не прикреплялся или оплата была частично сертификатом — состав возврата вручную.
+            throw new RuntimeException('Автоматический возврат с чеком для этого заказа не поддерживается — сделайте возврат в кабинете Robokassa.');
+        }
+
+        return array_map(fn (array $item) => [
+            'Name' => $item['name'],
+            'Quantity' => $item['quantity'],
+            'Cost' => round($item['sum'] / max(1, (int) $item['quantity']), 2),
+            'Tax' => $item['tax'],
+            'PaymentMethod' => $item['payment_method'],
+            'PaymentObject' => $item['payment_object'],
+        ], $receipt['items']);
+    }
+
+    /** Статус заявки на возврат (finished / processing / canceled) или null, если спросить не удалось. */
+    private function refundLabel(string $requestId): ?string
+    {
+        try {
+            $r = Http::timeout(15)->get((string) config('payment.providers.robokassa.refund_state_url'), ['id' => $requestId]);
+
+            return $r->successful() ? ($r->json('label') ?: null) : null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /** JWT HS256 с компактным JSON (требование Robokassa). */
+    private function jwt(array $payload, string $secret): string
+    {
+        $b64 = fn (string $v) => rtrim(strtr(base64_encode($v), '+/', '-_'), '=');
+        $flags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
+        $head = $b64(json_encode(['alg' => 'HS256', 'typ' => 'JWT'], $flags));
+        $body = $b64(json_encode($payload, $flags));
+
+        return "{$head}.{$body}." . $b64(hash_hmac('sha256', "{$head}.{$body}", $secret, true));
     }
 
     public function findPayment(array $data): ?Payment

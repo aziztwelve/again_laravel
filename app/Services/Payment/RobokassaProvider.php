@@ -35,7 +35,8 @@ class RobokassaProvider extends AbstractPaymentProvider
 
     public function refundPayment(Payment $payment, ?float $amount = null): bool
     {
-        // Автоматический возврат не подключён: делается в личном кабинете Robokassa.
-        throw new RuntimeException('Возврат по Robokassa выполняется в личном кабинете Robokassa.');
+        app(RobokassaService::class)->refund($payment, $amount);
+
+        return true;
     }
 }

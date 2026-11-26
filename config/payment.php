@@ -63,6 +63,12 @@ return [
             'merchant_login' => env('ROBOKASSA_LOGIN'),
             'password1' => env('ROBOKASSA_PASSWORD1'),
             'password2' => env('ROBOKASSA_PASSWORD2'),
+            // Password3 — ключ API возвратов; генерируется в кабинете Robokassa («Технические настройки»).
+            'password3' => env('ROBOKASSA_PASSWORD3'),
+            'refund_url' => env('ROBOKASSA_REFUND_URL', 'https://services.robokassa.ru/RefundService/Refund/Create'),
+            'refund_state_url' => env('ROBOKASSA_REFUND_STATE_URL', 'https://services.robokassa.ru/RefundService/Refund/GetState'),
+            // OpStateExt отдаёт OpKey — номер операции, по которому делается возврат.
+            'op_state_ext_url' => env('ROBOKASSA_OPSTATE_EXT_URL', 'https://auth.robokassa.ru/Merchant/WebService/Service.asmx/OpStateExt'),
             'test_password1' => env('ROBOKASSA_TEST_PASSWORD1'),
             'test_password2' => env('ROBOKASSA_TEST_PASSWORD2'),
             'is_test' => (bool) env('ROBOKASSA_TEST_MODE', false),
