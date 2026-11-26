@@ -332,6 +332,11 @@ Route::prefix('/public')->group(function () {
     Route::middleware('throttle:60,1')
         ->get('/checkout/payment-options', [RobokassaController::class, 'checkoutOptions'])
         ->name('public.checkout.payment-options');
+    // Сверка оплаты с Robokassa после возврата из окна оплаты (Result URL может задержаться).
+    Route::middleware('throttle:30,1')
+        ->post('/orders/{viewToken}/robokassa/status', [RobokassaController::class, 'status'])
+        ->where('viewToken', '[a-f0-9]{32}')
+        ->name('public.orders.robokassa.status');
     Route::middleware('throttle:10,1')
         ->post('/orders/{viewToken}/robokassa/intent', [RobokassaController::class, 'intent'])
         ->where('viewToken', '[a-f0-9]{32}')

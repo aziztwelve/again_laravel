@@ -58,6 +58,32 @@ class RobokassaController extends Controller
     }
 
     /**
+     * Сверяет оплату с Robokassa и отдаёт статус заказа. Нужен после возврата из окна оплаты: Result URL
+     * может прийти с задержкой или не дойти — так же, как /yandex-pay/status у Яндекс Пэй.
+     */
+    public function status(string $viewToken, RobokassaService $service): JsonResponse
+    {
+        $order = Order::query()->where('view_token', $viewToken)->first();
+        if (! $order || ! $service->supports($order->payment_method)) {
+            return response()->json(['success' => false, 'message' => 'Для этого заказа недоступна оплата Robokassa.'], 422);
+        }
+
+        if ($service->isAvailable()) {
+            $service->syncOrder($order);
+        }
+
+        $order->refresh();
+
+        return response()->json([
+            'success' => true,
+            'payment_status' => [
+                'value' => $order->payment_status?->value ?? (string) $order->payment_status,
+                'label' => $order->payment_status?->label(),
+            ],
+        ]);
+    }
+
+    /**
      * Result URL: серверное уведомление об оплате.
      * Ответ `OK{InvId}` — подтверждение; любой другой — Robokassa повторит запрос.
      */
@@ -108,6 +134,11 @@ class RobokassaController extends Controller
 
         if (! $service->isValidShpToken($data)) {
             return $this->toShop();
+        }
+
+        $payment = $service->findPayment($data);
+        if ($payment) {
+            $service->markFailed($payment);
         }
 
         return $this->toOrder($service, $data, 'fail');

@@ -28,10 +28,52 @@ class Payment extends Model
         'error_message'
     ];
 
+    /** Подписи для карточки заказа в админке (виджет «Платежи»). */
+    protected $appends = ['provider_label', 'status_label', 'refund_label'];
+
     protected $casts = [
         'amount' => 'decimal:2',
         'provider_data' => 'array'
     ];
+
+    public function getProviderLabelAttribute(): string
+    {
+        return match ($this->provider) {
+            'robokassa' => 'Robokassa',
+            'cloudpayment' => 'CloudPayments',
+            'yandexpay' => 'Яндекс Пэй',
+            'yookassa' => 'ЮKassa',
+            default => (string) $this->provider,
+        };
+    }
+
+    public function getStatusLabelAttribute(): string
+    {
+        return match ($this->status) {
+            self::STATUS_PENDING => 'Ожидает оплаты',
+            self::STATUS_COMPLETED => 'Оплачен',
+            self::STATUS_FAILED => 'Не прошёл',
+            self::STATUS_REFUNDED => 'Возвращён',
+            default => (string) $this->status,
+        };
+    }
+
+    /** Состояние возврата, если он был запрошен или найден (Robokassa отдаёт finished / processing / canceled). */
+    public function getRefundLabelAttribute(): ?string
+    {
+        $label = data_get($this->provider_data, 'refund.label');
+
+        if ($label !== null) {
+            return match ($label) {
+                'finished' => 'Возврат выполнен',
+                'processing' => 'Возврат в обработке',
+                'canceled' => 'Возврат отменён',
+                default => 'Возврат: ' . $label,
+            };
+        }
+
+        return $this->status === self::STATUS_REFUNDED ? 'Возврат выполнен' : null;
+    }
 
     public function order(): BelongsTo
     {

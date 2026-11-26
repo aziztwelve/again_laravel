@@ -181,23 +181,29 @@ class RobokassaService
         return ! $usedHere && $this->invoiceIsFree($candidate) ? $candidate : $fallback;
     }
 
-    /** Свободен ли номер счёта в Robokassa (нет операции; любая ошибка запроса — «не свободен»). */
-    private function invoiceIsFree(int $invId): bool
+    /** Ответ OpStateExt (XML) по номеру счёта или null, если спросить не удалось. Подпись — Пароль #2. */
+    private function opStateExt(int $invId, int $timeout = 15): ?string
     {
         try {
             $login = (string) config('payment.providers.robokassa.merchant_login');
-            $response = Http::timeout(10)->get((string) config('payment.providers.robokassa.op_state_ext_url'), [
+            $response = Http::timeout($timeout)->get((string) config('payment.providers.robokassa.op_state_ext_url'), [
                 'MerchantLogin' => $login,
                 'InvoiceID' => $invId,
                 'Signature' => $this->hash("{$login}:{$invId}:" . $this->password2()),
             ]);
 
-            return $response->successful()
-                && preg_match('~<Result>\s*<Code>(\d+)</Code>~', $response->body(), $m) === 1
-                && (int) $m[1] === 3;
+            return $response->successful() ? $response->body() : null;
         } catch (\Throwable) {
-            return false;
+            return null;
         }
+    }
+
+    /** Свободен ли номер счёта в Robokassa (нет операции; любая ошибка запроса — «не свободен»). */
+    private function invoiceIsFree(int $invId): bool
+    {
+        $xml = $this->opStateExt($invId, 10);
+
+        return $xml !== null && preg_match('~<Result>\s*<Code>(\d+)</Code>~', $xml, $m) === 1 && (int) $m[1] === 3;
     }
 
     /** Платёж по номеру счёта из уведомления: сначала по сохранённому номеру, затем по старой схеме (id + сдвиг). */
@@ -245,6 +251,13 @@ class RobokassaService
 
         if (config('payment.providers.robokassa.is_test')) {
             $fields['IsTest'] = 1;
+        }
+
+        // Счёт действует, пока держится бронь заказа: после автоотмены Robokassa не даст оплатить
+        // (ошибка 33), как у Яндекс Пэй по времени жизни ссылки. Время — московское, минуты.
+        $expires = $order->reservation_expires_at;
+        if ($expires && $expires->isFuture()) {
+            $fields['ExpirationDate'] = $expires->copy()->setTimezone('Europe/Moscow')->format('Y-m-d\TH:i');
         }
 
         // Защита страницы возврата после неуспешной оплаты (см. controller).
@@ -405,6 +418,136 @@ class RobokassaService
         return $payment;
     }
 
+    /** Номер счёта платежа в Robokassa: сохранённый или (старая схема) id + сдвиг. */
+    private function invoiceOf(Payment $payment): int
+    {
+        return (int) ($payment->provider_payment_id ?: self::invoiceId((int) $payment->id));
+    }
+
+    /**
+     * Сверка платежа с Robokassa (OpStateExt) — на случай, если Result URL не дошёл или возврат сделан в кабинете.
+     * 100 — оплачен: платёж и заказ помечаются оплаченными (сумма должна совпасть); 60 — деньги возвращены.
+     *
+     * @return string paid|refunded|pending|unknown
+     */
+    public function syncPayment(Payment $payment): string
+    {
+        if ($payment->provider !== self::PROVIDER) {
+            return 'unknown';
+        }
+
+        $invId = $this->invoiceOf($payment);
+        $xml = $this->opStateExt($invId);
+        if ($xml === null || ! preg_match('~<State>\s*<Code>(\d+)</Code>~', $xml, $state)) {
+            return 'unknown';
+        }
+
+        $code = (int) $state[1];
+
+        if ($code === 100) {
+            if ($payment->isCompleted() || $payment->isRefunded()) {
+                return $payment->isRefunded() ? 'refunded' : 'paid';
+            }
+
+            if (! preg_match('~<OutSum>([^<]+)</OutSum>~', $xml, $sum)) {
+                return 'unknown';
+            }
+
+            $this->confirmPayment([
+                'InvId' => (string) $invId,
+                'OutSum' => $sum[1],
+                'IncCurrLabel' => preg_match('~<IncCurrLabel>([^<]*)</IncCurrLabel>~', $xml, $m) ? $m[1] : null,
+                'synced_via' => 'OpStateExt',
+            ]);
+
+            return 'paid';
+        }
+
+        if ($code === 60 && $payment->isCompleted()) {
+            // Возврат сделан не из админки (например, в кабинете Robokassa): фиксируем у себя, заказ не трогаем.
+            $payment->update([
+                'status' => Payment::STATUS_REFUNDED,
+                'provider_data' => array_merge($payment->provider_data ?? [], [
+                    'refund' => ['request_id' => null, 'label' => 'finished', 'at' => now()->toIso8601String(), 'source' => 'robokassa'],
+                ]),
+            ]);
+            Log::info('Robokassa: возврат найден при сверке', ['payment_id' => $payment->id]);
+
+            return 'refunded';
+        }
+
+        return $code === 60 && $payment->isRefunded() ? 'refunded' : 'pending';
+    }
+
+    /** Сверка всех неоплаченных попыток заказа (страница заказа после возврата из окна оплаты). */
+    public function syncOrder(Order $order): void
+    {
+        Payment::query()
+            ->where('order_id', $order->id)
+            ->where('provider', self::PROVIDER)
+            ->where('status', Payment::STATUS_PENDING)
+            ->where('created_at', '>=', now()->subDay())
+            ->orderByDesc('id')
+            ->limit(5)
+            ->get()
+            ->each(function (Payment $payment) {
+                try {
+                    $this->syncPayment($payment);
+                } catch (\Throwable $e) {
+                    Log::warning('Robokassa: сверка платежа не удалась', ['payment_id' => $payment->id, 'error' => $e->getMessage()]);
+                }
+            });
+    }
+
+    /**
+     * Покупатель попал на Fail URL (отказ, отмена, ошибка банка): попытка не удалась, заказ остаётся доступным
+     * для повторной оплаты — так же, как по Fail-уведомлению CloudPayments. Оплаченное не трогаем.
+     */
+    public function markFailed(Payment $payment): bool
+    {
+        if ($payment->provider !== self::PROVIDER || ! $payment->isPending()) {
+            return false;
+        }
+
+        $payment->update([
+            'status' => Payment::STATUS_FAILED,
+            'error_message' => 'Покупатель отменил оплату или платёж отклонён',
+        ]);
+
+        $order = $payment->order()->first();
+        if ($order && ! $order->isPaid() && $order->payment_status !== PaymentStatus::FAILED) {
+            $order->updatePaymentStatus(PaymentStatus::FAILED);
+        }
+
+        return true;
+    }
+
+    /** Обновляет статус заявки на возврат (processing → finished / canceled). Возвращает актуальный статус. */
+    public function syncRefund(Payment $payment): ?string
+    {
+        $requestId = (string) data_get($payment->provider_data, 'refund.request_id', '');
+        $label = data_get($payment->provider_data, 'refund.label');
+        if ($requestId === '' || in_array($label, ['finished', 'canceled'], true)) {
+            return $label;
+        }
+
+        $new = $this->refundLabel($requestId);
+        if ($new === null || $new === $label) {
+            return $label;
+        }
+
+        $data = $payment->provider_data ?? [];
+        $data['refund']['label'] = $new;
+        $attributes = ['provider_data' => $data];
+        if ($new === 'canceled') {
+            // Возврат отменили в кабинете — деньги у покупателя не возвращены.
+            $attributes['status'] = Payment::STATUS_COMPLETED;
+        }
+        $payment->update($attributes);
+
+        return $new;
+    }
+
     /**
      * Возврат оплаты через API возвратов Robokassa (JWT, подпись Password3).
      * Выполняется полный возврат; если чек был передан — вместе с чеком возврата прихода (54-ФЗ).
@@ -471,20 +614,13 @@ class RobokassaService
         return ['request_id' => $requestId, 'label' => $label];
     }
 
-    /** OpKey операции из OpStateExt (подпись — Пароль #2). Только для оплаченных счетов. */
+    /** OpKey операции из OpStateExt. Только для оплаченных счетов. */
     private function opKey(int $invId): string
     {
-        $login = (string) config('payment.providers.robokassa.merchant_login');
-        $response = Http::timeout(20)->get((string) config('payment.providers.robokassa.op_state_ext_url'), [
-            'MerchantLogin' => $login,
-            'InvoiceID' => $invId,
-            'Signature' => $this->hash("{$login}:{$invId}:" . $this->password2()),
-        ]);
-
-        $xml = $response->body();
+        $xml = $this->opStateExt($invId, 20) ?? '';
         $paid = preg_match('~<State>\s*<Code>(\d+)</Code>~', $xml, $state) && (int) $state[1] === 100;
 
-        if (! $response->successful() || ! $paid || ! preg_match('~<OpKey>([^<]+)</OpKey>~', $xml, $key)) {
+        if (! $paid || ! preg_match('~<OpKey>([^<]+)</OpKey>~', $xml, $key)) {
             throw new RuntimeException('Robokassa не подтвердила оплату этого счёта — возврат невозможен.');
         }
 

@@ -65,6 +65,12 @@ Schedule::command('cart:gc-guest-carts')
 // в статусах "Новый" и "В работе" (см. docs/tasks/order-status-actualization.md).
 Schedule::command('orders:remind-abandoned')->everyMinute()->withoutOverlapping();
 
+// Страховка к Result URL Robokassa: пропущенные оплаты и статусы возвратов.
+Schedule::command('robokassa:reconcile')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->runInBackground();
+
 Schedule::command('orders:cancel-unpaid')
     ->everyFiveMinutes()
     ->withoutOverlapping()
