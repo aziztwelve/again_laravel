@@ -23,6 +23,16 @@ class RobokassaService
 {
     public const PROVIDER = 'robokassa';
 
+    /**
+     * Номер счёта Robokassa (InvId) = номер нашего платежа + сдвиг. Магазин `again8` принимал платежи
+     * и раньше (InvId = номера заказов InSales, 1004…40225), и Robokassa не даёт использовать номер,
+     * по которому уже есть операция (так «сломались» 2020 и 2021). Сдвиг уводит нас в свободный диапазон.
+     */
+    public const INVOICE_OFFSET = 100_000_000;
+
+    /** Платежи до введения сдвига (id ≤ 2022) уходили в Robokassa с InvId = id; их уведомления ещё принимаем. */
+    private const LEGACY_MAX_PAYMENT_ID = 2022;
+
     /** Код `orders.payment_method` для пункта чекаута «SberPay, иностранная карта, Подели». */
     public const PAYMENT_METHOD = 'robokassa';
 
@@ -35,6 +45,21 @@ class RobokassaService
         20 => 'vat20',
         22 => 'vat22',
     ];
+
+    public static function invoiceId(int $paymentId): int
+    {
+        return self::INVOICE_OFFSET + $paymentId;
+    }
+
+    /** Обратное преобразование: InvId из уведомления → id нашего платежа (null — не наш номер). */
+    public static function paymentIdFromInvoice(int $invId): ?int
+    {
+        if ($invId >= self::INVOICE_OFFSET) {
+            return $invId - self::INVOICE_OFFSET;
+        }
+
+        return $invId > 0 && $invId <= self::LEGACY_MAX_PAYMENT_ID ? $invId : null;
+    }
 
     public function isAvailable(): bool
     {
@@ -135,7 +160,7 @@ class RobokassaService
     {
         $login = (string) config('payment.providers.robokassa.merchant_login');
         $outSum = $this->money((float) $payment->amount);
-        $invId = (string) $payment->id;
+        $invId = (string) self::invoiceId((int) $payment->id);
 
         $fields = [
             'MerchantLogin' => $login,
@@ -262,10 +287,10 @@ class RobokassaService
 
     public function isValidShpToken(array $data): bool
     {
-        $invId = (int) ($data['InvId'] ?? 0);
+        $paymentId = self::paymentIdFromInvoice((int) ($data['InvId'] ?? 0));
         $token = (string) ($data['Shp_pay'] ?? '');
 
-        return $invId > 0 && $token !== '' && hash_equals($this->shpToken($invId), $token);
+        return $paymentId !== null && $token !== '' && hash_equals($this->shpToken($paymentId), $token);
     }
 
     /**
@@ -277,12 +302,13 @@ class RobokassaService
     public function confirmPayment(array $data): Payment
     {
         $invId = (int) ($data['InvId'] ?? 0);
+        $paymentId = self::paymentIdFromInvoice($invId);
 
-        $payment = DB::transaction(function () use ($data, $invId): Payment {
-            $payment = Payment::query()
+        $payment = DB::transaction(function () use ($data, $invId, $paymentId): Payment {
+            $payment = $paymentId === null ? null : Payment::query()
                 ->where('provider', self::PROVIDER)
                 ->lockForUpdate()
-                ->find($invId);
+                ->find($paymentId);
 
             if (! $payment) {
                 throw new RuntimeException("Robokassa result: платёж {$invId} не найден");
@@ -317,10 +343,10 @@ class RobokassaService
 
     public function findPayment(array $data): ?Payment
     {
-        $invId = (int) ($data['InvId'] ?? 0);
+        $paymentId = self::paymentIdFromInvoice((int) ($data['InvId'] ?? 0));
 
-        return $invId > 0
-            ? Payment::with('order')->where('provider', self::PROVIDER)->find($invId)
+        return $paymentId !== null
+            ? Payment::with('order')->where('provider', self::PROVIDER)->find($paymentId)
             : null;
     }
 

@@ -20,6 +20,8 @@ class RobokassaServiceTest extends TestCase
 
         config([
             'payment.providers.robokassa.enabled' => true,
+            // значения из .env сервера (закрытый тест по email) не должны влиять на тесты
+            'payment.providers.robokassa.allowed_emails' => [],
             'payment.providers.robokassa.merchant_login' => 'again8',
             'payment.providers.robokassa.password1' => 'pass-one',
             'payment.providers.robokassa.password2' => 'pass-two',
@@ -101,12 +103,13 @@ class RobokassaServiceTest extends TestCase
 
         $this->assertSame('again8', $fields['MerchantLogin']);
         $this->assertSame('1500.50', $fields['OutSum']);
-        $this->assertSame('42', $fields['InvId']);
+        // InvId сдвинут относительно номера платежа (в Robokassa уже есть старые операции с малыми номерами).
+        $this->assertSame('100000042', $fields['InvId']);
         $this->assertArrayNotHasKey('Receipt', $fields);
         $this->assertArrayNotHasKey('IncCurrLabel', $fields);
         $this->assertArrayNotHasKey('IsTest', $fields);
         $this->assertSame(
-            md5('again8:1500.50:42:pass-one:Shp_pay=' . $fields['Shp_pay']),
+            md5('again8:1500.50:100000042:pass-one:Shp_pay=' . $fields['Shp_pay']),
             $fields['SignatureValue'],
         );
     }
@@ -119,7 +122,7 @@ class RobokassaServiceTest extends TestCase
         $fields = $this->service->buildFields($order, $payment);
 
         $this->assertSame(1, $fields['IsTest']);
-        $this->assertSame(md5('again8:100.00:1:test-one:Shp_pay=' . $fields['Shp_pay']), $fields['SignatureValue']);
+        $this->assertSame(md5('again8:100.00:100000001:test-one:Shp_pay=' . $fields['Shp_pay']), $fields['SignatureValue']);
     }
 
     public function test_receipt_is_urlencoded_and_signed(): void
@@ -139,7 +142,7 @@ class RobokassaServiceTest extends TestCase
         $this->assertSame('vat5', $receipt['items'][1]['tax']);
         $this->assertArrayNotHasKey('payments', $receipt);
         $this->assertSame(
-            md5('again8:500.00:9:' . $fields['Receipt'] . ':pass-one:Shp_pay=' . $fields['Shp_pay']),
+            md5('again8:500.00:100000009:' . $fields['Receipt'] . ':pass-one:Shp_pay=' . $fields['Shp_pay']),
             $fields['SignatureValue'],
         );
     }
@@ -176,10 +179,26 @@ class RobokassaServiceTest extends TestCase
         [$order, $payment] = $this->orderAndPayment(100, 5);
         $token = $this->service->buildFields($order, $payment)['Shp_pay'];
 
-        $this->assertTrue($this->service->isValidShpToken(['InvId' => '5', 'Shp_pay' => $token]));
-        $this->assertFalse($this->service->isValidShpToken(['InvId' => '6', 'Shp_pay' => $token]));
-        $this->assertFalse($this->service->isValidShpToken(['InvId' => '5']));
-        $this->assertFalse($this->service->isValidShpToken(['InvId' => '5', 'Shp_pay' => '']));
+        $inv = (string) RobokassaService::invoiceId(5);
+        $this->assertTrue($this->service->isValidShpToken(['InvId' => $inv, 'Shp_pay' => $token]));
+        $this->assertFalse($this->service->isValidShpToken(['InvId' => (string) RobokassaService::invoiceId(6), 'Shp_pay' => $token]));
+        $this->assertFalse($this->service->isValidShpToken(['InvId' => $inv]));
+        $this->assertFalse($this->service->isValidShpToken(['InvId' => $inv, 'Shp_pay' => '']));
+        // Номер без сдвига (кроме старых платежей ≤ 2022) нашим не считается.
+        $this->assertFalse($this->service->isValidShpToken(['InvId' => '5000', 'Shp_pay' => $token]));
+    }
+
+    public function test_invoice_number_is_shifted_and_maps_back_to_payment_id(): void
+    {
+        $this->assertSame(100002023, RobokassaService::invoiceId(2023));
+        $this->assertSame(2023, RobokassaService::paymentIdFromInvoice(100002023));
+        // Платежи, ушедшие в Robokassa до сдвига (id ≤ 2022), всё ещё распознаются.
+        $this->assertSame(2019, RobokassaService::paymentIdFromInvoice(2019));
+        // Старые номера магазина (заказы InSales и т.п.) и мусор — не наши.
+        $this->assertNull(RobokassaService::paymentIdFromInvoice(2023));
+        $this->assertNull(RobokassaService::paymentIdFromInvoice(40225));
+        $this->assertNull(RobokassaService::paymentIdFromInvoice(0));
+        $this->assertNull(RobokassaService::paymentIdFromInvoice(-5));
     }
 
     public function test_service_is_unavailable_without_passwords_or_flag(): void

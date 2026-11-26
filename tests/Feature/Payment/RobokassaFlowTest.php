@@ -7,6 +7,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Payment;
 use App\Models\Product;
+use App\Services\Payment\RobokassaService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Tests\TestCase;
 
@@ -21,6 +22,8 @@ class RobokassaFlowTest extends TestCase
 
         config([
             'payment.providers.robokassa.enabled' => true,
+            // значения из .env сервера (закрытый тест по email) не должны влиять на тесты
+            'payment.providers.robokassa.allowed_emails' => [],
             'payment.providers.robokassa.merchant_login' => 'again8',
             'payment.providers.robokassa.password1' => 'pass-one',
             'payment.providers.robokassa.password2' => 'pass-two',
@@ -46,11 +49,12 @@ class RobokassaFlowTest extends TestCase
         $payment = Payment::query()->where('order_id', $order->id)->firstOrFail();
         $this->assertSame('robokassa', $payment->provider);
         $this->assertSame(Payment::STATUS_PENDING, $payment->status);
-        $this->assertSame((string) $payment->id, $response->json('fields.InvId'));
+        $this->assertSame($this->inv($payment), $response->json('fields.InvId'));
+        $this->assertGreaterThanOrEqual(RobokassaService::INVOICE_OFFSET, (int) $response->json('fields.InvId'));
 
         $fields = $response->json('fields');
         $expected = md5(implode(':', [
-            'again8', '2500.00', $payment->id, $fields['Receipt'], 'pass-one', 'Shp_pay=' . $fields['Shp_pay'],
+            'again8', '2500.00', $this->inv($payment), $fields['Receipt'], 'pass-one', 'Shp_pay=' . $fields['Shp_pay'],
         ]));
         $this->assertSame($expected, $fields['SignatureValue']);
     }
@@ -77,7 +81,7 @@ class RobokassaFlowTest extends TestCase
 
         $this->post('/api/webhooks/robokassa/result', $this->resultPayload($payment))
             ->assertOk()
-            ->assertSeeText('OK' . $payment->id, false);
+            ->assertSeeText('OK' . $this->inv($payment), false);
 
         $this->assertSame(Payment::STATUS_COMPLETED, $payment->fresh()->status);
         $this->assertTrue($order->fresh()->isPaid());
@@ -90,7 +94,7 @@ class RobokassaFlowTest extends TestCase
 
         $this->post('/api/webhooks/robokassa/result', $payload)->assertOk();
         $paidAt = $order->fresh()->paid_at;
-        $this->post('/api/webhooks/robokassa/result', $payload)->assertOk()->assertSeeText('OK' . $payment->id, false);
+        $this->post('/api/webhooks/robokassa/result', $payload)->assertOk()->assertSeeText('OK' . $this->inv($payment), false);
 
         $this->assertEquals($paidAt, $order->fresh()->paid_at);
     }
@@ -110,8 +114,8 @@ class RobokassaFlowTest extends TestCase
     public function test_result_with_wrong_amount_does_not_pay(): void
     {
         [$order, $payment] = $this->orderWithPayment();
-        $payload = ['OutSum' => '1.000000', 'InvId' => (string) $payment->id];
-        $payload['SignatureValue'] = strtoupper(md5("1.000000:{$payment->id}:pass-two"));
+        $payload = ['OutSum' => '1.000000', 'InvId' => $this->inv($payment)];
+        $payload['SignatureValue'] = strtoupper(md5('1.000000:' . $this->inv($payment) . ':pass-two'));
 
         $this->post('/api/webhooks/robokassa/result', $payload)->assertStatus(400);
 
@@ -120,8 +124,8 @@ class RobokassaFlowTest extends TestCase
 
     public function test_result_for_unknown_payment_is_rejected(): void
     {
-        $payload = ['OutSum' => '100.000000', 'InvId' => '99999999'];
-        $payload['SignatureValue'] = md5('100.000000:99999999:pass-two');
+        $payload = ['OutSum' => '100.000000', 'InvId' => (string) RobokassaService::invoiceId(99999999)];
+        $payload['SignatureValue'] = md5('100.000000:' . RobokassaService::invoiceId(99999999) . ':pass-two');
 
         $this->post('/api/webhooks/robokassa/result', $payload)->assertStatus(400);
     }
@@ -129,8 +133,8 @@ class RobokassaFlowTest extends TestCase
     public function test_success_leads_to_order_page_only_with_valid_signature(): void
     {
         [$order, $payment] = $this->orderWithPayment();
-        $payload = ['OutSum' => '2500.00', 'InvId' => (string) $payment->id, 'Culture' => 'ru'];
-        $payload['SignatureValue'] = md5("2500.00:{$payment->id}:pass-one");
+        $payload = ['OutSum' => '2500.00', 'InvId' => $this->inv($payment), 'Culture' => 'ru'];
+        $payload['SignatureValue'] = md5('2500.00:' . $this->inv($payment) . ':pass-one');
 
         $this->post('/api/webhooks/robokassa/success', $payload)
             ->assertOk()
@@ -151,7 +155,7 @@ class RobokassaFlowTest extends TestCase
         [$order, $payment] = $this->orderWithPayment();
 
         // Только InvId — подписи нет, токен заказа не отдаём.
-        $this->post('/api/webhooks/robokassa/fail', ['InvId' => (string) $payment->id, 'OutSum' => '2500.00'])
+        $this->post('/api/webhooks/robokassa/fail', ['InvId' => $this->inv($payment), 'OutSum' => '2500.00'])
             ->assertOk()
             ->assertDontSee($order->view_token, false);
 
@@ -204,6 +208,12 @@ class RobokassaFlowTest extends TestCase
         $this->postJson("/api/public/orders/{$order->view_token}/robokassa/intent")->assertOk();
     }
 
+    /** InvId, под которым платёж уходит в Robokassa (с учётом сдвига). */
+    private function inv(Payment $payment): string
+    {
+        return (string) RobokassaService::invoiceId((int) $payment->id);
+    }
+
     /** @return array{0: Order, 1: Payment} */
     private function orderWithPayment(): array
     {
@@ -226,10 +236,10 @@ class RobokassaFlowTest extends TestCase
 
         return [
             'OutSum' => $outSum,
-            'InvId' => (string) $payment->id,
+            'InvId' => $this->inv($payment),
             'Fee' => '0.000000',
             'EMail' => 'buyer@example.com',
-            'SignatureValue' => strtoupper(md5("{$outSum}:{$payment->id}:pass-two")),
+            'SignatureValue' => strtoupper(md5($outSum . ':' . $this->inv($payment) . ':pass-two')),
         ];
     }
 
