@@ -21,11 +21,7 @@ use Illuminate\Support\Facades\Log;
  */
 class OrderService
 {
-    /** Сколько МойСклад может досохранять документ после запроса, на который сайт не получил ответа. */
-    private const CREATE_PENDING_SECONDS = 180;
-
-    /** Ожидание ответа на запись заказа: под нагрузкой МойСклад отвечает дольше 30 секунд. */
-    private const WRITE_TIMEOUT_SECONDS = 50;
+    use GuardsDocumentCreation;
 
     private string $baseURL = 'https://api.moysklad.ru/api/remap/1.2';
     private string $token;
@@ -206,20 +202,16 @@ class OrderService
             'Content-Type'    => 'application/json',
         ])->timeout(self::WRITE_TIMEOUT_SECONDS);
 
-        // Отметка ставится ДО запроса: она переживёт и таймаут, и остановку воркера.
-        if (! $isUpdate && ! Cache::add($pendingKey, now()->getTimestamp(), self::CREATE_PENDING_SECONDS)) {
-            $left = (int) Cache::get($pendingKey) + self::CREATE_PENDING_SECONDS - now()->getTimestamp();
-
-            throw new OrderCreationPendingException(max(1, $left) + 5);
+        if (! $isUpdate) {
+            $this->claimCreation($pendingKey);
         }
 
         $response = $isUpdate
             ? $request->put("{$this->baseURL}/entity/customerorder/{$order->moysklad_order_uuid}", $payload)
             : $request->post("{$this->baseURL}/entity/customerorder", $payload);
 
-        // Успех или отказ 4xx — исход известен. При 5xx и таймауте документ мог создаться.
-        if (! $isUpdate && ($response->successful() || $response->clientError())) {
-            Cache::forget($pendingKey);
+        if (! $isUpdate) {
+            $this->settleCreation($pendingKey, $response);
         }
 
         if (! $response->successful()) {

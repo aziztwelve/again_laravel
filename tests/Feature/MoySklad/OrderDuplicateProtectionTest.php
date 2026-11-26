@@ -5,7 +5,7 @@ namespace Tests\Feature\MoySklad;
 use App\Jobs\SyncOrderToMoySkladJob;
 use App\Models\DeliveryServiceSetting;
 use App\Models\Order;
-use App\Services\MoySklad\OrderCreationPendingException;
+use App\Services\MoySklad\CreationPendingException;
 use App\Services\MoySklad\OrderService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Http\Client\ConnectionException;
@@ -116,7 +116,7 @@ class OrderDuplicateProtectionTest extends TestCase
         // Сразу следом (оплата): МойСклад документ ещё не показывает — ждём, не создаём.
         $this->create = 'ok';
         $pending = $this->push($order);
-        $this->assertInstanceOf(OrderCreationPendingException::class, $pending);
+        $this->assertInstanceOf(CreationPendingException::class, $pending);
         $this->assertGreaterThan(0, $pending->retryAfter);
         $this->assertNull($order->fresh()->moysklad_order_uuid);
 
@@ -148,7 +148,7 @@ class OrderDuplicateProtectionTest extends TestCase
         $this->create = 503;
         $this->push($afterServerError);
         $this->create = 'ok';
-        $this->assertInstanceOf(OrderCreationPendingException::class, $this->push($afterServerError));
+        $this->assertInstanceOf(CreationPendingException::class, $this->push($afterServerError));
 
         $afterRejection = $this->order();
         $this->create = 412;
