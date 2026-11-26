@@ -174,18 +174,31 @@ class RobokassaServiceTest extends TestCase
         $this->assertNull($this->service->buildReceipt($order, 900.0));
     }
 
-    public function test_shp_token_is_bound_to_payment_id(): void
+    public function test_shp_token_is_bound_to_invoice_number(): void
     {
         [$order, $payment] = $this->orderAndPayment(100, 5);
-        $token = $this->service->buildFields($order, $payment)['Shp_pay'];
+        $fields = $this->service->buildFields($order, $payment);
+        $token = $fields['Shp_pay'];
+        $inv = $fields['InvId'];
 
-        $inv = (string) RobokassaService::invoiceId(5);
+        $this->assertSame((string) RobokassaService::invoiceId(5), $inv);
         $this->assertTrue($this->service->isValidShpToken(['InvId' => $inv, 'Shp_pay' => $token]));
         $this->assertFalse($this->service->isValidShpToken(['InvId' => (string) RobokassaService::invoiceId(6), 'Shp_pay' => $token]));
         $this->assertFalse($this->service->isValidShpToken(['InvId' => $inv]));
         $this->assertFalse($this->service->isValidShpToken(['InvId' => $inv, 'Shp_pay' => '']));
-        // Номер без сдвига (кроме старых платежей ≤ 2022) нашим не считается.
-        $this->assertFalse($this->service->isValidShpToken(['InvId' => '5000', 'Shp_pay' => $token]));
+        $this->assertFalse($this->service->isValidShpToken(['InvId' => 'abc', 'Shp_pay' => $token]));
+    }
+
+    public function test_stored_invoice_number_is_used_in_the_request(): void
+    {
+        [$order, $payment] = $this->orderAndPayment(100, 5);
+        $payment->provider_payment_id = '41967'; // номер заказа, выбранный при создании платежа
+
+        $fields = $this->service->buildFields($order, $payment);
+
+        $this->assertSame('41967', $fields['InvId']);
+        $this->assertSame(md5('again8:100.00:41967:pass-one:Shp_pay=' . $fields['Shp_pay']), $fields['SignatureValue']);
+        $this->assertTrue($this->service->isValidShpToken(['InvId' => '41967', 'Shp_pay' => $fields['Shp_pay']]));
     }
 
     public function test_invoice_number_is_shifted_and_maps_back_to_payment_id(): void

@@ -9,6 +9,7 @@ use App\Models\Payment;
 use App\Models\Product;
 use App\Services\Payment\RobokassaService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 /** Сквозной сценарий Robokassa: intent → Result URL → Success/Fail. Нужна БД (запускать на серверной копии). */
@@ -32,6 +33,9 @@ class RobokassaFlowTest extends TestCase
             'payment.providers.robokassa.send_receipt' => true,
             'app.frontend_url' => 'https://shop.example',
         ]);
+
+        // По умолчанию Robokassa считает номер счёта свободным (OpStateExt: «не удалось найти операцию»).
+        $this->fakeInvoiceLookup(free: true);
     }
 
     public function test_intent_returns_signed_form_fields_and_creates_pending_payment(): void
@@ -50,13 +54,80 @@ class RobokassaFlowTest extends TestCase
         $this->assertSame('robokassa', $payment->provider);
         $this->assertSame(Payment::STATUS_PENDING, $payment->status);
         $this->assertSame($this->inv($payment), $response->json('fields.InvId'));
-        $this->assertGreaterThanOrEqual(RobokassaService::INVOICE_OFFSET, (int) $response->json('fields.InvId'));
+        // Номер счёта в Robokassa = номер заказа магазина (виден в кабинете Robokassa, как в админке).
+        $this->assertSame((string) $order->order_number, $response->json('fields.InvId'));
+        $this->assertSame((string) $order->order_number, $payment->provider_payment_id);
 
         $fields = $response->json('fields');
         $expected = md5(implode(':', [
             'again8', '2500.00', $this->inv($payment), $fields['Receipt'], 'pass-one', 'Shp_pay=' . $fields['Shp_pay'],
         ]));
         $this->assertSame($expected, $fields['SignatureValue']);
+    }
+
+    public function test_second_attempt_for_the_same_order_gets_a_technical_invoice_number(): void
+    {
+        $order = $this->pendingOrder('robokassa');
+
+        $first = $this->postJson("/api/public/orders/{$order->view_token}/robokassa/intent")->json('fields.InvId');
+        $second = $this->postJson("/api/public/orders/{$order->view_token}/robokassa/intent")->json('fields.InvId');
+
+        $this->assertSame((string) $order->order_number, $first);
+        $paymentId = Payment::query()->where('order_id', $order->id)->orderByDesc('id')->value('id');
+        $this->assertSame((string) RobokassaService::invoiceId((int) $paymentId), $second);
+        $this->assertNotSame($first, $second);
+    }
+
+    public function test_order_number_already_known_to_robokassa_falls_back_to_technical_number(): void
+    {
+        $this->fakeInvoiceLookup(free: false);
+        $order = $this->pendingOrder('robokassa');
+
+        $inv = $this->postJson("/api/public/orders/{$order->view_token}/robokassa/intent")->json('fields.InvId');
+
+        $paymentId = Payment::query()->where('order_id', $order->id)->value('id');
+        $this->assertSame((string) RobokassaService::invoiceId((int) $paymentId), $inv);
+    }
+
+    public function test_failed_lookup_in_robokassa_falls_back_to_technical_number(): void
+    {
+        Http::swap(new \Illuminate\Http\Client\Factory());
+        Http::fake(['*OpStateExt*' => Http::response('boom', 500)]);
+        $order = $this->pendingOrder('robokassa');
+
+        $inv = $this->postJson("/api/public/orders/{$order->view_token}/robokassa/intent")->json('fields.InvId');
+
+        $this->assertGreaterThanOrEqual(RobokassaService::INVOICE_OFFSET, (int) $inv);
+    }
+
+    public function test_non_numeric_or_old_order_numbers_use_technical_number(): void
+    {
+        foreach (['AB-17', '1500', '12345678901'] as $number) {
+            $order = $this->pendingOrder('robokassa');
+            $order->update(['order_number' => $number]);
+
+            $inv = $this->postJson("/api/public/orders/{$order->view_token}/robokassa/intent")->json('fields.InvId');
+
+            $this->assertGreaterThanOrEqual(RobokassaService::INVOICE_OFFSET, (int) $inv, $number);
+        }
+    }
+
+    public function test_result_for_invoice_with_order_number_finds_the_payment_and_pays_the_order(): void
+    {
+        $order = $this->pendingOrder('robokassa');
+        $fields = $this->postJson("/api/public/orders/{$order->view_token}/robokassa/intent")->json('fields');
+        $payment = Payment::query()->where('order_id', $order->id)->firstOrFail();
+        $outSum = '2500.000000';
+
+        $this->post('/api/webhooks/robokassa/result', [
+            'OutSum' => $outSum,
+            'InvId' => $fields['InvId'],
+            'SignatureValue' => strtoupper(md5($outSum . ':' . $fields['InvId'] . ':pass-two:Shp_pay=' . $fields['Shp_pay'])),
+            'Shp_pay' => $fields['Shp_pay'],
+        ])->assertOk()->assertSeeText('OK' . $order->order_number, false);
+
+        $this->assertSame(Payment::STATUS_COMPLETED, $payment->fresh()->status);
+        $this->assertTrue($order->fresh()->isPaid());
     }
 
     public function test_intent_is_rejected_for_other_payment_method_paid_order_and_disabled_integration(): void
@@ -208,10 +279,21 @@ class RobokassaFlowTest extends TestCase
         $this->postJson("/api/public/orders/{$order->view_token}/robokassa/intent")->assertOk();
     }
 
-    /** InvId, под которым платёж уходит в Robokassa (с учётом сдвига). */
+    /** InvId, под которым платёж уходит в Robokassa: сохранённый номер счёта либо id + сдвиг. */
     private function inv(Payment $payment): string
     {
-        return (string) RobokassaService::invoiceId((int) $payment->id);
+        return (string) ($payment->fresh()->provider_payment_id ?: RobokassaService::invoiceId((int) $payment->id));
+    }
+
+    private function fakeInvoiceLookup(bool $free): void
+    {
+        // Новый клиент: иначе заглушка из setUp (первая подходящая) перекрывала бы эту.
+        Http::swap(new \Illuminate\Http\Client\Factory());
+        Http::fake([
+            '*OpStateExt*' => Http::response(
+                '<OperationStateResponse><Result><Code>' . ($free ? '3' : '0') . '</Code></Result></OperationStateResponse>'
+            ),
+        ]);
     }
 
     /** @return array{0: Order, 1: Payment} */
@@ -250,6 +332,7 @@ class RobokassaFlowTest extends TestCase
             'payment_status' => PaymentStatus::PENDING,
             'total_amount' => 2500,
             'delivery_cost' => 0,
+            'order_number' => (string) random_int(900000, 999999),
             'view_token' => bin2hex(random_bytes(16)),
         ]);
 

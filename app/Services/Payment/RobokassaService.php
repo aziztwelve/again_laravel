@@ -143,12 +143,79 @@ class RobokassaService
             'currency' => 'RUB',
             'status' => Payment::STATUS_PENDING,
         ]);
+        $payment->update(['provider_payment_id' => (string) $this->chooseInvoiceId($order, $payment)]);
 
         return [
             'payment_id' => $payment->id,
             'payment_url' => (string) config('payment.providers.robokassa.payment_url'),
             'fields' => $this->buildFields($order, $payment),
         ];
+    }
+
+    /**
+     * Номер счёта для Robokassa. В кабинете Robokassa в колонке «№ заказа» виден именно он, поэтому по
+     * возможности берём номер заказа магазина (как в админке). Если номер заказа не подходит —
+     * не число, уже использован нашим платежом (повторная попытка оплаты) или в Robokassa по нему уже есть
+     * операция (старые заказы магазина), — берём технический номер: id платежа + сдвиг.
+     */
+    private function chooseInvoiceId(Order $order, Payment $payment): int
+    {
+        $fallback = self::invoiceId((int) $payment->id);
+        $number = (string) $order->order_number;
+
+        if (! ctype_digit($number) || strlen($number) > 9) {
+            return $fallback;
+        }
+
+        $candidate = (int) $number;
+        if ($candidate <= self::LEGACY_MAX_PAYMENT_ID || $candidate >= self::INVOICE_OFFSET) {
+            return $fallback;
+        }
+
+        $usedHere = Payment::query()
+            ->where('provider', self::PROVIDER)
+            ->where('provider_payment_id', (string) $candidate)
+            ->where('id', '!=', $payment->id)
+            ->exists();
+
+        return ! $usedHere && $this->invoiceIsFree($candidate) ? $candidate : $fallback;
+    }
+
+    /** Свободен ли номер счёта в Robokassa (нет операции; любая ошибка запроса — «не свободен»). */
+    private function invoiceIsFree(int $invId): bool
+    {
+        try {
+            $login = (string) config('payment.providers.robokassa.merchant_login');
+            $response = Http::timeout(10)->get((string) config('payment.providers.robokassa.op_state_ext_url'), [
+                'MerchantLogin' => $login,
+                'InvoiceID' => $invId,
+                'Signature' => $this->hash("{$login}:{$invId}:" . $this->password2()),
+            ]);
+
+            return $response->successful()
+                && preg_match('~<Result>\s*<Code>(\d+)</Code>~', $response->body(), $m) === 1
+                && (int) $m[1] === 3;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /** Платёж по номеру счёта из уведомления: сначала по сохранённому номеру, затем по старой схеме (id + сдвиг). */
+    private function paymentByInvoice(int $invId, bool $lock = false): ?Payment
+    {
+        $query = Payment::query()->where('provider', self::PROVIDER);
+        if ($lock) {
+            $query->lockForUpdate();
+        }
+
+        $found = (clone $query)->where('provider_payment_id', (string) $invId)->first();
+        if ($found) {
+            return $found;
+        }
+
+        $paymentId = self::paymentIdFromInvoice($invId);
+
+        return $paymentId === null ? null : $query->find($paymentId);
     }
 
     /**
@@ -161,7 +228,7 @@ class RobokassaService
     {
         $login = (string) config('payment.providers.robokassa.merchant_login');
         $outSum = $this->money((float) $payment->amount);
-        $invId = (string) self::invoiceId((int) $payment->id);
+        $invId = (string) ($payment->provider_payment_id ?: self::invoiceId((int) $payment->id));
 
         $fields = [
             'MerchantLogin' => $login,
@@ -181,7 +248,7 @@ class RobokassaService
         }
 
         // Защита страницы возврата после неуспешной оплаты (см. controller).
-        $fields['Shp_pay'] = $this->shpToken($payment->id);
+        $fields['Shp_pay'] = $this->shpToken($invId);
 
         $signatureParts = [$login, $outSum, $invId];
 
@@ -288,10 +355,10 @@ class RobokassaService
 
     public function isValidShpToken(array $data): bool
     {
-        $paymentId = self::paymentIdFromInvoice((int) ($data['InvId'] ?? 0));
+        $invId = (string) ($data['InvId'] ?? '');
         $token = (string) ($data['Shp_pay'] ?? '');
 
-        return $paymentId !== null && $token !== '' && hash_equals($this->shpToken($paymentId), $token);
+        return ctype_digit($invId) && $token !== '' && hash_equals($this->shpToken($invId), $token);
     }
 
     /**
@@ -303,13 +370,9 @@ class RobokassaService
     public function confirmPayment(array $data): Payment
     {
         $invId = (int) ($data['InvId'] ?? 0);
-        $paymentId = self::paymentIdFromInvoice($invId);
 
-        $payment = DB::transaction(function () use ($data, $invId, $paymentId): Payment {
-            $payment = $paymentId === null ? null : Payment::query()
-                ->where('provider', self::PROVIDER)
-                ->lockForUpdate()
-                ->find($paymentId);
+        $payment = DB::transaction(function () use ($data, $invId): Payment {
+            $payment = $this->paymentByInvoice($invId, lock: true);
 
             if (! $payment) {
                 throw new RuntimeException("Robokassa result: платёж {$invId} не найден");
@@ -370,7 +433,7 @@ class RobokassaService
             throw new RuntimeException('Частичный возврат Robokassa из админки не поддерживается — сделайте его в кабинете Robokassa.');
         }
 
-        $invId = (int) data_get($payment->provider_data, 'InvId', 0) ?: self::invoiceId((int) $payment->id);
+        $invId = (int) data_get($payment->provider_data, 'InvId', 0) ?: (int) $payment->provider_payment_id ?: self::invoiceId((int) $payment->id);
         $payload = ['OpKey' => $this->opKey($invId)];
 
         $items = $this->refundItems($payment);
@@ -483,11 +546,7 @@ class RobokassaService
 
     public function findPayment(array $data): ?Payment
     {
-        $paymentId = self::paymentIdFromInvoice((int) ($data['InvId'] ?? 0));
-
-        return $paymentId !== null
-            ? Payment::with('order')->where('provider', self::PROVIDER)->find($paymentId)
-            : null;
+        return $this->paymentByInvoice((int) ($data['InvId'] ?? 0))?->load('order');
     }
 
     private function isValidSignature(array $data, string $password): bool
@@ -522,10 +581,10 @@ class RobokassaService
         return hash($algo, $value);
     }
 
-    /** Подпись номера платежа секретом приложения (в Shp_pay). */
-    private function shpToken(int $paymentId): string
+    /** Подпись номера счёта секретом приложения (в Shp_pay). */
+    private function shpToken(string $invId): string
     {
-        return substr(hash_hmac('sha256', 'robokassa:' . $paymentId, (string) config('app.key')), 0, 24);
+        return substr(hash_hmac('sha256', 'robokassa:' . $invId, (string) config('app.key')), 0, 24);
     }
 
     private function password1(): string
