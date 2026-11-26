@@ -94,17 +94,28 @@ class PromotionService
         }
 
         // 2. Проверка наличия товаров-триггеров в корзине
-        $triggerProductIds = $promotion->triggerProducts->pluck('id')->toArray();
-
-        if (empty($triggerProductIds)) {
+        if ($promotion->triggerProducts->isEmpty()) {
             // Если нет товаров-триггеров, акция применима ко всем
             return true;
         }
 
-        $cartProductIds = collect($cartItems)->pluck('product_id')->toArray();
+        // Хотя бы одна позиция корзины — товар-триггер. Если в акции отмечены
+        // отдельные варианты (размер/объём), позиция должна быть одним из них.
+        foreach ($promotion->triggerProducts as $product) {
+            $allowedVariants = array_map('intval', $product->pivot->variant_ids ?? []);
 
-        // Проверяем, есть ли хотя бы один товар-триггер в корзине
-        return ! empty(array_intersect($triggerProductIds, $cartProductIds));
+            foreach ($cartItems as $item) {
+                if ((int) ($item['product_id'] ?? 0) !== (int) $product->id) {
+                    continue;
+                }
+
+                if (! $allowedVariants || in_array((int) ($item['product_variant_id'] ?? 0), $allowedVariants, true)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**

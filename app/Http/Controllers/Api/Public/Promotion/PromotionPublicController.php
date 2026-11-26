@@ -24,6 +24,8 @@ class PromotionPublicController extends Controller
         $validator = Validator::make($request->all(), [
             'items' => 'required|array',
             'items.*.product_id' => 'required|exists:products,id',
+            // Без правила validated() выбросит вариант, и акции по размерам не сработают.
+            'items.*.product_variant_id' => 'nullable|integer',
             'items.*.quantity' => 'required|integer|min:1',
             'items.*.price' => 'required|numeric|min:0',
             'total' => 'required|numeric|min:0',
@@ -159,7 +161,11 @@ class PromotionPublicController extends Controller
 
         $variants = [];
         if ($hasVariants && $product->relationLoaded('activeVariants')) {
+            // Отмеченные в акции варианты подарка; пусто — доступны все.
+            $allowedVariants = array_map('intval', $product->pivot->variant_ids ?? []);
+
             $variants = $product->activeVariants
+                ->filter(fn (ProductVariant $variant) => ! $allowedVariants || in_array((int) $variant->id, $allowedVariants, true))
                 ->filter(function (ProductVariant $variant) {
                     $stock = $variant->stock_quantity;
                     // NULL или пустая строка — считаем доступным (не управляем остатком)

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Admin\Promotion;
 
 use App\Http\Controllers\Controller;
 use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Models\Promotion;
 use App\Services\Promotion\PromotionService;
 use Illuminate\Http\JsonResponse;
@@ -58,6 +59,8 @@ class PromotionController extends Controller
             ->orderBy('created_at', 'desc')
             ->paginate($request->per_page ?? 15);
 
+        $this->attachSelectedVariants($promotions->getCollection());
+
         return response()->json([
             'success' => true,
             'data' => $promotions,
@@ -85,7 +88,9 @@ class PromotionController extends Controller
             'gift_products' => 'required|array|min:1',
             'gift_products.*.product_id' => 'required|exists:products,id',
             'gift_products.*.quantity' => 'required|integer|min:1',
-        ], $this->validationMessages(), $this->validationAttributes());
+        ] + $this->variantRules(), $this->validationMessages(), $this->validationAttributes());
+
+        $this->checkVariantOwnership($validator, $request);
 
         if ($validator->fails()) {
             return response()->json([
@@ -110,20 +115,17 @@ class PromotionController extends Controller
             'max_uses' => $validated['max_uses'] ?? null,
         ]);
 
-        // Привязываем товары-триггеры
-        $promotion->triggerProducts()->attach($validated['trigger_product_ids']);
+        // Привязываем товары-триггеры и товары-подарки
+        $promotion->triggerProducts()->sync($this->triggerSyncData($validated['trigger_product_ids'], $request));
+        $promotion->giftProducts()->sync($this->giftSyncData($validated['gift_products']));
 
-        // Привязываем товары-подарки
-        foreach ($validated['gift_products'] as $gift) {
-            $promotion->giftProducts()->attach($gift['product_id'], [
-                'quantity' => $gift['quantity'],
-            ]);
-        }
+        $promotion->load(['triggerProducts', 'giftProducts']);
+        $this->attachSelectedVariants([$promotion]);
 
         return response()->json([
             'success' => true,
             'message' => 'Акция успешно создана',
-            'data' => $promotion->load(['triggerProducts', 'giftProducts']),
+            'data' => $promotion,
         ], 201);
     }
 
@@ -135,6 +137,7 @@ class PromotionController extends Controller
         $promotion->load(['triggerProducts', 'giftProducts', 'usages.giftProduct', 'usages.client']);
 
         $stats = $this->promotionService->getPromotionStats($promotion);
+        $this->attachSelectedVariants([$promotion]);
 
         return response()->json([
             'success' => true,
@@ -166,7 +169,9 @@ class PromotionController extends Controller
             'gift_products' => 'array',
             'gift_products.*.product_id' => 'required|exists:products,id',
             'gift_products.*.quantity' => 'required|integer|min:1',
-        ], $this->validationMessages(), $this->validationAttributes());
+        ] + $this->variantRules(), $this->validationMessages(), $this->validationAttributes());
+
+        $this->checkVariantOwnership($validator, $request);
 
         if ($validator->fails()) {
             return response()->json([
@@ -182,22 +187,21 @@ class PromotionController extends Controller
 
         // Обновляем товары-триггеры
         if (isset($validated['trigger_product_ids'])) {
-            $promotion->triggerProducts()->sync($validated['trigger_product_ids']);
+            $promotion->triggerProducts()->sync($this->triggerSyncData($validated['trigger_product_ids'], $request));
         }
 
         // Обновляем товары-подарки
         if (isset($validated['gift_products'])) {
-            $syncData = [];
-            foreach ($validated['gift_products'] as $gift) {
-                $syncData[$gift['product_id']] = ['quantity' => $gift['quantity']];
-            }
-            $promotion->giftProducts()->sync($syncData);
+            $promotion->giftProducts()->sync($this->giftSyncData($validated['gift_products']));
         }
+
+        $promotion = $promotion->fresh(['triggerProducts', 'giftProducts']);
+        $this->attachSelectedVariants([$promotion]);
 
         return response()->json([
             'success' => true,
             'message' => 'Акция успешно обновлена',
-            'data' => $promotion->fresh(['triggerProducts', 'giftProducts']),
+            'data' => $promotion,
         ]);
     }
 
@@ -226,16 +230,22 @@ class PromotionController extends Controller
         $copy->times_used = 0;
         $copy->save();
 
-        // Товары-триггеры
-        $triggerIds = $promotion->triggerProducts()->pluck('products.id')->all();
-        if (!empty($triggerIds)) {
-            $copy->triggerProducts()->sync($triggerIds);
+        // Товары-триггеры (с выбранными вариантами)
+        $triggerSync = [];
+        foreach ($promotion->triggerProducts as $trigger) {
+            $triggerSync[$trigger->id] = ['variant_ids' => $trigger->pivot->variant_ids];
+        }
+        if (!empty($triggerSync)) {
+            $copy->triggerProducts()->sync($triggerSync);
         }
 
-        // Товары-подарки (с сохранением quantity из pivot)
+        // Товары-подарки (с сохранением quantity и вариантов из pivot)
         $giftSync = [];
         foreach ($promotion->giftProducts as $gift) {
-            $giftSync[$gift->id] = ['quantity' => $gift->pivot->quantity];
+            $giftSync[$gift->id] = [
+                'quantity' => $gift->pivot->quantity,
+                'variant_ids' => $gift->pivot->variant_ids,
+            ];
         }
         if (!empty($giftSync)) {
             $copy->giftProducts()->sync($giftSync);
@@ -320,6 +330,101 @@ class PromotionController extends Controller
             'message' => $promotion->is_active ? 'Акция активирована' : 'Акция деактивирована',
             'data' => $promotion,
         ]);
+    }
+
+    /** Необязательный выбор вариантов: trigger_variants[product_id] и gift_products.*.variant_ids. */
+    private function variantRules(): array
+    {
+        return [
+            'trigger_variants' => 'nullable|array',
+            'trigger_variants.*' => 'nullable|array',
+            'trigger_variants.*.*' => 'integer',
+            'gift_products.*.variant_ids' => 'nullable|array',
+            'gift_products.*.variant_ids.*' => 'integer',
+        ];
+    }
+
+    /** Варианты должны принадлежать своему товару (удалённые тоже считаются, чтобы акцию можно было сохранить). */
+    private function checkVariantOwnership(\Illuminate\Validation\Validator $validator, Request $request): void
+    {
+        $validator->after(function ($validator) use ($request) {
+            $selections = [];
+            foreach ((array) $request->input('trigger_variants', []) as $productId => $ids) {
+                $selections["trigger_variants.$productId"] = [$productId, $ids];
+            }
+            foreach ((array) $request->input('gift_products', []) as $index => $gift) {
+                $selections["gift_products.$index.variant_ids"] = [$gift['product_id'] ?? 0, $gift['variant_ids'] ?? []];
+            }
+
+            foreach ($selections as $key => [$productId, $ids]) {
+                $ids = $this->normalizeVariantIds($ids);
+                if ($ids && ProductVariant::withTrashed()->where('product_id', (int) $productId)->whereIn('id', $ids)->count() !== count($ids)) {
+                    $validator->errors()->add($key, 'Выбранный вариант не относится к этому товару.');
+                }
+            }
+        });
+    }
+
+    /** NULL — товар участвует целиком. */
+    private function normalizeVariantIds(mixed $ids): ?array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', is_array($ids) ? $ids : []))));
+
+        return $ids ?: null;
+    }
+
+    /** Без поля trigger_variants в запросе выбор вариантов у товаров не трогаем. */
+    private function triggerSyncData(array $productIds, Request $request): array
+    {
+        $variants = (array) $request->input('trigger_variants', []);
+        $data = [];
+        foreach ($productIds as $productId) {
+            $data[(int) $productId] = $request->has('trigger_variants')
+                ? ['variant_ids' => $this->normalizeVariantIds($variants[$productId] ?? [])]
+                : [];
+        }
+
+        return $data;
+    }
+
+    private function giftSyncData(array $gifts): array
+    {
+        $data = [];
+        foreach ($gifts as $gift) {
+            $row = ['quantity' => $gift['quantity']];
+            if (array_key_exists('variant_ids', $gift)) {
+                $row['variant_ids'] = $this->normalizeVariantIds($gift['variant_ids']);
+            }
+            $data[(int) $gift['product_id']] = $row;
+        }
+
+        return $data;
+    }
+
+    /** Названия выбранных вариантов — чтобы админка показывала «100 мл», а не только ID. */
+    private function attachSelectedVariants(iterable $promotions): void
+    {
+        $products = collect($promotions)->flatMap(
+            fn (Promotion $promotion) => array_merge($promotion->triggerProducts->all(), $promotion->giftProducts->all())
+        );
+
+        $ids = $products->flatMap(fn (Product $product) => $product->pivot->variant_ids ?? [])->unique()->values();
+        $variants = $ids->isEmpty()
+            ? collect()
+            : ProductVariant::with('table_color')->whereIn('id', $ids)->get()->keyBy('id');
+
+        foreach ($products as $product) {
+            $product->setAttribute('selected_variants', collect($product->pivot->variant_ids ?? [])
+                ->map(fn ($id) => $variants->get($id))
+                ->filter()
+                ->map(fn (ProductVariant $variant) => [
+                    'id' => $variant->id,
+                    'name' => $variant->name,
+                    'color' => $variant->table_color?->name,
+                ])
+                ->values()
+                ->all());
+        }
     }
 
     private function validationMessages(): array

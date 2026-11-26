@@ -423,6 +423,16 @@ class CreateOrderRequest extends FormRequest
                     continue;
                 }
 
+                $allowedVariants = array_map('intval', $giftProduct->pivot->variant_ids ?? []);
+                if ($allowedVariants && ! in_array((int) $variant->id, $allowedVariants, true)) {
+                    $validator->errors()->add(
+                        "promotions.$i.gift_product_variant_id",
+                        'Этот вариант подарка не участвует в акции.'
+                    );
+
+                    continue;
+                }
+
                 $stock = $variant->stock_quantity;
                 if ($stock !== null && $stock !== '' && (float) $stock < $giftQuantity) {
                     $validator->errors()->add(

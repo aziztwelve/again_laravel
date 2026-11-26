@@ -38,7 +38,7 @@ class SimpleProductController extends Controller
             }
 
             if ($request->boolean('withVariants')) {
-                $query->with(['variants']);
+                $query->with(['variants.table_color']);
             }
 
             $perPage = $request->get('per_page', 10);

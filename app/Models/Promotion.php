@@ -65,7 +65,9 @@ class Promotion extends Model
     /** Товары-триггеры (на которые действует акция). */
     public function triggerProducts(): BelongsToMany
     {
-        return $this->belongsToMany(Product::class, 'promotion_trigger_products');
+        return $this->belongsToMany(Product::class, 'promotion_trigger_products')
+            ->using(PromotionProductPivot::class)
+            ->withPivot('variant_ids');
     }
 
     /**
@@ -74,7 +76,8 @@ class Promotion extends Model
     public function giftProducts(): BelongsToMany
     {
         return $this->belongsToMany(Product::class, 'promotion_gift_products')
-            ->withPivot('quantity');
+            ->using(PromotionProductPivot::class)
+            ->withPivot('quantity', 'variant_ids');
     }
 
     /**
