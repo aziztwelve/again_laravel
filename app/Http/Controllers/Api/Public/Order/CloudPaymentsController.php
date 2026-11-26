@@ -64,9 +64,17 @@ class CloudPaymentsController extends Controller
             'status' => Payment::STATUS_PENDING,
         ]);
 
+        $email = trim((string) ($order->email ?: $order->client?->email));
+
         return response()->json([
             'success' => true,
             'payment' => [
+                // Email плательщика и идентификатор клиента: по ним ищут транзакции в личном
+                // кабинете CloudPayments. receiptEmail ниже нужен только для отправки чека.
+                ...($email !== '' ? [
+                    'accountId' => $email,
+                    'userInfo' => ['accountId' => $email, 'email' => $email],
+                ] : []),
                 'publicTerminalId' => config('payment.providers.cloudpayment.public_id'),
                 'amount' => $amount,
                 'currency' => 'RUB',
@@ -86,7 +94,7 @@ class CloudPaymentsController extends Controller
                 )),
                 'metadata' => ['payment_id' => $payment->id, 'order_id' => $order->id],
                 'receipt' => $receipt,
-                'receiptEmail' => $order->email ?? $order->client?->email,
+                'receiptEmail' => $email !== '' ? $email : null,
             ],
         ]);
     }

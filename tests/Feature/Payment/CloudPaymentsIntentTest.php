@@ -107,6 +107,40 @@ class CloudPaymentsIntentTest extends TestCase
             ->assertJsonPath('payment.receipt.amounts.electronic', 400);
     }
 
+    /** По email и AccountId транзакции ищут в личном кабинете CloudPayments. */
+    public function test_intent_passes_client_email_as_payer_email_and_account_id(): void
+    {
+        $order = $this->pendingOrder('card_ru');
+        $order->update(['email' => ' buyer@example.com ']);
+
+        $payment = $this->postJson("/api/public/orders/{$order->view_token}/cloudpayments/intent")
+            ->assertOk()
+            ->json('payment');
+
+        $this->assertSame('buyer@example.com', $payment['accountId']);
+        $this->assertSame('buyer@example.com', $payment['userInfo']['email']);
+        $this->assertSame('buyer@example.com', $payment['userInfo']['accountId']);
+        $this->assertSame('buyer@example.com', $payment['receiptEmail']);
+    }
+
+    /** У авторизованного клиента email в заказе пуст — берём из профиля. */
+    public function test_intent_falls_back_to_client_email_and_omits_payer_fields_without_email(): void
+    {
+        $client = \App\Models\Client::factory()->create(['email' => 'profile@example.com']);
+        $order = $this->pendingOrder('card_ru');
+        $order->update(['email' => null, 'client_id' => $client->id]);
+
+        $payment = $this->postJson("/api/public/orders/{$order->view_token}/cloudpayments/intent")->json('payment');
+        $this->assertSame('profile@example.com', $payment['accountId']);
+        $this->assertSame('profile@example.com', $payment['userInfo']['email']);
+
+        $client->update(['email' => null]);
+        $payment = $this->postJson("/api/public/orders/{$order->view_token}/cloudpayments/intent")->json('payment');
+        $this->assertArrayNotHasKey('accountId', $payment);
+        $this->assertArrayNotHasKey('userInfo', $payment);
+        $this->assertNull($payment['receiptEmail']);
+    }
+
     private function pendingOrder(string $paymentMethod): Order
     {
         return Order::factory()->create([
