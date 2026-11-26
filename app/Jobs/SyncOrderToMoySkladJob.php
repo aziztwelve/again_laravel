@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\Order;
 use App\Services\MoySklad\MoySkladSettings;
+use App\Services\MoySklad\OrderCreationPendingException;
 use App\Services\MoySklad\OrderService;
 use App\Services\MoySklad\PaymentInService;
 use Illuminate\Bus\Queueable;
@@ -32,8 +33,11 @@ class SyncOrderToMoySkladJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $tries = 3;
+    public int $tries = 5;
     public array $backoff = [60, 300, 900];
+
+    /** Дольше ожидания ответа МойСклад и меньше retry_after очереди (90 с). */
+    public int $timeout = 85;
 
     public function __construct(public int $orderId) {}
 
@@ -86,6 +90,14 @@ class SyncOrderToMoySkladJob implements ShouldQueue
             // Отгрузку (списание) создаёт склад и сценарий МойСклад при статусе «Отгружен».
             // Мы передаём только статусы, иначе у заказа появляется вторая проведённая
             // отгрузка и товар списывается дважды.
+        } catch (OrderCreationPendingException $e) {
+            // Не сбой: ждём, пока МойСклад досохранит документ, чтобы не создать второй.
+            Log::warning('SyncOrderToMoySkladJob: заказ ещё создаётся в МойСклад, повторим позже', [
+                'order_id' => $order->id,
+                'retry_after' => $e->retryAfter,
+            ]);
+
+            $this->release($e->retryAfter);
         } catch (\Throwable $e) {
             Log::error('SyncOrderToMoySkladJob: не удалось синхронизировать заказ', [
                 'order_id' => $order->id,

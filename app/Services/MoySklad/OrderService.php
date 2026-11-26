@@ -5,6 +5,7 @@ namespace App\Services\MoySklad;
 use App\Models\Order;
 use App\Models\OrderItem;
 use Exception;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -20,6 +21,12 @@ use Illuminate\Support\Facades\Log;
  */
 class OrderService
 {
+    /** Сколько МойСклад может досохранять документ после запроса, на который сайт не получил ответа. */
+    private const CREATE_PENDING_SECONDS = 180;
+
+    /** Ожидание ответа на запись заказа: под нагрузкой МойСклад отвечает дольше 30 секунд. */
+    private const WRITE_TIMEOUT_SECONDS = 50;
+
     private string $baseURL = 'https://api.moysklad.ru/api/remap/1.2';
     private string $token;
 
@@ -178,17 +185,42 @@ class OrderService
             $payload['deliveryPlannedMoment'] = $order->delivery_date->format('Y-m-d H:i:s');
         }
 
+        // Первая выгрузка: документ мог создаться, а ответ — не дойти (заказ 41832
+        // попал в МойСклад дважды). Если он уже там, обновляем его, а не создаём второй.
+        $pendingKey = "moysklad:order-create-pending:{$order->id}";
+
+        if (empty($order->moysklad_order_uuid) && ($existingId = $this->findExistingOrderId($order))) {
+            $order->forceFill(['moysklad_order_uuid' => $existingId])->save();
+            Cache::forget($pendingKey);
+            Log::warning('MoySklad: заказ уже есть в МойСклад, связываем и обновляем', [
+                'order_id'    => $order->id,
+                'ms_order_id' => $existingId,
+            ]);
+        }
+
         $isUpdate = ! empty($order->moysklad_order_uuid);
 
         $request = Http::withHeaders([
             'Authorization'   => 'Bearer ' . $this->token,
             'Accept-Encoding' => 'gzip',
             'Content-Type'    => 'application/json',
-        ]);
+        ])->timeout(self::WRITE_TIMEOUT_SECONDS);
+
+        // Отметка ставится ДО запроса: она переживёт и таймаут, и остановку воркера.
+        if (! $isUpdate && ! Cache::add($pendingKey, now()->getTimestamp(), self::CREATE_PENDING_SECONDS)) {
+            $left = (int) Cache::get($pendingKey) + self::CREATE_PENDING_SECONDS - now()->getTimestamp();
+
+            throw new OrderCreationPendingException(max(1, $left) + 5);
+        }
 
         $response = $isUpdate
             ? $request->put("{$this->baseURL}/entity/customerorder/{$order->moysklad_order_uuid}", $payload)
             : $request->post("{$this->baseURL}/entity/customerorder", $payload);
+
+        // Успех или отказ 4xx — исход известен. При 5xx и таймауте документ мог создаться.
+        if (! $isUpdate && ($response->successful() || $response->clientError())) {
+            Cache::forget($pendingKey);
+        }
 
         if (! $response->successful()) {
             Log::error('MoySklad: ошибка ' . ($isUpdate ? 'обновления' : 'создания') . ' заказа', [
@@ -217,6 +249,42 @@ class OrderService
         ]);
 
         return $msOrderId;
+    }
+
+    /**
+     * Найти в МойСклад уже созданный документ этого заказа: тот же номер и тот же
+     * externalCode (ID заказа на сайте). Удалённые в корзину МойСклад в списке не отдаёт.
+     *
+     * @throws Exception если проверить не удалось или таких документов несколько
+     */
+    private function findExistingOrderId(Order $order): ?string
+    {
+        $number = (string) $order->order_number;
+        if ($number === '') {
+            return null;
+        }
+
+        $response = Http::withHeaders([
+            'Authorization'   => 'Bearer ' . $this->token,
+            'Accept-Encoding' => 'gzip',
+        ])->get("{$this->baseURL}/entity/customerorder", ['filter' => "name={$number}", 'limit' => 10]);
+
+        if (! $response->successful()) {
+            // Без проверки не создаём: иначе возможен дубль. Задача повторит выгрузку.
+            throw new Exception('МойСклад: не удалось проверить, выгружен ли уже заказ. HTTP ' . $response->status());
+        }
+
+        $ids = collect($response->json('rows') ?? [])
+            ->filter(fn (array $row) => (string) ($row['name'] ?? '') === $number
+                && (string) ($row['externalCode'] ?? '') === (string) $order->id)
+            ->pluck('id')
+            ->values();
+
+        if ($ids->count() > 1) {
+            throw new Exception("МойСклад: заказ {$number} выгружен несколько раз, новый не создаём. Лишний документ нужно удалить в МойСклад.");
+        }
+
+        return $ids->first();
     }
 
     /**
