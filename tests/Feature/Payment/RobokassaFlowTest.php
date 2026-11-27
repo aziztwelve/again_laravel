@@ -65,6 +65,21 @@ class RobokassaFlowTest extends TestCase
         $this->assertSame($expected, $fields['SignatureValue']);
     }
 
+    public function test_intent_limits_payment_methods_in_the_window(): void
+    {
+        config(['payment.providers.robokassa.payment_methods' => ['BankCard', 'SberPay', 'Podeli']]);
+        $order = $this->pendingOrder('robokassa');
+
+        $settings = json_decode($this->postJson("/api/public/orders/{$order->view_token}/robokassa/intent")->json('fields.Settings'), true);
+
+        $this->assertSame('modal', $settings['Mode']);
+        $this->assertSame(['BankCard', 'SberPay', 'Podeli'], $settings['PaymentMethods']);
+
+        config(['payment.providers.robokassa.payment_methods' => []]);
+        $settings = json_decode($this->postJson("/api/public/orders/{$order->view_token}/robokassa/intent")->json('fields.Settings'), true);
+        $this->assertSame(['Mode' => 'modal'], $settings);
+    }
+
     public function test_second_attempt_for_the_same_order_gets_a_technical_invoice_number(): void
     {
         $order = $this->pendingOrder('robokassa');

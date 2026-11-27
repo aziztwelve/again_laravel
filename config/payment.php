@@ -76,6 +76,9 @@ return [
             'hash_algo' => env('ROBOKASSA_HASH_ALGO', 'md5'),
             'payment_url' => env('ROBOKASSA_PAYMENT_URL', 'https://auth.robokassa.ru/Merchant/Index.aspx'),
             // Чек 54-ФЗ передаём в Robokassa; ставка НДС (%) для позиций без своей.
+            // Способы в окне оплаты (алиасы Robokassa). BankCard включает и иностранные карты.
+            // Пустое значение — окно показывает всё, что подключено магазину.
+            'payment_methods' => array_values(array_filter(array_map('trim', explode(',', (string) env('ROBOKASSA_PAYMENT_METHODS', 'BankCard,SberPay,Podeli'))))),
             'send_receipt' => (bool) env('ROBOKASSA_SEND_RECEIPT', true),
             'receipt_vat' => (int) env('ROBOKASSA_RECEIPT_VAT', 5),
         ],

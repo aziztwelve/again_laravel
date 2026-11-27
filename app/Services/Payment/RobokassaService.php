@@ -148,8 +148,21 @@ class RobokassaService
         return [
             'payment_id' => $payment->id,
             'payment_url' => (string) config('payment.providers.robokassa.payment_url'),
-            'fields' => $this->buildFields($order, $payment),
+            'fields' => $this->buildFields($order, $payment) + ['Settings' => $this->iframeSettings()],
         ];
+    }
+
+    /** Настройки iframe-окна (в подпись не входят): режим и список разрешённых способов оплаты. */
+    private function iframeSettings(): string
+    {
+        $settings = ['Mode' => 'modal'];
+
+        $methods = array_values((array) config('payment.providers.robokassa.payment_methods', []));
+        if ($methods !== []) {
+            $settings['PaymentMethods'] = $methods;
+        }
+
+        return json_encode($settings, JSON_UNESCAPED_SLASHES);
     }
 
     /**
