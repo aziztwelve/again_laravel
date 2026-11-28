@@ -6,6 +6,7 @@ use App\Enums\OrderStatus;
 use App\Models\Client;
 use App\Models\DeliveryMethod;
 use App\Models\Order;
+use App\Support\CountryName;
 use App\Models\PromoCode;
 use App\Services\PromoCode\PromoCodeValidationService;
 use Illuminate\Support\Facades\DB;
@@ -461,8 +462,13 @@ class OrderUpdateService
         // Обновляем только те поля, которые реально пришли в запросе,
         // чтобы пустой recipient не затирал существующего получателя и наоборот.
         if (! empty($addressData)) {
+            // Ту же страну, присланную в другом виде, не переписываем: иначе заказ считался бы изменённым.
+            $country = $addressData['country'] ?? null;
+            $stored = $order->address()->value('country');
+            $country = filled($stored) && CountryName::same($stored, $country) ? $stored : CountryName::fromInput($country);
+
             $payload += [
-                'country' => $addressData['country'] ?? null,
+                'country' => $country,
                 'region' => $addressData['region'] ?? null,
                 'city' => $addressData['city'] ?? null,
                 'postal_code' => $addressData['postal_code'] ?? null,

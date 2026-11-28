@@ -129,7 +129,7 @@ class OrderCreationService
                 'recipient_last_name' => $recipient['last_name'] ?? null,
                 'recipient_middle_name' => $recipient['middle_name'] ?? null,
                 'recipient_phone' => $recipient['phone'] ?? null,
-                'country' => $deliveryAddress['country'] ?? null,
+                'country' => \App\Support\CountryName::fromInput($deliveryAddress['country'] ?? null),
                 'region' => $deliveryAddress['region'] ?? null,
                 'city' => $deliveryAddress['city'] ?? null,
                 'postal_code' => $deliveryAddress['postal_code'] ?? null,

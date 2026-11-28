@@ -2,12 +2,12 @@
 
 namespace App\Services\Delivery;
 
-use App\Models\Country;
 use App\Models\DeliveryServiceSetting;
 use App\Models\Order;
 use App\Models\Shipment;
 use App\Services\Delivery\Cdek\CdekParcel;
 use App\Services\Delivery\Pochta\PochtaClient;
+use App\Support\CountryName;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use InvalidArgumentException;
@@ -316,12 +316,10 @@ class PochtaDeliveryService extends DeliveryService
     public function adjustToAddress(array $delivery, array $before, array $after): ?array
     {
         $value = fn (array $source, string $key) => trim((string) (array_key_exists($key, $source) ? $source[$key] : ($before[$key] ?? '')));
-        // Окно доставки в админке сохраняет страну кодом («RU»), а в заказе с сайта она названием («Россия»):
-        // это одна и та же страна, иначе любое сохранение стирало отделение и индекс.
-        $comparable = fn (array $source, string $key) => $key === 'country'
-            ? $this->countryKey($value($source, $key))
-            : mb_strtolower($value($source, $key));
-        $changed = fn (string $key) => $comparable($before, $key) !== $comparable($after, $key);
+        // Окно доставки присылает страну кодом («RU»), а в заказе она названием («Россия»): это одна страна.
+        $changed = fn (string $key) => $key === 'country'
+            ? ! CountryName::same($value($before, $key), $value($after, $key))
+            : mb_strtolower($value($before, $key)) !== mb_strtolower($value($after, $key));
 
         $placeChanged = $changed('country') || $changed('city') || $changed('address');
         if (! $placeChanged && ! $changed('postal_code')) {
@@ -360,14 +358,6 @@ class PochtaDeliveryService extends DeliveryService
         }
 
         return ['delivery' => $delivery, 'postal_code' => $index];
-    }
-
-    /** Страна для сравнения: код по названию из справочника, иначе сама строка (в нижнем регистре). */
-    private function countryKey(string $country): string
-    {
-        $code = mb_strlen($country) > 2 ? Country::query()->where('name', $country)->value('code') : null;
-
-        return mb_strtolower((string) ($code ?? $country));
     }
 
     private function domesticIndex(array $method, array $destination): string
