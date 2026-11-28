@@ -119,6 +119,29 @@ class PochtaOrderLifecycleTest extends TestCase
         $this->assertSame('109012', $order->delivery_data['destination']['index']);
     }
 
+    /** Окно доставки присылает страну кодом, а в заказе с сайта она названием (заказ 42120). */
+    public function test_country_code_instead_of_name_is_not_an_address_change(): void
+    {
+        \App\Models\Country::firstOrCreate(['code' => 'RU'], ['name' => 'Россия']);
+
+        foreach (['office', 'courier'] as $type) {
+            $order = $this->update($this->order($type), ['delivery_address' => $this->address(['country' => 'RU'])]);
+
+            $this->assertSame('109012', $order->address->postal_code, $type);
+            $this->assertSame('109012', $order->delivery_data['destination']['index'], $type);
+        }
+        $this->assertSame('109012', $this->update($this->order('office'), ['delivery_address' => $this->address(['country' => 'RU'])])->delivery_data['pvz']['code']);
+    }
+
+    public function test_real_country_change_still_clears_stale_index(): void
+    {
+        \App\Models\Country::firstOrCreate(['code' => 'RU'], ['name' => 'Россия']);
+        $order = $this->update($this->order('office'), ['delivery_address' => $this->address(['country' => 'KZ'])]);
+
+        $this->assertNull($order->address->postal_code);
+        $this->assertArrayNotHasKey('pvz', $order->delivery_data);
+    }
+
     public function test_courier_city_change_finds_new_index(): void
     {
         $order = $this->update($this->order('courier'), [
