@@ -163,8 +163,15 @@ class Order extends Model
         }
 
         $cdekNumber = $this->cdekOrder?->cdek_number;
+        if (filled($cdekNumber)) {
+            return (string) $cdekNumber;
+        }
 
-        return filled($cdekNumber) ? (string) $cdekNumber : null;
+        // Заказ Почтой России: трек из отдельного поля «Трек-номер Почта России».
+        $postNumber = data_get($this->legacy_meta, 'russian_post_tracking_number') ?? data_get($this->legacy_meta, 'russian_post_track');
+        $code = filled($postNumber) ? (string) $this->deliveryMethod?->code : '';
+
+        return str_starts_with($code, 'russian_post') || str_starts_with($code, 'international') ? trim((string) $postNumber) : null;
     }
 
     public function deliveryTarget()

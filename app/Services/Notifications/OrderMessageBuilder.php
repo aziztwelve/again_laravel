@@ -113,9 +113,17 @@ class OrderMessageBuilder
         if ($method) {
             $pickup = OrderMessageText::isPickup($order);
             $address = OrderMessageText::address($order, $pickup);
+            $label = $pickup ? 'Пункт выдачи: ' : 'Адрес доставки: ';
+            if ($pickup && data_get($order->delivery_data, 'provider') === 'pochta') {
+                $label = 'Отделение Почты России: ';
+                $index = data_get($order->delivery_data, 'pvz.code');
+                if ($address && filled($index)) {
+                    $address .= ", индекс {$index}";
+                }
+            }
             $blocks[] = array_values(array_filter([
                 'Доставка: '.$method,
-                $address ? ($pickup ? 'Пункт выдачи: ' : 'Адрес доставки: ').$address : null,
+                $address ? $label.$address : null,
             ]));
         }
 

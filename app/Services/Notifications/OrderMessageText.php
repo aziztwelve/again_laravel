@@ -26,6 +26,10 @@ class OrderMessageText
     public static function isPickup(Order $order): bool
     {
         $type = data_get($order->delivery_data, 'delivery_type');
+        // Отделение Почты России — тоже самовывоз, пока в заказе есть выбранное отделение.
+        if ($type === 'office') {
+            return filled(data_get($order->delivery_data, 'pvz.address'));
+        }
         if (filled($type)) {
             return in_array($type, ['pickup', 'postamat'], true);
         }

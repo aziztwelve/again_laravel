@@ -535,6 +535,9 @@ class CdekDeliveryService extends DeliveryService
         }
 
         $delivery = $order->delivery_data ?? [];
+        if (($delivery['provider'] ?? null) === 'pochta') {
+            return 'В заказе данные доставки Почты России. Выберите способ доставки СДЭК и пункт выдачи или адрес, затем сохраните.';
+        }
         $methodCode = (string) $order->loadMissing('deliveryMethod')->deliveryMethod?->code;
         if (in_array($methodCode, ['cdek_pickup', 'cdek_postamat'], true) && ! ($delivery['pvz']['code'] ?? $delivery['pvz_code'] ?? null)) {
             return 'В заказе не выбран пункт выдачи СДЭК. Откройте блок «Доставка», нажмите «Редактировать» → «Выбрать на карте», выберите пункт и сохраните.';

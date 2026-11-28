@@ -135,18 +135,27 @@ class OrderUpdateService
                 }
             }
 
-            // Пункт выдачи, выбранный на карте: пишем в delivery_data.pvz в том же виде,
-            // что и при оформлении заказа (CDEK — код/тип/адрес, Яндекс — id/адрес).
-            if (! empty($data['pvz_code'])) {
-                $filteredData['delivery_data'] = $this->applyPickupPoint($order, $data);
-            }
-
             // Определяем delivery_method_id по имени если пришёл объект delivery_method
             if (! isset($filteredData['delivery_method_id']) && isset($data['delivery_method']['name'])) {
                 $method = DeliveryMethod::where('name', $data['delivery_method']['name'])->first();
                 if ($method) {
                     $filteredData['delivery_method_id'] = $method->id;
                 }
+            }
+
+            // Тариф, индекс и отделение Почты России относятся только к своему способу доставки. При смене
+            // способа убираем их, иначе заявка СДЭК уходила с тарифом Почты (ONLINE_PARCEL).
+            if (data_get($order->delivery_data, 'provider') === 'pochta'
+                && isset($filteredData['delivery_method_id'])
+                && (int) $filteredData['delivery_method_id'] !== (int) $order->delivery_method_id) {
+                $order->delivery_data = null;
+                $filteredData['delivery_data'] = null;
+            }
+
+            // Пункт выдачи, выбранный на карте: пишем в delivery_data.pvz в том же виде,
+            // что и при оформлении заказа (CDEK — код/тип/адрес, Яндекс — id/адрес).
+            if (! empty($data['pvz_code'])) {
+                $filteredData['delivery_data'] = $this->applyPickupPoint($order, $data);
             }
 
             // Обновляем контактные данные клиента если переданы
@@ -172,6 +181,9 @@ class OrderUpdateService
                 }
             }
 
+            // Адрес до правки — чтобы понять, изменилось ли место доставки.
+            $addressBefore = $hasAddress ? ($order->address()->first()?->only(['country', 'city', 'address', 'postal_code']) ?? []) : [];
+
             if ($hasAddress || $hasRecipient) {
                 $this->updateDeliveryAddress(
                     $order,
@@ -193,9 +205,25 @@ class OrderUpdateService
                 }
             }
 
+            // Почта России: после правки города или адреса прежний индекс недействителен,
+            // а он уходит в МойСклад и на посылку.
+            if ($hasAddress && ! array_key_exists('delivery_data', $filteredData)) {
+                $pochtaData = $this->syncPochtaDelivery($order, $addressBefore, $data['delivery_address']);
+                if ($pochtaData !== null) {
+                    $filteredData['delivery_data'] = $pochtaData;
+                }
+            }
+
             // Кастомные поля заказа («Поля заказа»): часть колонок, часть legacy_meta.
             if (isset($data['custom_fields']) && is_array($data['custom_fields'])) {
+                $postTrackBefore = (string) data_get($order->legacy_meta, 'russian_post_tracking_number');
                 $this->customFieldsService->update($order, $data['custom_fields']);
+                $postTrack = (string) data_get($order->legacy_meta, 'russian_post_tracking_number');
+
+                // Отправляем в МойСклад только поле трека: полная выгрузка переписала бы там статус.
+                if ($postTrack !== '' && $postTrack !== $postTrackBefore && $order->moysklad_order_uuid) {
+                    \App\Jobs\PushPostTrackingToMoySkladJob::dispatch($order->id)->afterCommit();
+                }
             }
 
             // Обработка промокода — привязка/снятие.
@@ -404,6 +432,27 @@ class OrderUpdateService
 
             return null;
         }
+    }
+
+    /**
+     * Новые delivery_data и индекс заказа с Почтой России после правки адреса, или null,
+     * если заказ не Почтой или место доставки не менялось.
+     */
+    private function syncPochtaDelivery(Order $order, array $before, array $after): ?array
+    {
+        $current = is_array($order->delivery_data) ? $order->delivery_data : [];
+        if (($current['provider'] ?? null) !== 'pochta') {
+            return null;
+        }
+
+        $result = app(\App\Services\Delivery\PochtaDeliveryService::class)->adjustToAddress($current, $before, $after);
+        if ($result === null) {
+            return null;
+        }
+
+        $order->address()->update(['postal_code' => $result['postal_code']]);
+
+        return $result['delivery'];
     }
 
     private function updateDeliveryAddress(Order $order, array $addressData, array $recipientData = []): void

@@ -301,6 +301,61 @@ class PochtaDeliveryService extends DeliveryService
         return $index;
     }
 
+    /**
+     * Приводит данные доставки заказа к адресу, который менеджер исправил в админке.
+     *
+     * Если менеджер сам ввёл новый индекс, берём его. Иначе при смене города или адреса прежний
+     * индекс неверен: для курьера ищем по новому адресу, для отделения и международных очищаем
+     * (пустой индекс заметят, чужой — нет). Цена доставки не меняется.
+     *
+     * $before и $after: country, city, address, postal_code.
+     *
+     * @return array{delivery: array<string, mixed>, postal_code: ?string}|null null — место не менялось
+     */
+    public function adjustToAddress(array $delivery, array $before, array $after): ?array
+    {
+        $value = fn (array $source, string $key) => trim((string) (array_key_exists($key, $source) ? $source[$key] : ($before[$key] ?? '')));
+        $changed = fn (string $key) => mb_strtolower($value($before, $key)) !== mb_strtolower($value($after, $key));
+
+        $placeChanged = $changed('country') || $changed('city') || $changed('address');
+        if (! $placeChanged && ! $changed('postal_code')) {
+            return null;
+        }
+
+        $type = $delivery['delivery_type'] ?? null;
+        $city = $value($after, 'city');
+        $address = $value($after, 'address');
+
+        $index = $changed('postal_code') ? (preg_replace('/\s+/', '', $value($after, 'postal_code')) ?: null) : null;
+        if (! $changed('postal_code') && $type === 'courier') {
+            try {
+                $index = $this->normalizeIndex($city, $address);
+            } catch (RuntimeException) {
+                $index = null;
+            }
+        }
+
+        $destination = (array) ($delivery['destination'] ?? []);
+        if ($changed('country')) {
+            unset($destination['country_code']);
+        }
+        $delivery['destination'] = array_filter(
+            array_merge($destination, ['index' => $index, 'city' => $city, 'address' => $address]),
+            fn ($item) => $item !== null && $item !== '',
+        );
+
+        if ($type === 'office') {
+            // Отделение определяется индексом; без нового индекса выбранное раньше уже не подходит.
+            if ($index !== null) {
+                $delivery['pvz'] = ['code' => $index, 'address' => $address];
+            } else {
+                unset($delivery['pvz']);
+            }
+        }
+
+        return ['delivery' => $delivery, 'postal_code' => $index];
+    }
+
     private function domesticIndex(array $method, array $destination): string
     {
         $index = preg_replace('/\D/', '', (string) ($destination['index'] ?? ''));
