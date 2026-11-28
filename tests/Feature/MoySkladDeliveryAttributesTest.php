@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\PushOrderTracksToMoySkladJob;
 use App\Jobs\SyncOrderToMoySkladJob;
 use App\Models\DeliveryMethod;
 use App\Models\DeliveryServiceSetting;
@@ -10,6 +11,7 @@ use App\Services\MoySklad\OrderService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use ReflectionMethod;
 use Tests\TestCase;
@@ -107,16 +109,33 @@ class MoySkladDeliveryAttributesTest extends TestCase
         $this->assertArrayNotHasKey('meta-post', $attributes);
     }
 
-    public function test_new_tracking_number_resyncs_an_already_exported_order(): void
+    public function test_new_tracking_number_sends_only_tracks_of_an_exported_order(): void
     {
-        Bus::fake([SyncOrderToMoySkladJob::class]);
+        Bus::fake([SyncOrderToMoySkladJob::class, PushOrderTracksToMoySkladJob::class]);
 
         $exported = Order::factory()->create(['moysklad_order_uuid' => (string) Str::uuid(), 'tracking_number' => null]);
         $exported->update(['tracking_number' => 'EF537485028RU']);
-        Bus::assertDispatched(SyncOrderToMoySkladJob::class, fn ($job) => $job->orderId === $exported->id);
+        // Полная выгрузка вернула бы в МойСклад статус сайта, поэтому уходит только трек.
+        Bus::assertDispatched(PushOrderTracksToMoySkladJob::class, fn ($job) => $job->orderId === $exported->id);
+        Bus::assertNotDispatched(SyncOrderToMoySkladJob::class);
 
         $exported->update(['seller_comment' => 'без смены трека']);
-        Bus::assertDispatchedTimes(SyncOrderToMoySkladJob::class, 1);
+        Bus::assertDispatchedTimes(PushOrderTracksToMoySkladJob::class, 1);
+    }
+
+    public function test_tracks_push_changes_only_track_fields(): void
+    {
+        Http::fake(['*' => Http::response(['id' => 'ms'])]);
+        $order = Order::factory()->create(['moysklad_order_uuid' => 'ms-uuid', 'tracking_number' => null,
+            'legacy_meta' => ['russian_post_tracking_number' => '80080012345678']]);
+
+        $this->assertTrue((new OrderService)->pushTracks($order));
+
+        // В запросе только поле трека Почты: ни статуса, ни позиций.
+        Http::assertSent(fn ($request) => $request->method() === 'PUT'
+            && str_ends_with($request->url(), '/entity/customerorder/ms-uuid')
+            && array_keys($request->data()) === ['attributes']
+            && $request['attributes'] === [['meta' => ['href' => 'meta-post'], 'value' => '80080012345678']]);
     }
 
     public function test_tracking_number_does_not_resync_an_order_that_was_never_exported(): void

@@ -87,29 +87,56 @@ class OrderService
      * Обновить в МойСклад ТОЛЬКО поле «Трек номер» уже выгруженного заказа.
      * В отличие от pushOrder() не трогает статус, позиции, адрес и остальные поля, поэтому
      * подходит для массовых правок трека (pushOrder приводит статус МойСклад к статусу сайта).
-     * Для трека Почты России передаётся поле «Трек номер ПР».
      */
-    public function pushTrackingNumber(Order $order, string $value, string $attribute = 'Трек номер'): bool
+    public function pushTrackingNumber(Order $order, string $value): bool
     {
         if (empty($order->moysklad_order_uuid)) {
             return false;
         }
 
-        $meta = $this->resolveCustomAttributeMetas()[$attribute] ?? null;
+        $meta = $this->resolveCustomAttributeMetas()['Трек номер'] ?? null;
         if (! $meta) {
-            throw new Exception("МойСклад: в заказе покупателя нет поля «{$attribute}»");
+            throw new Exception('МойСклад: в заказе покупателя нет поля «Трек номер»');
         }
+
+        return $this->putAttributes($order, [['meta' => $meta, 'value' => $value]]);
+    }
+
+    /**
+     * Отправить в МойСклад только треки заказа («Трек номер» и «Трек номер ПР»), как pushTrackingNumber():
+     * статус, позиции и адрес документа не меняются.
+     */
+    public function pushTracks(Order $order): bool
+    {
+        if (empty($order->moysklad_order_uuid)) {
+            return false;
+        }
+
+        $order->loadMissing(['deliveryMethod', 'cdekOrder', 'yandexOrder']);
+        $metas = $this->resolveCustomAttributeMetas();
+        $attributes = [];
+        foreach (['Трек номер' => $this->trackingNumber($order), 'Трек номер ПР' => $this->postTrackingNumber($order)] as $name => $value) {
+            if (filled($value) && isset($metas[$name])) {
+                $attributes[] = ['meta' => $metas[$name], 'value' => $value];
+            }
+        }
+
+        return $attributes !== [] && $this->putAttributes($order, $attributes);
+    }
+
+    private function putAttributes(Order $order, array $attributes): bool
+    {
 
         $response = Http::withHeaders([
             'Authorization'   => 'Bearer ' . $this->token,
             'Accept-Encoding' => 'gzip',
             'Content-Type'    => 'application/json',
         ])->put("{$this->baseURL}/entity/customerorder/{$order->moysklad_order_uuid}", [
-            'attributes' => [['meta' => $meta, 'value' => $value]],
+            'attributes' => $attributes,
         ]);
 
         if (! $response->successful()) {
-            throw new Exception("МойСклад: не удалось обновить «{$attribute}». " . ($response->json('errors.0.error') ?? $response->body()));
+            throw new Exception('МойСклад: не удалось обновить трек. ' . ($response->json('errors.0.error') ?? $response->body()));
         }
 
         return true;

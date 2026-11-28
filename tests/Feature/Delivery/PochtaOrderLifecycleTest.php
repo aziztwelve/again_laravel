@@ -2,7 +2,7 @@
 
 namespace Tests\Feature\Delivery;
 
-use App\Jobs\PushPostTrackingToMoySkladJob;
+use App\Jobs\PushOrderTracksToMoySkladJob;
 use App\Jobs\SyncOrderToMoySkladJob;
 use App\Models\DeliveryMethod;
 use App\Models\Order;
@@ -167,7 +167,7 @@ class PochtaOrderLifecycleTest extends TestCase
         $order = $this->update($order, ['custom_fields' => ['russian_post_tracking_number' => '80080012345678']]);
 
         $this->assertSame('80080012345678', $order->customerTrackingNumber());
-        Bus::assertDispatched(PushPostTrackingToMoySkladJob::class);
+        Bus::assertDispatched(PushOrderTracksToMoySkladJob::class);
         Bus::assertNotDispatched(SyncOrderToMoySkladJob::class);
     }
 }

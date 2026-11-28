@@ -4,6 +4,7 @@ namespace App\Observers;
 
 use App\Models\Order;
 use App\Events\OrderPaid;
+use App\Jobs\PushOrderTracksToMoySkladJob;
 use App\Jobs\SyncOrderToMoySkladJob;
 
 class OrderObserver
@@ -19,7 +20,12 @@ class OrderObserver
         // Трек-номер перевозчик назначает уже после оформления заказа: передаём его
         // в МойСклад, если заказ туда уже выгружен.
         if ($order->wasChanged('tracking_number') && filled($order->moysklad_order_uuid)) {
-            SyncOrderToMoySkladJob::dispatch($order->id);
+            // Только трек отправляем отдельно: полная выгрузка вернула бы в МойСклад статус сайта.
+            if ($order->wasChanged(['status', 'payment_status', 'delivery_method_id', 'delivery_cost'])) {
+                SyncOrderToMoySkladJob::dispatch($order->id);
+            } else {
+                PushOrderTracksToMoySkladJob::dispatch($order->id)->afterCommit();
+            }
         }
     }
 }

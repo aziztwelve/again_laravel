@@ -43,6 +43,9 @@ class OrderUpdateService
             $detailsBefore = $this->historyService->detailsSnapshot($order);
             // Состояние, от которого зависят правила бесплатной доставки (до правок).
             $freeShippingBefore = $this->freeShippingFingerprint($order);
+            // Что из заказа уже лежит в МойСклад (до правок).
+            $moyskladBefore = $this->moyskladFingerprint($order);
+            $tracksBefore = $this->moyskladTracks($order);
             // Поля напрямую обновляемые в таблице orders
             $allowedFields = [
                 'notes',
@@ -216,14 +219,7 @@ class OrderUpdateService
 
             // Кастомные поля заказа («Поля заказа»): часть колонок, часть legacy_meta.
             if (isset($data['custom_fields']) && is_array($data['custom_fields'])) {
-                $postTrackBefore = (string) data_get($order->legacy_meta, 'russian_post_tracking_number');
                 $this->customFieldsService->update($order, $data['custom_fields']);
-                $postTrack = (string) data_get($order->legacy_meta, 'russian_post_tracking_number');
-
-                // Отправляем в МойСклад только поле трека: полная выгрузка переписала бы там статус.
-                if ($postTrack !== '' && $postTrack !== $postTrackBefore && $order->moysklad_order_uuid) {
-                    \App\Jobs\PushPostTrackingToMoySkladJob::dispatch($order->id)->afterCommit();
-                }
             }
 
             // Обработка промокода — привязка/снятие.
@@ -283,12 +279,15 @@ class OrderUpdateService
             $this->historyService->logUpdated($order, $originalSnapshot, $updatedSnapshot);
             $this->historyService->logDetails($order, $detailsBefore, $this->historyService->detailsSnapshot($order));
 
-            // Если заказ уже выгружен в МойСклад и менялось что-то значимое
-            // для документа там (состав заказа, статус, оплата, доставка,
-            // комментарий) — обновляем документ. Изменение состава (items)
-            // напрямую влияет на количество/позиции в МойСклад.
-            if ($order->moysklad_order_uuid && $this->affectsMoySkladDocument($data)) {
-                \App\Jobs\SyncOrderToMoySkladJob::dispatch($order->id);
+            // Если заказ уже выгружен в МойСклад: полная выгрузка нужна, только когда реально изменилось
+            // то, что хранится в документе, — она заодно возвращает туда статус сайта. Если менялись лишь
+            // треки, отправляем только их.
+            if ($order->moysklad_order_uuid) {
+                if ($this->moyskladFingerprint($order) !== $moyskladBefore) {
+                    \App\Jobs\SyncOrderToMoySkladJob::dispatch($order->id)->afterCommit();
+                } elseif ($this->moyskladTracks($order) !== $tracksBefore) {
+                    \App\Jobs\PushOrderTracksToMoySkladJob::dispatch($order->id)->afterCommit();
+                }
             }
 
             Log::info('Order updated', [
@@ -642,34 +641,53 @@ class OrderUpdateService
     }
 
     /**
-     * Проверить, содержит ли payload обновления заказа поля, которые нужно
-     * отразить в документе МойСклад: состав заказа (количество/позиции),
-     * статус, оплату, доставку или комментарий.
+     * Отпечаток всего, что уходит в документ «Заказ покупателя» МойСклад, кроме треков.
+     *
+     * Админка при любом сохранении присылает заказ целиком, поэтому по составу запроса не понять,
+     * менялось ли что-то: сравниваем значения в базе до и после.
      */
-    private function affectsMoySkladDocument(array $data): bool
+    private function moyskladFingerprint(Order $order): string
     {
-        $affectingKeys = [
-            'items',
-            'status',
-            'payment_status',
-            'delivery_method_id',
-            'delivery_date',
-            'delivery_comment',
-            'notes',
-        ];
+        $order = Order::query()->with(['items', 'address', 'client.profile'])->findOrFail($order->id);
 
-        foreach ($affectingKeys as $key) {
-            if (array_key_exists($key, $data)) {
-                return true;
-            }
-        }
+        $text = fn ($value) => trim((string) match (true) {
+            $value instanceof \BackedEnum => $value->value,
+            $value instanceof \DateTimeInterface => $value->format('Y-m-d H:i'),
+            default => $value,
+        });
+        $pick = fn ($model, array $keys) => array_map(fn (string $key) => $text($model?->getAttribute($key)), $keys);
 
-        if (isset($data['custom_fields']) && is_array($data['custom_fields'])) {
-            return array_key_exists('no_receipt', $data['custom_fields'])
-                || array_key_exists('export_country', $data['custom_fields']);
-        }
+        $items = $order->items
+            ->map(fn ($item) => [(int) $item->product_id, (int) $item->product_variant_id, (int) $item->quantity, round((float) $item->price, 2)])
+            ->sortBy(fn (array $row) => implode('-', $row))
+            ->values()
+            ->all();
 
-        return false;
+        return md5(json_encode([
+            'order' => $pick($order, [
+                'status', 'payment_status', 'payment_method', 'delivery_method_id', 'delivery_cost', 'delivery_date',
+                'delivery_comment', 'notes', 'no_receipt', 'export_country', 'client_id', 'email',
+            ]),
+            'items' => $items,
+            'address' => $pick($order->address, [
+                'country', 'region', 'city', 'address', 'postal_code', 'house', 'apartment',
+                'recipient_first_name', 'recipient_last_name', 'recipient_middle_name', 'recipient_phone',
+            ]),
+            // Из них МойСклад берёт контрагента.
+            'client' => $pick($order->client, ['email', 'phone']),
+            'profile' => $pick($order->client?->profile, ['first_name', 'last_name', 'middle_name', 'phone']),
+        ], JSON_UNESCAPED_UNICODE));
+    }
+
+    /** Треки из «Полей заказа», которые есть в МойСклад. Общий «Трек-номер» отслеживает OrderObserver. */
+    private function moyskladTracks(Order $order): array
+    {
+        $meta = is_array($order->legacy_meta) ? $order->legacy_meta : [];
+
+        return array_map(
+            fn (string $key) => (string) ($meta[$key] ?? ''),
+            ['cdek_track_number', 'russian_post_tracking_number', 'russian_post_track'],
+        );
     }
 
     /**
